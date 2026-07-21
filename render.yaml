@@ -1,0 +1,29 @@
+# Blueprint Render — 2 serviços: API Colyseus + site estático (Vite).
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Deploy: conecte o repo no Render → New → Blueprint → selecione este arquivo.
+# Ou crie os dois serviços manualmente seguindo DEPLOY.md
+
+services:
+  # --- Backend: servidor Colyseus (WebSocket) ---
+  - type: web
+    name: fps-shooter-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+
+  # --- Frontend: build Vite servido como site estático ---
+  - type: web
+    name: fps-shooter
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_SERVER_URL
+        fromService:
+          type: web
+          name: fps-shooter-api
+          envVarKey: RENDER_EXTERNAL_URL

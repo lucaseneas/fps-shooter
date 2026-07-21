@@ -19,10 +19,17 @@ export interface PlayerSnapshot {
 
 let cachedClient: Client | null = null;
 
+/** URL do Colyseus: produção via VITE_SERVER_URL; local usa ws na porta do config. */
+function getServerUrl(): string {
+  const envUrl = import.meta.env.VITE_SERVER_URL?.trim();
+  if (envUrl) return envUrl;
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.hostname}:${CONFIG.serverPort}`;
+}
+
 function getClient(): Client {
   if (!cachedClient) {
-    const url = `ws://${window.location.hostname}:${CONFIG.serverPort}`;
-    cachedClient = new Client(url);
+    cachedClient = new Client(getServerUrl());
   }
   return cachedClient;
 }
