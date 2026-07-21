@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FPS Web 3D — Mata-Mata</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='2' fill='%23ff9d2f'/><rect x='7' y='0' width='2' height='16' fill='%23ff9d2f'/><rect x='0' y='7' width='16' height='2' fill='%23ff9d2f'/></svg>"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="renderCanvas" touch-action="none"></canvas>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div id="crosshair"></div>
+      <div id="hitmarker"></div>
+      <div id="damageVignette"></div>
+      <div id="debug"></div>
+
+      <!-- Kill feed (canto superior direito) -->
+      <div id="killFeed"></div>
+
+      <!-- Kills (topo centro) -->
+      <div id="killsPanel">Kills: <span id="killCount">0 / 20</span></div>
+
+      <!-- Vida (canto inferior esquerdo) -->
+      <div id="healthPanel">
+        <span id="healthText">100</span>
+        <div id="healthBar"><div id="healthFill"></div></div>
+      </div>
+
+      <!-- Arma + munição (canto inferior direito) -->
+      <div id="ammoPanel">
+        <div id="weaponName">Pistola</div>
+        <div id="ammoCounts">
+          <span id="ammoMag">12</span><span class="ammo-sep">/</span
+          ><span id="ammoReserve">48</span>
+        </div>
+        <div id="weaponSlots"></div>
+      </div>
+
+      <!-- Scoreboard (Tab) -->
+      <div id="scoreboard" class="hidden">
+        <h2>Placar</h2>
+        <table>
+          <thead>
+            <tr><th>Jogador</th><th>K</th><th>D</th></tr>
+          </thead>
+          <tbody id="scoreboardBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Tela de morte -->
+      <div id="deathScreen" class="hidden">
+        <div id="deathInfo"></div>
+        <div id="deathTimer"></div>
+      </div>
+
+      <!-- Fim de partida -->
+      <div id="endScreen" class="hidden">
+        <div id="endTitle"></div>
+        <button id="restartButton">Jogar novamente</button>
+      </div>
+    </div>
+
+    <!-- Overlay de início / pausa -->
+    <div id="overlay">
+      <div class="overlay-card">
+        <h1>FPS Web 3D</h1>
+        <p class="subtitle">Fase 4 — Netcode &amp; Configurações</p>
+        <input
+          id="nameInput"
+          type="text"
+          maxlength="16"
+          placeholder="Seu nome"
+          autocomplete="off"
+        />
+        <div class="settings">
+          <h3>⚙ Configurações</h3>
+          <div class="setting-row">
+            <label for="sensSlider">Sensibilidade da mira</label>
+            <div class="setting-control">
+              <input
+                id="sensSlider"
+                type="range"
+                min="0.1"
+                max="3"
+                step="0.05"
+                value="1"
+              />
+              <span id="sensValue">1.00</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label for="botsSlider">Bots na sala</label>
+            <div class="setting-control">
+              <input
+                id="botsSlider"
+                type="range"
+                min="0"
+                max="7"
+                step="1"
+                value="7"
+              />
+              <span id="botsValue">7</span>
+            </div>
+          </div>
+        </div>
+        <ul class="controls">
+          <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Mover</li>
+          <li><kbd>Mouse</kbd> Olhar · <kbd>Click</kbd> Atirar</li>
+          <li><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> / <kbd>Scroll</kbd> Trocar arma</li>
+          <li><kbd>R</kbd> Recarregar · <kbd>Espaço</kbd> Pular</li>
+          <li><kbd>Shift</kbd> Correr · <kbd>Tab</kbd> Placar</li>
+          <li><kbd>Esc</kbd> Liberar cursor</li>
+        </ul>
+        <button id="playButton">Clique para jogar</button>
+        <p id="connectionStatus"></p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

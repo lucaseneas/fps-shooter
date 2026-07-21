@@ -1,0 +1,4 @@
+{
+  "comment": "Marca o servidor como CommonJS — o pacote colyseus 0.15 é CJS e o resto do repo é ESM.",
+  "type": "commonjs"
+}

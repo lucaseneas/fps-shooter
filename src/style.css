@@ -1,0 +1,578 @@
+:root {
+  --accent: #ff9d2f;
+  --bg: #0b0e13;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #e8ecf1;
+  user-select: none;
+}
+
+#renderCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+  touch-action: none;
+}
+
+/* ---------- HUD ---------- */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+#crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+
+#crosshair::before,
+#crosshair::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+
+/* linha horizontal */
+#crosshair::before {
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 2px;
+  transform: translate(-50%, -50%);
+}
+
+/* linha vertical */
+#crosshair::after {
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+}
+
+#debug {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  color: rgba(255, 255, 255, 0.75);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  white-space: pre;
+}
+
+/* ---------- Hitmarker ---------- */
+#hitmarker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#hitmarker::before,
+#hitmarker::after {
+  content: "";
+  position: absolute;
+  background: #fff;
+}
+
+#hitmarker::before {
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  transform: translateY(-50%);
+  /* buraco no meio */
+  clip-path: polygon(0 0, 30% 0, 30% 100%, 0 100%, 0 0, 70% 0, 100% 0, 100% 100%, 70% 100%, 70% 0);
+}
+
+#hitmarker::after {
+  left: 50%;
+  top: 0;
+  height: 100%;
+  width: 2px;
+  transform: translateX(-50%);
+  clip-path: polygon(0 0, 100% 0, 100% 30%, 0 30%, 0 0, 0 70%, 100% 70%, 100% 100%, 0 100%, 0 70%);
+}
+
+#hitmarker.show {
+  opacity: 0.95;
+}
+
+#hitmarker.headshot::before,
+#hitmarker.headshot::after {
+  background: #ff4d4d;
+}
+
+/* ---------- Vinheta de dano ---------- */
+#damageVignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(200, 30, 30, 0.45) 100%
+  );
+}
+
+#damageVignette.show {
+  opacity: 1;
+}
+
+/* ---------- Kill feed ---------- */
+#killFeed {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-end;
+  font-size: 13px;
+}
+
+.feed-entry {
+  background: rgba(10, 14, 20, 0.65);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: #dfe6ee;
+}
+
+.feed-weapon {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+/* ---------- Kills (topo) ---------- */
+#killsPanel {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 14, 20, 0.55);
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+}
+
+#killCount {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* ---------- Vida ---------- */
+#healthPanel {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#healthText {
+  font-size: 34px;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+  min-width: 58px;
+  text-align: right;
+}
+
+#healthBar {
+  width: 180px;
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+#healthFill {
+  height: 100%;
+  width: 100%;
+  background: #6fd66f;
+  transition: width 0.15s ease, background 0.3s ease;
+}
+
+/* ---------- Munição / arma ---------- */
+#ammoPanel {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  text-align: right;
+}
+
+#weaponName {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #aab6c2;
+}
+
+#ammoCounts {
+  font-size: 34px;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+}
+
+#ammoMag.low {
+  color: #e05545;
+}
+
+.ammo-sep {
+  margin: 0 6px;
+  color: #77828e;
+}
+
+#ammoReserve {
+  font-size: 20px;
+  color: #aab6c2;
+}
+
+#weaponSlots {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.slot {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: rgba(10, 14, 20, 0.55);
+  color: #8b97a3;
+  border: 1px solid transparent;
+}
+
+.slot.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- Scoreboard ---------- */
+#scoreboard {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 340px;
+  background: rgba(10, 14, 20, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 18px 24px;
+}
+
+#scoreboard.hidden {
+  display: none;
+}
+
+#scoreboard h2 {
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+#scoreboard table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+#scoreboard th,
+#scoreboard td {
+  text-align: left;
+  padding: 5px 8px;
+}
+
+#scoreboard th:nth-child(n + 2),
+#scoreboard td:nth-child(n + 2) {
+  text-align: center;
+  width: 46px;
+}
+
+#scoreboard thead th {
+  color: #8b97a3;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+#scoreboard tr.me td {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* ---------- Tela de morte ---------- */
+#deathScreen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(120, 10, 10, 0.25),
+    rgba(30, 5, 5, 0.6)
+  );
+}
+
+#deathScreen.hidden {
+  display: none;
+}
+
+#deathInfo {
+  font-size: 24px;
+  font-weight: 600;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+
+#deathTimer {
+  font-size: 15px;
+  color: #d8c0c0;
+}
+
+/* ---------- Fim de partida ---------- */
+#endScreen {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: auto;
+}
+
+#endScreen.hidden {
+  display: none;
+}
+
+#endTitle {
+  font-size: 34px;
+  font-weight: 700;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+  margin-bottom: 14px;
+}
+
+#restartButton {
+  padding: 10px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1206;
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* ---------- Overlay ---------- */
+#overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 13, 0.72);
+  backdrop-filter: blur(6px);
+  transition: opacity 0.25s ease;
+}
+
+#overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.overlay-card {
+  text-align: center;
+  padding: 40px 48px;
+  border-radius: 16px;
+  background: rgba(18, 23, 31, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.overlay-card h1 {
+  font-size: 34px;
+  letter-spacing: 1px;
+}
+
+.subtitle {
+  margin-top: 6px;
+  color: var(--accent);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.controls {
+  list-style: none;
+  margin: 26px 0;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+  color: #c3ccd6;
+}
+
+.controls li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #222a35;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom-width: 2px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+#playButton {
+  margin-top: 8px;
+  padding: 12px 28px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1206;
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+
+#playButton:hover {
+  filter: brightness(1.08);
+}
+
+#playButton:active {
+  transform: scale(0.97);
+}
+
+#playButton:disabled {
+  filter: grayscale(0.6) brightness(0.7);
+  cursor: wait;
+}
+
+#nameInput {
+  display: block;
+  margin: 18px auto 0;
+  padding: 10px 14px;
+  width: 220px;
+  font-size: 15px;
+  text-align: center;
+  color: #e8ecf1;
+  background: #141a23;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  outline: none;
+}
+
+#nameInput:focus {
+  border-color: var(--accent);
+}
+
+#connectionStatus {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #8b97a3;
+  min-height: 18px;
+}
+
+/* ---------- Configurações ---------- */
+.settings {
+  margin: 20px auto 0;
+  padding: 14px 18px;
+  max-width: 300px;
+  text-align: left;
+  background: rgba(10, 14, 20, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.settings h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.setting-row {
+  margin-bottom: 12px;
+}
+
+.setting-row:last-child {
+  margin-bottom: 0;
+}
+
+.setting-row label {
+  display: block;
+  font-size: 13px;
+  color: #c3ccd6;
+  margin-bottom: 6px;
+}
+
+.setting-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setting-control input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+#sensValue,
+#botsValue {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#connectionStatus.error {
+  color: #e05545;
+}
