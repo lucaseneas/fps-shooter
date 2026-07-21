@@ -91,6 +91,7 @@ $env:VITE_SERVER_URL="http://localhost:2567"; npm run build; npm run preview
 | "Servidor offline" no menu | API ainda acordando (Free) ou URL errada em `VITE_SERVER_URL` |
 | Lobby vazio / não conecta | Static Site buildado **sem** `VITE_SERVER_URL` — refaça o deploy do cliente |
 | WebSocket falha | URL deve ser `https://...` (não `ws://`) no env do Vite |
+| `No open HTTP ports detected` | Servidor precisa escutar em `0.0.0.0` e responder em `/health` — já corrigido em `server/index.ts`; faça redeploy do API |
 
 ---
 
