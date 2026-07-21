@@ -629,6 +629,7 @@ engine.runRenderLoop(() => {
   const dt = engine.getDeltaTime() / 1000;
 
   player.update(dt);
+  player.updateRecoil(dt, weapons.isShooting);
   weapons.update(dt);
   viewModel.update(dt);
   for (const rp of remotePlayers.values()) rp.update(dt);

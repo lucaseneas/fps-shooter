@@ -55,12 +55,17 @@ export class FpsController {
   // Estado de input
   private readonly keys = new Set<string>();
   private yaw = 0;
-  private pitch = 0;
+  /** Mira real (só o mouse altera). */
+  private basePitch = 0;
+  /** Recoil visual temporário — some ao parar de atirar. */
+  private recoilOffset = 0;
   private pointerLocked = false;
   private movementEnabled = true;
 
   private sensitivityMultiplier = 1;
   private readonly maxPitch = Math.PI / 2 - 0.02;
+  /** Velocidade de retorno da mira após soltar o gatilho. */
+  private readonly recoilRecoverySpeed = 16;
 
   constructor(
     scene: Scene,
@@ -161,13 +166,21 @@ export class FpsController {
     if (!on) this.keys.clear();
   }
 
-  /** Chute de recoil: levanta a mira. */
+  /** Chute de recoil visual: levanta a mira enquanto atira. */
   applyRecoil(pitchKick: number): void {
-    this.pitch = Scalar.Clamp(
-      this.pitch - pitchKick,
+    this.recoilOffset = Scalar.Clamp(
+      this.recoilOffset - pitchKick,
       -this.maxPitch,
       this.maxPitch
     );
+  }
+
+  /** Recupera a mira quando não está atirando. */
+  updateRecoil(deltaSeconds: number, shooting: boolean): void {
+    if (shooting) return;
+    const t = Math.min(1, deltaSeconds * this.recoilRecoverySpeed);
+    this.recoilOffset = Scalar.Lerp(this.recoilOffset, 0, t);
+    if (Math.abs(this.recoilOffset) < 0.00005) this.recoilOffset = 0;
   }
 
   /** Teleporta (respawn): adota a posição e descarta inputs pendentes. */
@@ -178,6 +191,7 @@ export class FpsController {
     this.sim.vy = 0;
     this.sim.grounded = true;
     this.pendingInputs.length = 0;
+    this.recoilOffset = 0;
     this.syncVisual();
   }
 
@@ -257,8 +271,8 @@ export class FpsController {
     if (!this.pointerLocked) return;
     const sens = BASE_SENSITIVITY * this.sensitivityMultiplier;
     this.yaw += e.movementX * sens;
-    this.pitch += e.movementY * sens;
-    this.pitch = Scalar.Clamp(this.pitch, -this.maxPitch, this.maxPitch);
+    this.basePitch += e.movementY * sens;
+    this.basePitch = Scalar.Clamp(this.basePitch, -this.maxPitch, this.maxPitch);
   };
 
   /** Deve ser chamado a cada frame do render loop. */
@@ -308,7 +322,11 @@ export class FpsController {
       this.sim.y + EYE_HEIGHT,
       this.sim.z
     );
-    this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.camera.rotation.set(
+      Scalar.Clamp(this.basePitch + this.recoilOffset, -this.maxPitch, this.maxPitch),
+      this.yaw,
+      0
+    );
   }
 
   /** Info de debug para o HUD. */

@@ -94,6 +94,12 @@ export class WeaponSystem {
     return this.reloadRemaining > 0;
   }
 
+  /** True enquanto o gatilho está pressionado e ainda pode disparar. */
+  get isShooting(): boolean {
+    if (!this.enabled || !this.triggerHeld || this.reloadRemaining > 0) return false;
+    return this.ammo.get(this.weapon.id)!.mag > 0;
+  }
+
   /** Habilita/desabilita o disparo (morte, fim de partida, overlay). */
   setEnabled(on: boolean): void {
     this.enabled = on;
