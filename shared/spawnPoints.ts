@@ -3,18 +3,18 @@ export interface SpawnPoint {
   z: number;
 }
 
-/** Pontos de spawn distribuídos pelo mapa (pés no chão, y = 0). */
+/** Pontos de spawn distribuídos pelo mapa "Praça" (pés no chão, y = 0). */
 export const SPAWN_POINTS: SpawnPoint[] = [
-  { x: 0, z: -18 },
-  { x: 22, z: -22 },
-  { x: -24, z: -20 },
-  { x: 28, z: 8 },
-  { x: -28, z: 10 },
-  { x: 20, z: 26 },
-  { x: -18, z: 26 },
-  { x: 0, z: 30 },
-  { x: 10, z: -30 },
-  { x: -10, z: -32 },
+  { x: 0, z: -34 },
+  { x: 26, z: -34 },
+  { x: -26, z: -34 },
+  { x: 34, z: -14 },
+  { x: -34, z: -14 },
+  { x: 34, z: 14 },
+  { x: -34, z: 14 },
+  { x: 0, z: 34 },
+  { x: 30, z: 33 },
+  { x: -8, z: 34 },
 ];
 
 export function randomSpawn(): SpawnPoint {

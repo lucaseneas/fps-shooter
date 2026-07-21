@@ -20,7 +20,10 @@
       <div id="damageVignette"></div>
       <div id="debug"></div>
 
-      <!-- Kill feed (canto superior direito) -->
+      <!-- Minimapa (canto superior direito) -->
+      <canvas id="minimap" width="180" height="180"></canvas>
+
+      <!-- Kill feed (abaixo do minimapa) -->
       <div id="killFeed"></div>
 
       <!-- Kills (topo centro) -->
@@ -62,15 +65,23 @@
       <!-- Fim de partida -->
       <div id="endScreen" class="hidden">
         <div id="endTitle"></div>
-        <button id="restartButton">Jogar novamente</button>
+        <div class="end-actions">
+          <button id="restartButton">Jogar novamente</button>
+          <button id="menuButton" class="secondary">Voltar ao menu</button>
+        </div>
       </div>
     </div>
 
-    <!-- Overlay de início / pausa -->
-    <div id="overlay">
-      <div class="overlay-card">
-        <h1>FPS Web 3D</h1>
-        <p class="subtitle">Fase 4 — Netcode &amp; Configurações</p>
+    <!-- Menu inicial (primeira tela, fundo opaco) -->
+    <div id="mainMenu">
+      <button id="settingsButton" title="Configurações">⚙</button>
+
+      <div class="menu-card">
+        <header class="menu-header">
+          <h1>FPS Web 3D</h1>
+          <p class="subtitle">Mata-mata · Primeiro a 20 kills vence</p>
+        </header>
+
         <input
           id="nameInput"
           type="text"
@@ -78,8 +89,46 @@
           placeholder="Seu nome"
           autocomplete="off"
         />
+
+        <div class="menu-columns">
+          <!-- Lobby: lista de salas -->
+          <section id="lobbyPanel">
+            <h3>Salas disponíveis</h3>
+            <div id="roomList"><p class="no-rooms">Carregando…</p></div>
+            <div class="lobby-actions">
+              <button id="refreshRoomsButton" class="secondary">Atualizar</button>
+              <button id="createRoomButton">Criar sala</button>
+            </div>
+          </section>
+
+          <!-- Informações do jogo -->
+          <section class="menu-info">
+            <h3>Como jogar</h3>
+            <ul class="controls">
+              <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Mover</li>
+              <li><kbd>Mouse</kbd> Olhar · <kbd>Click</kbd> Atirar</li>
+              <li><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> / <kbd>Scroll</kbd> Trocar arma</li>
+              <li><kbd>R</kbd> Recarregar · <kbd>Espaço</kbd> Pular</li>
+              <li><kbd>Shift</kbd> Correr · <kbd>Tab</kbd> Placar</li>
+              <li><kbd>Esc</kbd> Pausa / Configurações</li>
+            </ul>
+            <h3>Arsenal</h3>
+            <p class="info-text">
+              Pistola, Rifle e Escopeta — todos entram com o kit completo.
+              Sala para 8 jogadores; bots completam as vagas. Mapa: Praça.
+            </p>
+          </section>
+        </div>
+
+        <p id="connectionStatus"></p>
+      </div>
+    </div>
+
+    <!-- Modal de configurações (menu) / pausa (in-game, via ESC) -->
+    <div id="settingsModal" class="hidden menu-mode">
+      <div class="modal-card">
+        <h2>⚙ Configurações</h2>
         <div class="settings">
-          <h3>⚙ Configurações</h3>
           <div class="setting-row">
             <label for="sensSlider">Sensibilidade da mira</label>
             <div class="setting-control">
@@ -108,17 +157,26 @@
               <span id="botsValue">7</span>
             </div>
           </div>
+          <div class="setting-row">
+            <label for="volSlider">Volume</label>
+            <div class="setting-control">
+              <input
+                id="volSlider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value="0.5"
+              />
+              <span id="volValue">50%</span>
+            </div>
+          </div>
         </div>
-        <ul class="controls">
-          <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Mover</li>
-          <li><kbd>Mouse</kbd> Olhar · <kbd>Click</kbd> Atirar</li>
-          <li><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> / <kbd>Scroll</kbd> Trocar arma</li>
-          <li><kbd>R</kbd> Recarregar · <kbd>Espaço</kbd> Pular</li>
-          <li><kbd>Shift</kbd> Correr · <kbd>Tab</kbd> Placar</li>
-          <li><kbd>Esc</kbd> Liberar cursor</li>
-        </ul>
-        <button id="playButton">Clique para jogar</button>
-        <p id="connectionStatus"></p>
+        <div class="modal-actions">
+          <button id="resumeButton">Voltar ao jogo</button>
+          <button id="quitButton" class="secondary">Sair para o menu</button>
+          <button id="closeSettingsButton" class="secondary">Fechar</button>
+        </div>
       </div>
     </div>
 

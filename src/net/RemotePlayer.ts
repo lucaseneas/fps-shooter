@@ -19,6 +19,7 @@ export class RemotePlayer {
   private readonly bodyMesh: Mesh;
   private readonly headMesh: Mesh;
   private readonly nameplate: Mesh;
+  private readonly gun: Mesh;
 
   /** Alvo de interpolação (pés). */
   private targetPos = new Vector3(0, 0, 0);
@@ -59,6 +60,33 @@ export class RemotePlayer {
     this.headMesh.position.y = HEIGHT / 2 - 0.1;
     this.headMesh.material = headMat;
     this.headMesh.metadata = { hitbox: { id, part: "head" } };
+
+    // Arma na mão: aponta para +Z local — segue o yaw do corpo, mostrando
+    // para onde o inimigo está mirando.
+    const gunMat = new StandardMaterial(`${id}_gunMat`, scene);
+    gunMat.diffuseColor = new Color3(0.15, 0.15, 0.17);
+    gunMat.specularColor = new Color3(0.05, 0.05, 0.05);
+
+    this.gun = MeshBuilder.CreateBox(
+      `${id}_gun`,
+      { width: 0.09, height: 0.12, depth: 0.55 },
+      scene
+    );
+    this.gun.parent = this.root;
+    this.gun.position = new Vector3(0.32, 0.32, 0.3); // mão direita, ~1.2m
+    this.gun.material = gunMat;
+    this.gun.isPickable = false;
+
+    const gunBarrel = MeshBuilder.CreateCylinder(
+      `${id}_gunBarrel`,
+      { height: 0.25, diameter: 0.05 },
+      scene
+    );
+    gunBarrel.parent = this.gun;
+    gunBarrel.rotation.x = Math.PI / 2;
+    gunBarrel.position = new Vector3(0, 0.02, 0.38);
+    gunBarrel.material = gunMat;
+    gunBarrel.isPickable = false;
 
     this.nameplate = this.createNameplate(scene, name);
   }
@@ -134,6 +162,7 @@ export class RemotePlayer {
     this.bodyMesh.setEnabled(on);
     this.headMesh.setEnabled(on);
     this.nameplate.setEnabled(on);
+    this.gun.setEnabled(on);
     this.root.checkCollisions = on;
   }
 

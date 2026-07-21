@@ -294,8 +294,42 @@ Implementado:
 - **Configuração "Bots na sala"** (0–7) no menu de configurações — enviada ao servidor (`setBots`), que adiciona/remove bots respeitando os slots ocupados por humanos. Persistida em `localStorage`.
 - **Strafe lateral mais lento** (75% da velocidade de andar, CS-like) em `shared/movement.ts` — vale para prediction e servidor.
 
-### 🔜 Próximo passo (Fase 5)
-Passos **6, 9 e 10** do Roadmap: **mapa real** (trocar o placeholder — a geometria já é data-driven em `shared/mapData.ts`), **balanceamento** (dano, cadência, respawn) e **polish** (sons, efeitos de impacto melhores, feedback de hit).
+### ✅ Fase 5 — Mapa real + Polish + Balanceamento (concluída)
+Fecha os passos **6, 9 e 10** do Roadmap — **MVP do GDD completo** (todos os 10 passos).
+
+Implementado:
+- **Mapa "Praça"** (`shared/mapData.ts` reescrito): arena 80x80 com zonas de gameplay distintas, como pede a seção 8 do GDD:
+  - **Centro:** praça elevada (1m) com escadas ao norte/sul e coberturas em cima — posição de poder disputada.
+  - **Noroeste:** armazém com paredes 3.5m (sem teto), duas entradas e caixas internas — combate curto.
+  - **Nordeste:** corredor fechado de 14m (zona de escopeta) com caixa no meio.
+  - **Sudoeste:** campo aberto com pilares esparsos (zona de rifle).
+  - **Sudeste:** composto em L com caixas.
+  - Muros centrais bloqueiam a visão leste-oeste pelo meio, forçando rotações.
+  - Por ser data-driven, o mapa novo vale automaticamente para render, colisão, prediction, hitscan e LOS dos bots. Spawn points redistribuídos pelas bordas (verificados contra a geometria).
+- **Áudio procedural** (`src/game/audio.ts`, WebAudio, sem assets): som por arma (pistola/rifle/escopeta), tiros remotos com volume por distância, hitmarker (agudo extra em headshot), dano recebido, kill confirm, morte, respawn, reload e passos (cadência muda ao correr).
+- **Polish visual:** muzzle flash no view model, névoa linear leve para profundidade, materiais distintos por tipo de estrutura (muro/prédio/caixa/plataforma/pilar).
+- **Configuração de volume** no menu (persistida em `localStorage`).
+- **Balanceamento (passe inicial):** rifle com spread 1.1→1.2 (menos "laser" à distância); escopeta com falloff mais curto (25→22m) para reforçar o papel de curta distância. Ajustes finos dependem de playtests.
+
+### ✅ Fase 6 — Salas, minimapa e arma nos inimigos (concluída)
+Primeira fase pós-MVP, a pedido do usuário.
+
+Implementado:
+- **Lobby de salas:** ao abrir o jogo, o overlay mostra a lista de salas disponíveis (via `getAvailableRooms` do Colyseus), com quantidade de jogadores humanos (`2/8`) e o mapa (metadata `map` setada pela sala no servidor). Dá para **entrar** numa sala existente ou **criar** uma nova; a lista se atualiza sozinha a cada 3s e tem botão "Atualizar". Se não houver sala, aparece "Nenhuma sala disponível — crie a primeira". Coberto por `server/lobbyTest.ts`.
+- **Minimapa** (`src/ui/Minimap.ts`): canvas 2D no canto superior direito, norte fixo. A geometria estática é pré-renderizada uma vez (offscreen canvas) com cores por tipo de estrutura; por cima, a ~15 Hz, desenha inimigos vivos (ponto vermelho + risco na direção da mira) e o player (seta laranja girando com a câmera). Kill feed desceu para baixo do minimapa.
+- **Arma na mão dos inimigos** (`RemotePlayer`): caixa + cano presos ao corpo, apontando na direção do yaw sincronizado — dá leitura de para onde cada inimigo está mirando, no mundo e no minimapa.
+- **Menu inicial separado do jogo:** a primeira tela é um menu opaco (nada renderiza no fundo — o render loop nem roda fora de partida) com nome, lista de salas, informações de como jogar/arsenal e um botão de engrenagem no canto que abre as configurações. Ao entrar numa sala vai direto para o 3D. **ESC no jogo abre o modal de pausa** com as mesmas configurações + "Voltar ao jogo" / "Sair para o menu" (sai da sala e volta ao lobby, com estado da partida todo resetado). A tela de fim de partida também ganhou botão "Voltar ao menu".
+
+Decisões:
+- Lista de salas usa o polling nativo do Colyseus (sem `LobbyRoom` realtime) — suficiente para a escala atual, sem sala extra no servidor.
+- Minimapa mostra **todos** os inimigos vivos (sem fog of war) — é um FPS casual com bots; esconder atrás de LOS pode vir depois se ficar forte demais.
+
+### 🔜 Próximos passos (pós-MVP)
+Possíveis direções:
+- **Deploy**: hospedar o servidor Colyseus (ex.: Colyseus Cloud, VPS) e o cliente (build estático) para jogar com amigos.
+- Dívidas técnicas: munição validada no servidor, colisão player-vs-player.
+- Feel: head bob, FOV dinâmico ao correr, sway da arma.
+- Conteúdo: mais mapas (só editar `mapData.ts`), níveis de dificuldade de bot, modos por time.
 
 ---
 
@@ -327,4 +361,4 @@ Registradas durante a Fase 1 para não esquecer — nenhuma é obrigatória, só
 
 ---
 
-*Última atualização: Fase 4 concluída (prediction + reconciliação, lag compensation no hitscan e menu de configurações com sensibilidade). Próximo: mapa real, balanceamento e polish.*
+*Última atualização: Fase 6 concluída — lobby com lista/criação de salas, minimapa e arma visível nos inimigos. Próximo: deploy ou mais conteúdo.*

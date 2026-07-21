@@ -83,6 +83,9 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.setState(new MatchState());
     this.namePool = pickBotNames(16);
 
+    // Metadata exibida na lista de salas do lobby.
+    void this.setMetadata({ map: "Praça" });
+
     // Sala nunca fica vazia: bots preenchem os slots (pilar #1 do GDD).
     this.rebalanceBots();
 

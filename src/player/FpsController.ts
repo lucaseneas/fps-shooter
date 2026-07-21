@@ -209,9 +209,30 @@ export class FpsController {
     this.syncVisual();
   }
 
+  /** True quando andando no chão (usado para o som de passos). */
+  get isMovingOnGround(): boolean {
+    return (
+      this.movementEnabled &&
+      this.sim.grounded &&
+      (this.keys.has("KeyW") ||
+        this.keys.has("KeyA") ||
+        this.keys.has("KeyS") ||
+        this.keys.has("KeyD"))
+    );
+  }
+
+  get isRunning(): boolean {
+    return this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+  }
+
   /** Posição dos pés. */
   getFeet(): Vector3 {
     return new Vector3(this.sim.x, this.sim.y, this.sim.z);
+  }
+
+  /** Direção horizontal da câmera (usada pelo minimapa). */
+  getYaw(): number {
+    return this.yaw;
   }
 
   /** Posição do olho (origem do hitscan). */

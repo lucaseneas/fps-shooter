@@ -150,10 +150,19 @@ body {
   opacity: 1;
 }
 
+/* ---------- Minimapa ---------- */
+#minimap {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 /* ---------- Kill feed ---------- */
 #killFeed {
   position: absolute;
-  top: 14px;
+  top: 206px;
   right: 16px;
   display: flex;
   flex-direction: column;
@@ -398,34 +407,57 @@ body {
   cursor: pointer;
 }
 
-/* ---------- Overlay ---------- */
-#overlay {
+/* ---------- Menu inicial ---------- */
+#mainMenu {
   position: fixed;
   inset: 0;
   z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(6, 9, 13, 0.72);
-  backdrop-filter: blur(6px);
-  transition: opacity 0.25s ease;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255, 157, 47, 0.07), transparent 55%),
+    radial-gradient(ellipse at 85% 100%, rgba(60, 110, 200, 0.1), transparent 55%),
+    var(--bg);
 }
 
-#overlay.hidden {
-  opacity: 0;
-  pointer-events: none;
+#mainMenu.hidden {
+  display: none;
 }
 
-.overlay-card {
+#settingsButton {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  width: 46px;
+  height: 46px;
+  font-size: 22px;
+  line-height: 1;
+  color: #c3ccd6;
+  background: rgba(18, 23, 31, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.2s ease, color 0.15s ease;
+}
+
+#settingsButton:hover {
+  color: var(--accent);
+  transform: rotate(30deg);
+}
+
+.menu-card {
   text-align: center;
-  padding: 40px 48px;
+  padding: 38px 46px;
   border-radius: 16px;
   background: rgba(18, 23, 31, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  max-width: 720px;
+  width: calc(100% - 48px);
 }
 
-.overlay-card h1 {
+.menu-card h1 {
   font-size: 34px;
   letter-spacing: 1px;
 }
@@ -438,12 +470,43 @@ body {
   letter-spacing: 2px;
 }
 
+.menu-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  margin-top: 24px;
+  text-align: left;
+}
+
+@media (max-width: 640px) {
+  .menu-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.menu-info h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.menu-info h3 + .controls {
+  margin-bottom: 18px;
+}
+
+.info-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #c3ccd6;
+}
+
 .controls {
   list-style: none;
-  margin: 26px 0;
   display: grid;
-  gap: 10px;
-  font-size: 14px;
+  gap: 8px;
+  font-size: 13px;
   color: #c3ccd6;
 }
 
@@ -451,7 +514,6 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  justify-content: center;
 }
 
 kbd {
@@ -466,30 +528,89 @@ kbd {
   font-size: 12px;
 }
 
-#playButton {
-  margin-top: 8px;
-  padding: 12px 28px;
-  font-size: 16px;
+/* ---------- Modal de configurações / pausa ---------- */
+#settingsModal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 13, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+#settingsModal.hidden {
+  display: none;
+}
+
+.modal-card {
+  text-align: center;
+  padding: 30px 38px;
+  border-radius: 16px;
+  background: rgba(18, 23, 31, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  min-width: 360px;
+}
+
+.modal-card h2 {
+  font-size: 18px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--accent);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.modal-actions button {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1206;
+  background: var(--accent);
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.modal-actions button.secondary,
+.end-actions button.secondary {
+  background: #222a35;
+  color: #c3ccd6;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Modo menu: só o botão Fechar. Modo pausa: Voltar ao jogo + Sair. */
+#settingsModal.menu-mode #resumeButton,
+#settingsModal.menu-mode #quitButton {
+  display: none;
+}
+
+#settingsModal.pause-mode #closeSettingsButton {
+  display: none;
+}
+
+.end-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.end-actions button {
+  padding: 10px 24px;
+  font-size: 15px;
   font-weight: 600;
   color: #1a1206;
   background: var(--accent);
   border: none;
   border-radius: 10px;
   cursor: pointer;
-  transition: transform 0.1s ease, filter 0.15s ease;
-}
-
-#playButton:hover {
-  filter: brightness(1.08);
-}
-
-#playButton:active {
-  transform: scale(0.97);
-}
-
-#playButton:disabled {
-  filter: grayscale(0.6) brightness(0.7);
-  cursor: wait;
 }
 
 #nameInput {
@@ -515,6 +636,91 @@ kbd {
   font-size: 13px;
   color: #8b97a3;
   min-height: 18px;
+}
+
+/* ---------- Lobby ---------- */
+#lobbyPanel {
+  margin: 20px auto 0;
+  max-width: 320px;
+  text-align: left;
+}
+
+#lobbyPanel h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+#lobbyPanel.hidden {
+  display: none;
+}
+
+#roomList {
+  max-height: 190px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.no-rooms {
+  font-size: 13px;
+  color: #8b97a3;
+  text-align: center;
+  padding: 14px 0;
+}
+
+.room-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(10, 14, 20, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.room-info b {
+  color: #e8ecf1;
+}
+
+.room-meta {
+  color: #8b97a3;
+  font-size: 12px;
+}
+
+.room-row button,
+.lobby-actions button {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1206;
+  background: var(--accent);
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.lobby-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.lobby-actions button.secondary {
+  background: #222a35;
+  color: #c3ccd6;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+button:disabled {
+  filter: grayscale(0.6) brightness(0.7);
+  cursor: wait;
 }
 
 /* ---------- Configurações ---------- */
@@ -564,7 +770,8 @@ kbd {
 }
 
 #sensValue,
-#botsValue {
+#botsValue,
+#volValue {
   font-size: 13px;
   font-weight: 700;
   color: var(--accent);

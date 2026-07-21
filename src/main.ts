@@ -8,14 +8,28 @@ import { ViewModel } from "./player/ViewModel";
 import { WeaponSystem } from "./game/WeaponSystem";
 import { EffectsManager } from "./game/effects";
 import { Hud, ScoreRow } from "./ui/Hud";
+import { AudioManager } from "./game/audio";
 import { RemotePlayer } from "./net/RemotePlayer";
-import { joinDeathmatch, forEachPlayer, PlayerSnapshot } from "./net/NetworkClient";
+import {
+  listRooms,
+  createRoom,
+  joinRoomById,
+  forEachPlayer,
+  PlayerSnapshot,
+  RoomListing,
+} from "./net/NetworkClient";
+import { Minimap } from "./ui/Minimap";
 import { CONFIG } from "../shared/config";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-const overlay = document.getElementById("overlay") as HTMLDivElement;
-const playButton = document.getElementById("playButton") as HTMLButtonElement;
+const mainMenu = document.getElementById("mainMenu") as HTMLDivElement;
+const settingsModal = document.getElementById("settingsModal") as HTMLDivElement;
+const settingsButton = document.getElementById("settingsButton") as HTMLButtonElement;
+const resumeButton = document.getElementById("resumeButton") as HTMLButtonElement;
+const quitButton = document.getElementById("quitButton") as HTMLButtonElement;
+const closeSettingsButton = document.getElementById("closeSettingsButton") as HTMLButtonElement;
 const restartButton = document.getElementById("restartButton") as HTMLButtonElement;
+const menuButton = document.getElementById("menuButton") as HTMLButtonElement;
 const nameInput = document.getElementById("nameInput") as HTMLInputElement;
 const statusEl = document.getElementById("connectionStatus") as HTMLParagraphElement;
 const debugEl = document.getElementById("debug") as HTMLDivElement;
@@ -23,6 +37,12 @@ const sensSlider = document.getElementById("sensSlider") as HTMLInputElement;
 const sensValue = document.getElementById("sensValue") as HTMLSpanElement;
 const botsSlider = document.getElementById("botsSlider") as HTMLInputElement;
 const botsValue = document.getElementById("botsValue") as HTMLSpanElement;
+const volSlider = document.getElementById("volSlider") as HTMLInputElement;
+const volValue = document.getElementById("volValue") as HTMLSpanElement;
+const roomListEl = document.getElementById("roomList") as HTMLDivElement;
+const refreshRoomsButton = document.getElementById("refreshRoomsButton") as HTMLButtonElement;
+const createRoomButton = document.getElementById("createRoomButton") as HTMLButtonElement;
+const minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement;
 
 const engine = new Engine(canvas, true, {
   preserveDrawingBuffer: true,
@@ -33,6 +53,8 @@ const engine = new Engine(canvas, true, {
 const scene = createScene(engine);
 const effects = new EffectsManager(scene);
 const hud = new Hud();
+const audio = new AudioManager();
+const minimap = new Minimap(minimapCanvas);
 
 const player = new FpsController(scene, canvas, {
   spawnPosition: new Vector3(0, 0, -18),
@@ -85,8 +107,28 @@ botsSlider.addEventListener("input", () => {
 
 loadBotsSetting();
 
+// --- Configuração: volume ---
+const VOL_STORAGE_KEY = "fps.volume";
+
+function applyVolume(value: number): void {
+  audio.setVolume(value);
+  volSlider.value = String(value);
+  volValue.textContent = `${Math.round(value * 100)}%`;
+}
+
+volSlider.addEventListener("input", () => {
+  const value = parseFloat(volSlider.value);
+  applyVolume(value);
+  localStorage.setItem(VOL_STORAGE_KEY, String(value));
+});
+
+const savedVol = parseFloat(localStorage.getItem(VOL_STORAGE_KEY) ?? "0.5");
+applyVolume(Number.isFinite(savedVol) ? Math.min(1, Math.max(0, savedVol)) : 0.5);
+
 // --- Estado da sessão ---
 let room: Room | null = null;
+/** True do momento em que entra numa sala até voltar ao menu. */
+let inGame = false;
 const remotePlayers = new Map<string, RemotePlayer>();
 let ownInitialized = false;
 let lastKnownHealth: number = CONFIG.playerMaxHealth;
@@ -96,44 +138,188 @@ let endScreenShown = false;
 /** Ping medido pelo cliente (ms), para o indicador no HUD. */
 let pingMs: number | null = null;
 
-// --- Conexão ---
-async function connect(): Promise<void> {
-  playButton.disabled = true;
-  statusEl.classList.remove("error");
-  statusEl.textContent = "Conectando ao servidor…";
+// --- Lobby: lista de salas ---
+let lobbyRefreshInterval = 0;
 
-  const name = nameInput.value.trim() || `Player${Math.floor(Math.random() * 900 + 100)}`;
+function playerName(): string {
+  return nameInput.value.trim() || `Player${Math.floor(Math.random() * 900 + 100)}`;
+}
 
+async function enterLobby(): Promise<void> {
+  window.clearInterval(lobbyRefreshInterval);
+  createRoomButton.disabled = false;
+  refreshRoomsButton.disabled = false;
+  await refreshRooms();
+  lobbyRefreshInterval = window.setInterval(refreshRooms, 3000);
+}
+
+async function refreshRooms(): Promise<void> {
+  let rooms: RoomListing[];
   try {
-    room = await joinDeathmatch(name);
+    rooms = await listRooms();
   } catch {
     statusEl.classList.add("error");
-    statusEl.textContent =
-      "Servidor offline. Rode `npm run server` e tente de novo.";
-    playButton.textContent = "Tentar novamente";
-    playButton.disabled = false;
-    playButton.onclick = () => connect();
+    statusEl.textContent = "Servidor offline. Rode `npm run server`.";
+    roomListEl.innerHTML = `<p class="no-rooms">Sem conexão com o servidor.</p>`;
+    return;
+  }
+  statusEl.classList.remove("error");
+  statusEl.textContent = "";
+  renderRoomList(rooms);
+}
+
+function renderRoomList(rooms: RoomListing[]): void {
+  if (rooms.length === 0) {
+    roomListEl.innerHTML = `<p class="no-rooms">Nenhuma sala disponível.<br />Crie a primeira!</p>`;
     return;
   }
 
-  statusEl.textContent = "Conectado!";
-  playButton.textContent = "Clique para jogar";
-  playButton.disabled = false;
-  playButton.onclick = () => player.requestPointerLock();
+  roomListEl.innerHTML = "";
+  for (const r of rooms) {
+    const row = document.createElement("div");
+    row.className = "room-row";
+
+    const info = document.createElement("div");
+    info.className = "room-info";
+    info.innerHTML =
+      `<b>Sala ${r.roomId.slice(0, 6)}</b><br />` +
+      `<span class="room-meta">${r.clients}/${r.maxClients} jogadores · Mapa: ${r.map}</span>`;
+
+    const joinBtn = document.createElement("button");
+    joinBtn.textContent = "Entrar";
+    joinBtn.addEventListener("click", () => void joinLobbyRoom(r.roomId));
+
+    row.append(info, joinBtn);
+    roomListEl.appendChild(row);
+  }
+}
+
+/** Entra numa sala existente (roomId) ou cria uma nova (null). */
+async function joinLobbyRoom(roomId: string | null): Promise<void> {
+  window.clearInterval(lobbyRefreshInterval);
+  createRoomButton.disabled = true;
+  refreshRoomsButton.disabled = true;
+  statusEl.classList.remove("error");
+  statusEl.textContent = roomId ? "Entrando na sala…" : "Criando sala…";
+
+  try {
+    room = roomId
+      ? await joinRoomById(roomId, playerName())
+      : await createRoom(playerName());
+  } catch {
+    statusEl.classList.add("error");
+    statusEl.textContent = roomId
+      ? "Não foi possível entrar (sala cheia ou fechada)."
+      : "Não foi possível criar a sala.";
+    createRoomButton.disabled = false;
+    refreshRoomsButton.disabled = false;
+    await refreshRooms();
+    lobbyRefreshInterval = window.setInterval(refreshRooms, 3000);
+    return;
+  }
+
+  statusEl.textContent = "";
+  createRoomButton.disabled = false;
+  refreshRoomsButton.disabled = false;
+  startGame(room);
+}
+
+refreshRoomsButton.addEventListener("click", () => void refreshRooms());
+createRoomButton.addEventListener("click", () => void joinLobbyRoom(null));
+
+// --- Entrar / sair do jogo 3D ---
+function startGame(r: Room): void {
+  inGame = true;
+  mainMenu.classList.add("hidden");
+  settingsModal.classList.add("hidden");
 
   // Prediction: cada passo fixo local vira um input enviado ao servidor.
   player.onInput = (input) => {
     if (ownInitialized) room?.send("input", input);
   };
 
-  setupRoom(room);
+  setupRoom(r);
+
+  audio.resume();
+  player.requestPointerLock();
+  // Se o navegador negar o lock (gesto "gasto" pelo await do join),
+  // mostra o modal de pausa como porta de entrada.
+  window.setTimeout(() => {
+    if (inGame && !player.isPointerLocked) openPauseModal();
+  }, 400);
 }
+
+/** Volta ao menu inicial, limpando todo o estado da partida. */
+function resetToMenu(errorMsg?: string): void {
+  inGame = false;
+  room = null;
+  ownInitialized = false;
+  playerDead = false;
+  endScreenShown = false;
+  lastKnownHealth = CONFIG.playerMaxHealth;
+  pingMs = null;
+
+  for (const rp of remotePlayers.values()) rp.dispose();
+  remotePlayers.clear();
+
+  weapons.setTrigger(false);
+  weapons.refillAll();
+  weapons.setEnabled(true);
+  player.setMovementEnabled(true);
+
+  hud.hideDeathScreen();
+  hud.setScoreboardVisible(false);
+  hud.setHealth(CONFIG.playerMaxHealth);
+  hud.setKills(0);
+  document.getElementById("endScreen")!.classList.add("hidden");
+
+  settingsModal.classList.add("hidden");
+  document.exitPointerLock();
+  mainMenu.classList.remove("hidden");
+
+  if (errorMsg) {
+    statusEl.classList.add("error");
+    statusEl.textContent = errorMsg;
+  }
+  void enterLobby();
+}
+
+// --- Modal de configurações / pausa ---
+function openPauseModal(): void {
+  settingsModal.classList.remove("hidden", "menu-mode");
+  settingsModal.classList.add("pause-mode");
+}
+
+function openMenuSettings(): void {
+  settingsModal.classList.remove("hidden", "pause-mode");
+  settingsModal.classList.add("menu-mode");
+}
+
+settingsButton.addEventListener("click", openMenuSettings);
+closeSettingsButton.addEventListener("click", () => {
+  settingsModal.classList.add("hidden");
+});
+resumeButton.addEventListener("click", () => {
+  settingsModal.classList.add("hidden");
+  audio.resume();
+  player.requestPointerLock();
+});
+quitButton.addEventListener("click", () => {
+  // O onLeave da sala chama resetToMenu().
+  void room?.leave();
+});
 
 function setupRoom(r: Room): void {
   r.onStateChange(() => reconcile(r));
 
-  r.onMessage("kill", (e: { killerName: string; victimName: string; weaponName: string }) => {
+  r.onMessage("kill", (e: {
+    killerId: string;
+    killerName: string;
+    victimName: string;
+    weaponName: string;
+  }) => {
     hud.addKillFeedEntry(e.killerName, e.victimName, e.weaponName);
+    if (e.killerId === r.sessionId) audio.killConfirm();
   });
 
   r.onMessage("died", (e: { killerName: string; weaponName: string }) => {
@@ -142,6 +328,7 @@ function setupRoom(r: Room): void {
     player.setMovementEnabled(false);
     weapons.setEnabled(false);
     hud.showDeathScreen(e.killerName, e.weaponName);
+    audio.death();
   });
 
   r.onMessage("respawn", (e: { x: number; z: number }) => {
@@ -151,6 +338,7 @@ function setupRoom(r: Room): void {
     player.setMovementEnabled(true);
     playerDead = false;
     hud.hideDeathScreen();
+    audio.respawn();
   });
 
   // Tiros dos bots (server-side).
@@ -167,6 +355,7 @@ function setupRoom(r: Room): void {
     const end = new Vector3(e.endX, e.endY, e.endZ);
     effects.spawnTracer(from, end);
     effects.spawnImpact(end, e.hit);
+    audio.remoteShot(Vector3.Distance(from, player.getHead()));
   });
 
   // Tiros de outros humanos (retransmitidos pelo servidor).
@@ -179,6 +368,7 @@ function setupRoom(r: Room): void {
     for (const end of e.ends) {
       effects.spawnTracer(from, new Vector3(end.x, end.y, end.z));
     }
+    audio.remoteShot(Vector3.Distance(from, player.getHead()));
   });
 
   r.onMessage("matchEnd", () => {
@@ -211,14 +401,10 @@ function setupRoom(r: Room): void {
     hud.setKills(0);
   });
 
-  r.onLeave(() => {
+  r.onLeave((code) => {
     window.clearInterval(pingInterval);
-    pingMs = null;
-    statusEl.classList.add("error");
-    statusEl.textContent = "Desconectado do servidor.";
-    playButton.textContent = "Reconectar";
-    playButton.onclick = () => window.location.reload();
-    overlay.classList.remove("hidden");
+    // 1000 = saída consentida (botão "Sair para o menu"); acima disso é queda.
+    resetToMenu(code > 1000 ? "Desconectado do servidor." : undefined);
   });
 }
 
@@ -294,7 +480,10 @@ function handleOwnState(p: PlayerSnapshot): void {
   }
 
   if (p.health !== lastKnownHealth) {
-    if (p.health < lastKnownHealth) hud.flashDamage();
+    if (p.health < lastKnownHealth) {
+      hud.flashDamage();
+      audio.damaged();
+    }
     hud.setHealth(p.health);
     lastKnownHealth = p.health;
   }
@@ -336,8 +525,11 @@ weapons.onFire = (data) => {
   });
 
   if (data.localHits.length > 0) {
-    hud.showHitmarker(data.localHits.some((h) => h.part === "head"));
+    const headshot = data.localHits.some((h) => h.part === "head");
+    hud.showHitmarker(headshot);
+    audio.hitmarker(headshot);
   }
+  audio.shoot(weapons.weapon.id);
 };
 
 weapons.onRecoil = (kick) => {
@@ -345,10 +537,13 @@ weapons.onRecoil = (kick) => {
   viewModel.triggerKick(kick / 0.01);
 };
 
+let wasReloading = false;
 weapons.onStateChanged = () => {
   hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, weapons.isReloading);
   hud.setWeapon(weapons.weaponIndex);
   viewModel.setReloading(weapons.isReloading);
+  if (weapons.isReloading && !wasReloading) audio.reload();
+  wasReloading = weapons.isReloading;
 };
 
 // --- Input de combate ---
@@ -393,16 +588,34 @@ restartButton.addEventListener("click", () => {
   player.requestPointerLock();
 });
 
+menuButton.addEventListener("click", () => {
+  void room?.leave();
+});
+
+// WebAudio precisa de um gesto do usuário para tocar.
+restartButton.addEventListener("click", () => audio.resume());
+
+// Clique no jogo (fora do lock) retoma o pointer lock.
+canvas.addEventListener("click", () => {
+  if (inGame && !player.isPointerLocked && settingsModal.classList.contains("hidden")) {
+    player.requestPointerLock();
+  }
+});
+
 document.addEventListener("pointerlockchange", () => {
   if (player.isPointerLocked) {
-    overlay.classList.add("hidden");
-  } else if (!endScreenShown) {
-    overlay.classList.remove("hidden");
+    audio.resume();
+    settingsModal.classList.add("hidden");
+  } else if (inGame && !endScreenShown) {
+    // ESC no jogo → modal de pausa (configurações + sair para o menu).
+    openPauseModal();
   }
 });
 
 // --- Render loop ---
 let debugAccumulator = 0;
+let footstepAccumulator = 0;
+let minimapAccumulator = 0;
 
 hud.setHealth(CONFIG.playerMaxHealth);
 hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, false);
@@ -410,6 +623,9 @@ hud.setWeapon(0);
 hud.setKills(0);
 
 engine.runRenderLoop(() => {
+  // No menu inicial nada é simulado nem renderizado.
+  if (!inGame) return;
+
   const dt = engine.getDeltaTime() / 1000;
 
   player.update(dt);
@@ -417,10 +633,30 @@ engine.runRenderLoop(() => {
   viewModel.update(dt);
   for (const rp of remotePlayers.values()) rp.update(dt);
 
+  // Som de passos.
+  if (player.isMovingOnGround) {
+    footstepAccumulator += dt;
+    const interval = player.isRunning ? 0.3 : 0.42;
+    if (footstepAccumulator >= interval) {
+      footstepAccumulator = 0;
+      audio.footstep();
+    }
+  } else {
+    footstepAccumulator = 0;
+  }
+
   // Contagem da tela de morte.
   if (playerDead) {
     deathCountdown = Math.max(0, deathCountdown - dt);
     hud.updateDeathTimer(deathCountdown);
+  }
+
+  // Minimapa (~15 Hz é suficiente).
+  minimapAccumulator += dt;
+  if (minimapAccumulator >= 1 / 15) {
+    minimapAccumulator = 0;
+    const feet = player.getFeet();
+    minimap.draw(feet.x, feet.z, player.getYaw());
   }
 
   scene.render();
@@ -437,4 +673,4 @@ engine.runRenderLoop(() => {
 
 window.addEventListener("resize", () => engine.resize());
 
-connect();
+void enterLobby();

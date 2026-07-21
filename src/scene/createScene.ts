@@ -21,6 +21,12 @@ export function createScene(engine: Engine): Scene {
   scene.clearColor = new Color4(0.53, 0.68, 0.82, 1.0); // céu azulado
   scene.ambientColor = new Color3(0.3, 0.3, 0.35);
 
+  // Névoa leve para dar profundidade sem custo.
+  scene.fogMode = Scene.FOGMODE_LINEAR;
+  scene.fogColor = new Color3(0.53, 0.68, 0.82);
+  scene.fogStart = 60;
+  scene.fogEnd = 170;
+
   scene.collisionsEnabled = true;
   scene.gravity = new Vector3(0, -0.9, 0);
 
@@ -62,13 +68,18 @@ function createGround(scene: Scene): void {
 function createMapBoxes(scene: Scene): void {
   const materials: Record<BoxDef["kind"], StandardMaterial> = {
     wall: new StandardMaterial("wallMat", scene),
+    building: new StandardMaterial("buildingMat", scene),
     box: new StandardMaterial("boxMat", scene),
     platform: new StandardMaterial("rampMat", scene),
+    pillar: new StandardMaterial("pillarMat", scene),
   };
   materials.wall.diffuseColor = new Color3(0.22, 0.25, 0.3);
   materials.wall.specularColor = new Color3(0.05, 0.05, 0.05);
+  materials.building.diffuseColor = new Color3(0.55, 0.48, 0.42);
+  materials.building.specularColor = new Color3(0.05, 0.05, 0.05);
   materials.box.diffuseColor = new Color3(0.75, 0.42, 0.2);
   materials.platform.diffuseColor = new Color3(0.35, 0.55, 0.4);
+  materials.pillar.diffuseColor = new Color3(0.6, 0.62, 0.68);
 
   MAP_BOXES.forEach((b, i) => {
     const mesh = MeshBuilder.CreateBox(

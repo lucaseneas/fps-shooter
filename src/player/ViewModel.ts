@@ -15,6 +15,8 @@ export class ViewModel {
   private readonly root: Mesh;
   private readonly bodyMat: StandardMaterial;
   private readonly barrel: Mesh;
+  private readonly flash: Mesh;
+  private flashTimeout = 0;
 
   private kick = 0;
   private reloadDip = 0;
@@ -43,11 +45,25 @@ export class ViewModel {
     this.barrel.material = this.bodyMat;
     this.barrel.parent = this.root;
 
+    // Muzzle flash na ponta do cano (aparece por ~45ms ao atirar).
+    const flashMat = new StandardMaterial("vmFlashMat", scene);
+    flashMat.emissiveColor = new Color3(1, 0.8, 0.35);
+    flashMat.disableLighting = true;
+    this.flash = MeshBuilder.CreateSphere(
+      "vmFlash",
+      { diameter: 0.14, segments: 4 },
+      scene
+    );
+    this.flash.material = flashMat;
+    this.flash.position = new Vector3(0, 0.2, 0);
+    this.flash.parent = this.barrel;
+    this.flash.setEnabled(false);
+
     this.root.parent = camera;
     this.root.position = this.basePos.clone();
 
     // View model não participa de colisão nem de raycast de tiro.
-    for (const m of [this.root, this.barrel]) {
+    for (const m of [this.root, this.barrel, this.flash]) {
       m.isPickable = false;
       m.renderingGroupId = 1; // renderiza por cima do cenário
     }
@@ -63,6 +79,12 @@ export class ViewModel {
 
   triggerKick(strength = 1): void {
     this.kick = Math.min(1, this.kick + 0.55 * strength);
+
+    this.flash.setEnabled(true);
+    // Rotação aleatória para o flash não parecer estático em automático.
+    this.flash.scaling.setAll(0.8 + Math.random() * 0.5);
+    window.clearTimeout(this.flashTimeout);
+    this.flashTimeout = window.setTimeout(() => this.flash.setEnabled(false), 45);
   }
 
   setReloading(on: boolean): void {
