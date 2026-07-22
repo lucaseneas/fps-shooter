@@ -52,11 +52,13 @@ export class WeaponSystem {
   private semiAutoLock = false;
   private enabled = true;
   private infiniteAmmo = false;
+  private readonly recoilShots = new Map<string, number>();
+  private readonly lastShotAt = new Map<string, number>();
 
   /** Chamado a cada disparo — o servidor decide o dano (lag comp). */
   onFire: ((data: FireData) => void) | null = null;
   /** Chamado quando o recoil deve ser aplicado (pitch em radianos). */
-  onRecoil: ((pitchKick: number) => void) | null = null;
+  onRecoil: ((pitchKick: number, yawKick: number) => void) | null = null;
   /** Notifica HUD (troca de arma, munição, reload). */
   onStateChanged: (() => void) | null = null;
 
@@ -199,33 +201,45 @@ export class WeaponSystem {
     const hits: HitInfo[] = [];
     const dirs: Vector3[] = [];
     for (let i = 0; i < this.weapon.pellets; i++) {
-      const dir = this.applySpread(baseDir, this.weapon.spreadDeg);
+      const [yaw, pitch] = this.weapon.pelletPattern[i] ?? [0, 0];
+      const dir = this.applyFixedOffset(baseDir, yaw, pitch);
       dirs.push(dir);
       const result = this.raycast(origin, dir);
       if (result.info) hits.push(result.info);
     }
 
     this.onFire?.({ origin, dirs, localHits: hits });
-    this.onRecoil?.(this.weapon.recoilPitch);
+    const recoil = this.nextRecoil();
+    this.onRecoil?.(recoil.pitch, recoil.yaw);
     this.onStateChanged?.();
   }
 
-  /** Desvia a direção num cone aleatório de meio-ângulo `spreadDeg`. */
-  private applySpread(dir: Vector3, spreadDeg: number): Vector3 {
-    if (spreadDeg <= 0) return dir.clone();
-    const spreadRad = (spreadDeg * Math.PI) / 180;
+  /** Aplica um desvio fixo ao padrão de pellets. */
+  private applyFixedOffset(dir: Vector3, yawDeg: number, pitchDeg: number): Vector3 {
+    if (yawDeg === 0 && pitchDeg === 0) return dir.clone();
 
     // Base ortonormal em torno da direção.
     const up = Math.abs(dir.y) > 0.99 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0);
     const right = Vector3.Cross(dir, up).normalize();
     const realUp = Vector3.Cross(right, dir).normalize();
 
-    const angle = Math.random() * Math.PI * 2;
-    const radius = Math.random() * spreadRad;
     return dir
-      .add(right.scale(Math.cos(angle) * radius))
-      .add(realUp.scale(Math.sin(angle) * radius))
+      .add(right.scale((yawDeg * Math.PI) / 180))
+      .add(realUp.scale((pitchDeg * Math.PI) / 180))
       .normalize();
+  }
+
+  /** Próximo passo do padrão; após uma pausa, o padrão reinicia. */
+  private nextRecoil(): { yaw: number; pitch: number } {
+    const now = performance.now();
+    const id = this.weapon.id;
+    const previous = this.lastShotAt.get(id) ?? -Infinity;
+    const shot = now - previous > 250 ? 0 : this.recoilShots.get(id) ?? 0;
+    const [yawDeg, pitchDeg] =
+      this.weapon.recoilPattern[Math.min(shot, this.weapon.recoilPattern.length - 1)];
+    this.recoilShots.set(id, shot + 1);
+    this.lastShotAt.set(id, now);
+    return { yaw: (yawDeg * Math.PI) / 180, pitch: (pitchDeg * Math.PI) / 180 };
   }
 
   private raycast(

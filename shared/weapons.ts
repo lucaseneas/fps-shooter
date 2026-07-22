@@ -11,13 +11,13 @@ export interface WeaponDef {
   damageHead: number;
   /** Balas por disparo (escopeta > 1). */
   pellets: number;
-  /** Meio-ângulo do cone de spread (graus). */
-  spreadDeg: number;
+  /** Desvios fixos (yaw, pitch em graus) para os pellets do disparo. */
+  pelletPattern: ReadonlyArray<readonly [number, number]>;
   magSize: number;
   reserveAmmo: number;
   reloadTime: number;
-  /** Chute vertical de recoil por tiro (radianos). */
-  recoilPitch: number;
+  /** Sequência fixa de recoil (yaw, pitch em graus), após cada tiro. */
+  recoilPattern: ReadonlyArray<readonly [number, number]>;
   /** Distância até onde o dano é 100%. */
   falloffStart: number;
   /** Distância onde o dano chega ao mínimo. */
@@ -38,11 +38,11 @@ export const WEAPONS: WeaponDef[] = [
     damageBody: 20,
     damageHead: 50,
     pellets: 1,
-    spreadDeg: 0.7,
+    pelletPattern: [[0, 0]],
     magSize: 12,
     reserveAmmo: 48,
     reloadTime: 1.4,
-    recoilPitch: 0.006,
+    recoilPattern: [[0.1, 0.35], [-0.14, 0.42], [0.18, 0.5]],
     falloffStart: 20,
     falloffEnd: 50,
     falloffMin: 0.6,
@@ -56,11 +56,11 @@ export const WEAPONS: WeaponDef[] = [
     damageBody: 25,
     damageHead: 60,
     pellets: 1,
-    spreadDeg: 1.2,
+    pelletPattern: [[0, 0]],
     magSize: 30,
     reserveAmmo: 90,
     reloadTime: 2.2,
-    recoilPitch: 0.0085,
+    recoilPattern: [[0.18, 0.32], [-0.22, 0.38], [0.28, 0.44], [-0.32, 0.5], [0.22, 0.56], [-0.16, 0.62], [0.12, 0.68], [-0.08, 0.72]],
     falloffStart: 25,
     falloffEnd: 60,
     falloffMin: 0.7,
@@ -74,11 +74,11 @@ export const WEAPONS: WeaponDef[] = [
     damageBody: 8, // por pellet (9 pellets = até 72 de perto)
     damageHead: 8, // sem multiplicador de headshot (GDD)
     pellets: 9,
-    spreadDeg: 5.5,
+    pelletPattern: [[0, 0], [2.6, 0], [-2.6, 0], [0, 2.6], [0, -2.6], [1.9, 1.9], [-1.9, 1.9], [1.9, -1.9], [-1.9, -1.9]],
     magSize: 6,
     reserveAmmo: 24,
     reloadTime: 2.6,
-    recoilPitch: 0.02,
+    recoilPattern: [[0.45, 1.3], [-0.28, 1.5]],
     falloffStart: 8,
     falloffEnd: 22,
     falloffMin: 0.2,

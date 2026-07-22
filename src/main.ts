@@ -565,9 +565,9 @@ weapons.onFire = (data) => {
   audio.shoot(weapons.weapon.id);
 };
 
-weapons.onRecoil = (kick) => {
-  player.applyRecoil(kick);
-  viewModel.triggerKick(kick / 0.01);
+weapons.onRecoil = (pitchKick, yawKick) => {
+  player.applyRecoil(pitchKick, yawKick);
+  viewModel.triggerKick(pitchKick / 0.01);
 };
 
 let wasReloading = false;

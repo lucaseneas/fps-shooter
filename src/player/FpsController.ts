@@ -59,6 +59,7 @@ export class FpsController {
   private basePitch = 0;
   /** Recoil visual temporário — some ao parar de atirar. */
   private recoilOffset = 0;
+  private recoilYawOffset = 0;
   private pointerLocked = false;
   private movementEnabled = true;
 
@@ -167,12 +168,13 @@ export class FpsController {
   }
 
   /** Chute de recoil visual: levanta a mira enquanto atira. */
-  applyRecoil(pitchKick: number): void {
+  applyRecoil(pitchKick: number, yawKick = 0): void {
     this.recoilOffset = Scalar.Clamp(
       this.recoilOffset - pitchKick,
       -this.maxPitch,
       this.maxPitch
     );
+    this.recoilYawOffset += yawKick;
   }
 
   /** Recupera a mira quando não está atirando. */
@@ -180,7 +182,9 @@ export class FpsController {
     if (shooting) return;
     const t = Math.min(1, deltaSeconds * this.recoilRecoverySpeed);
     this.recoilOffset = Scalar.Lerp(this.recoilOffset, 0, t);
+    this.recoilYawOffset = Scalar.Lerp(this.recoilYawOffset, 0, t);
     if (Math.abs(this.recoilOffset) < 0.00005) this.recoilOffset = 0;
+    if (Math.abs(this.recoilYawOffset) < 0.00005) this.recoilYawOffset = 0;
   }
 
   /** Teleporta (respawn): adota a posição e descarta inputs pendentes. */
@@ -192,6 +196,7 @@ export class FpsController {
     this.sim.grounded = true;
     this.pendingInputs.length = 0;
     this.recoilOffset = 0;
+    this.recoilYawOffset = 0;
     this.syncVisual();
   }
 
@@ -324,7 +329,7 @@ export class FpsController {
     );
     this.camera.rotation.set(
       Scalar.Clamp(this.basePitch + this.recoilOffset, -this.maxPitch, this.maxPitch),
-      this.yaw,
+      this.yaw + this.recoilYawOffset,
       0
     );
   }
