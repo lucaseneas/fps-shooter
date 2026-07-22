@@ -20,6 +20,8 @@ export class RemotePlayer {
   private readonly headMesh: Mesh;
   private readonly nameplate: Mesh;
   private readonly gun: Mesh;
+  private readonly debugBodyHitbox: Mesh;
+  private readonly debugHeadHitbox: Mesh;
 
   /** Alvo de interpolação (pés). */
   private targetPos = new Vector3(0, 0, 0);
@@ -60,6 +62,28 @@ export class RemotePlayer {
     this.headMesh.position.y = HEIGHT / 2 - 0.1;
     this.headMesh.material = headMat;
     this.headMesh.metadata = { hitbox: { id, part: "head" } };
+
+    // Contornos na última posição autoritativa recebida, sem interpolação.
+    const debugMat = new StandardMaterial(`${id}_debugHitboxMat`, scene);
+    debugMat.diffuseColor = new Color3(1, 0, 0);
+    debugMat.emissiveColor = new Color3(1, 0, 0);
+    debugMat.wireframe = true;
+    debugMat.alpha = 0.9;
+    this.debugBodyHitbox = MeshBuilder.CreateBox(
+      `${id}_debugBodyHitbox`,
+      { width: 0.9, height: 1.3, depth: 0.6 },
+      scene
+    );
+    this.debugBodyHitbox.material = debugMat;
+    this.debugBodyHitbox.isPickable = false;
+    this.debugHeadHitbox = MeshBuilder.CreateSphere(
+      `${id}_debugHeadHitbox`,
+      { diameter: 0.45, segments: 8 },
+      scene
+    );
+    this.debugHeadHitbox.material = debugMat;
+    this.debugHeadHitbox.isPickable = false;
+    this.setDebugHitboxes(false);
 
     // Arma na mão: aponta para +Z local — segue o yaw do corpo, mostrando
     // para onde o inimigo está mirando.
@@ -132,7 +156,16 @@ export class RemotePlayer {
   applyState(x: number, y: number, z: number, yaw: number, alive: boolean): void {
     this.targetPos.set(x, y + HEIGHT / 2, z);
     this.targetYaw = yaw;
+    this.debugBodyHitbox.position.set(x, y + 0.75, z);
+    this.debugBodyHitbox.rotation.y = yaw;
+    this.debugHeadHitbox.position.set(x, y + 1.7, z);
     this.setVisible(alive);
+  }
+
+  /** Exibe hitboxes na posição exata do último patch do servidor. */
+  setDebugHitboxes(on: boolean): void {
+    this.debugBodyHitbox.setEnabled(on);
+    this.debugHeadHitbox.setEnabled(on);
   }
 
   /** Interpola em direção ao último estado (chamar a cada frame). */
@@ -164,6 +197,8 @@ export class RemotePlayer {
     this.nameplate.setEnabled(on);
     this.gun.setEnabled(on);
     this.root.checkCollisions = on;
+    this.debugBodyHitbox.isVisible = on;
+    this.debugHeadHitbox.isVisible = on;
   }
 
   dispose(): void {

@@ -10,6 +10,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 export class EffectsManager {
   private readonly scene: Scene;
   private readonly tracerMat: StandardMaterial;
+  private readonly debugTracerMat: StandardMaterial;
   private readonly impactMat: StandardMaterial;
   private readonly bloodMat: StandardMaterial;
 
@@ -19,6 +20,10 @@ export class EffectsManager {
     this.tracerMat = new StandardMaterial("tracerMat", scene);
     this.tracerMat.emissiveColor = new Color3(1, 0.85, 0.4);
     this.tracerMat.disableLighting = true;
+
+    this.debugTracerMat = new StandardMaterial("debugTracerMat", scene);
+    this.debugTracerMat.emissiveColor = new Color3(0.15, 0.55, 1);
+    this.debugTracerMat.disableLighting = true;
 
     this.impactMat = new StandardMaterial("impactMat", scene);
     this.impactMat.emissiveColor = new Color3(1, 0.7, 0.3);
@@ -31,16 +36,31 @@ export class EffectsManager {
 
   /** Linha fina do cano até o ponto de impacto, some em ~60ms. */
   spawnTracer(from: Vector3, to: Vector3): void {
+    this.spawnLine(from, to, this.tracerMat, 60, 0.015);
+  }
+
+  /** Trajetória autoritativa enviada pelo servidor no modo debug. */
+  spawnDebugTracer(from: Vector3, to: Vector3): void {
+    this.spawnLine(from, to, this.debugTracerMat, 180, 0.028);
+  }
+
+  private spawnLine(
+    from: Vector3,
+    to: Vector3,
+    material: StandardMaterial,
+    durationMs: number,
+    diameter: number
+  ): void {
     const dir = to.subtract(from);
     const length = dir.length();
     if (length < 0.5) return;
 
     const tracer = MeshBuilder.CreateCylinder(
       "tracer",
-      { height: length, diameter: 0.015, tessellation: 3 },
+      { height: length, diameter, tessellation: 3 },
       this.scene
     );
-    tracer.material = this.tracerMat;
+    tracer.material = material;
     tracer.isPickable = false;
     tracer.position = from.add(dir.scale(0.5));
 
@@ -52,7 +72,7 @@ export class EffectsManager {
       tracer.rotate(axis.normalize(), angle);
     }
 
-    this.fadeAndDispose(tracer, 60);
+    this.fadeAndDispose(tracer, durationMs);
   }
 
   /** Faísca no ponto de impacto (parede/chão). */

@@ -780,6 +780,19 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+.toggle-control {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  color: #c3ccd6;
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.toggle-control input {
+  accent-color: var(--accent);
+}
+
 #connectionStatus.error {
   color: #e05545;
 }

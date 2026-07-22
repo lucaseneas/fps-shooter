@@ -72,6 +72,8 @@ export class DeathmatchRoom extends Room<MatchState> {
   private lastPingAt = new Map<string, number>();
   /** Rate limit de disparo por humano. */
   private lastFireAt = new Map<string, number>();
+  /** Clientes que ativaram o modo de depuração para a sessão atual. */
+  private debugClients = new Set<string>();
 
   /** Timestamp (ms) em que cada morto deve renascer. */
   private respawnAt = new Map<string, number>();
@@ -123,6 +125,11 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.rebalanceBots();
     });
 
+    this.onMessage("setDebug", (client, msg: { enabled: boolean }) => {
+      if (msg?.enabled === true) this.debugClients.add(client.sessionId);
+      else this.debugClients.delete(client.sessionId);
+    });
+
     this.setSimulationInterval(
       (dtMs) => this.update(dtMs / 1000),
       CONFIG.simulationIntervalMs
@@ -160,6 +167,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.rtt.delete(id);
     this.lastPingAt.delete(id);
     this.lastFireAt.delete(id);
+    this.debugClients.delete(id);
     this.respawnAt.delete(id);
     this.deathPos.delete(id);
     this.rebalanceBots();
@@ -339,7 +347,9 @@ export class DeathmatchRoom extends Room<MatchState> {
       (msg.ox - eye.x) ** 2 + (msg.oy - eye.y) ** 2 + (msg.oz - eye.z) ** 2
     );
     if (originDist > 2) return;
-    const origin: Vec3 = { x: msg.ox, y: msg.oy, z: msg.oz };
+    // Após validar o pedido, o traço parte sempre do olho calculado pelo
+    // servidor — nunca da posição declarada pelo cliente.
+    const origin: Vec3 = eye;
 
     // Rewind: metade do RTT + delay de interpolação dos remotos.
     const rewindMs = Math.min(
@@ -415,6 +425,11 @@ export class DeathmatchRoom extends Room<MatchState> {
       { shooterId, ends },
       { except: client }
     );
+
+    // Só o jogador em debug recebe o traço que o servidor realmente usou.
+    if (this.debugClients.has(shooterId)) {
+      client.send("debugShot", { origin, ends });
+    }
   }
 
   private applyDamage(
@@ -428,6 +443,11 @@ export class DeathmatchRoom extends Room<MatchState> {
     const attacker = this.state.players.get(attackerId);
     if (!target || !target.alive) return;
 
+    // Vida infinita precisa ser aplicada aqui, no lado autoritativo.
+    if (this.debugClients.has(targetId)) {
+      target.health = CONFIG.playerMaxHealth;
+      return;
+    }
     target.health = Math.max(0, target.health - Math.round(amount));
     if (target.health > 0) return;
 

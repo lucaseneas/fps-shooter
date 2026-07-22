@@ -51,6 +51,7 @@ export class WeaponSystem {
   /** Trava o gatilho de armas semi-auto até soltar o botão. */
   private semiAutoLock = false;
   private enabled = true;
+  private infiniteAmmo = false;
 
   /** Chamado a cada disparo — o servidor decide o dano (lag comp). */
   onFire: ((data: FireData) => void) | null = null;
@@ -104,6 +105,13 @@ export class WeaponSystem {
   setEnabled(on: boolean): void {
     this.enabled = on;
     if (!on) this.triggerHeld = false;
+  }
+
+  /** No modo debug, mantém todas as armas carregadas sem alterar a cadência. */
+  setInfiniteAmmo(on: boolean): void {
+    this.infiniteAmmo = on;
+    if (on) this.refillAll();
+    else this.onStateChanged?.();
   }
 
   setTrigger(held: boolean): void {
@@ -181,7 +189,7 @@ export class WeaponSystem {
       return;
     }
 
-    state.mag--;
+    if (!this.infiniteAmmo) state.mag--;
     this.cooldown = this.weapon.fireInterval;
     if (!this.weapon.auto) this.semiAutoLock = true;
 

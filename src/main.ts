@@ -39,6 +39,7 @@ const botsSlider = document.getElementById("botsSlider") as HTMLInputElement;
 const botsValue = document.getElementById("botsValue") as HTMLSpanElement;
 const volSlider = document.getElementById("volSlider") as HTMLInputElement;
 const volValue = document.getElementById("volValue") as HTMLSpanElement;
+const debugModeToggle = document.getElementById("debugModeToggle") as HTMLInputElement;
 const roomListEl = document.getElementById("roomList") as HTMLDivElement;
 const refreshRoomsButton = document.getElementById("refreshRoomsButton") as HTMLButtonElement;
 const createRoomButton = document.getElementById("createRoomButton") as HTMLButtonElement;
@@ -124,6 +125,24 @@ volSlider.addEventListener("input", () => {
 
 const savedVol = parseFloat(localStorage.getItem(VOL_STORAGE_KEY) ?? "0.5");
 applyVolume(Number.isFinite(savedVol) ? Math.min(1, Math.max(0, savedVol)) : 0.5);
+
+// --- Modo debug (a vida continua sendo aplicada pelo servidor) ---
+const DEBUG_STORAGE_KEY = "fps.debugMode";
+let debugMode = localStorage.getItem(DEBUG_STORAGE_KEY) === "true";
+debugModeToggle.checked = debugMode;
+
+function applyDebugMode(on: boolean): void {
+  debugMode = on;
+  debugModeToggle.checked = on;
+  weapons.setInfiniteAmmo(on);
+  for (const remote of remotePlayers.values()) remote.setDebugHitboxes(on);
+  room?.send("setDebug", { enabled: on });
+}
+
+debugModeToggle.addEventListener("change", () => {
+  applyDebugMode(debugModeToggle.checked);
+  localStorage.setItem(DEBUG_STORAGE_KEY, String(debugModeToggle.checked));
+});
 
 // --- Estado da sessão ---
 let room: Room | null = null;
@@ -239,6 +258,7 @@ function startGame(r: Room): void {
   };
 
   setupRoom(r);
+  applyDebugMode(debugMode);
 
   audio.resume();
   player.requestPointerLock();
@@ -371,6 +391,17 @@ function setupRoom(r: Room): void {
     audio.remoteShot(Vector3.Distance(from, player.getHead()));
   });
 
+  r.onMessage("debugShot", (e: {
+    origin: { x: number; y: number; z: number };
+    ends: Array<{ x: number; y: number; z: number }>;
+  }) => {
+    if (!debugMode) return;
+    const origin = new Vector3(e.origin.x, e.origin.y, e.origin.z);
+    for (const end of e.ends) {
+      effects.spawnDebugTracer(origin, new Vector3(end.x, end.y, end.z));
+    }
+  });
+
   r.onMessage("matchEnd", () => {
     // Tratado via estado no reconcile (matchOver), aqui só trava input.
     player.setMovementEnabled(false);
@@ -393,6 +424,7 @@ function setupRoom(r: Room): void {
 
   // Aplica a configuração de bots salva.
   r.send("setBots", { count: parseInt(botsSlider.value, 10) });
+  r.send("setDebug", { enabled: debugMode });
 
   r.onMessage("matchReset", () => {
     endScreenShown = false;
@@ -432,6 +464,7 @@ function reconcile(r: Room): void {
     if (!rp) {
       rp = new RemotePlayer(scene, id, p.name);
       remotePlayers.set(id, rp);
+      rp.setDebugHitboxes(debugMode);
       rp.applyState(p.x, p.y, p.z, p.yaw, p.alive);
       rp.snapToTarget();
     } else {
