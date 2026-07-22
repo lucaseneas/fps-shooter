@@ -74,6 +74,8 @@ export class DeathmatchRoom extends Room<MatchState> {
   private lastFireAt = new Map<string, number>();
   /** Clientes que ativaram o modo de depuração para a sessão atual. */
   private debugClients = new Set<string>();
+  /** Último instante em que cada combatente recebeu dano. */
+  private lastDamagedAt = new Map<string, number>();
 
   /** Timestamp (ms) em que cada morto deve renascer. */
   private respawnAt = new Map<string, number>();
@@ -168,6 +170,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.lastPingAt.delete(id);
     this.lastFireAt.delete(id);
     this.debugClients.delete(id);
+    this.lastDamagedAt.delete(id);
     this.respawnAt.delete(id);
     this.deathPos.delete(id);
     this.rebalanceBots();
@@ -181,6 +184,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.pushHistory();
     this.pingClients();
     this.processRespawns();
+    this.processHealthRegen(dt);
     this.processMatchReset();
   }
 
@@ -277,6 +281,21 @@ export class DeathmatchRoom extends Room<MatchState> {
     }
   }
 
+  /** Regenera apenas jogadores vivos que ficaram três segundos sem dano. */
+  private processHealthRegen(dt: number): void {
+    if (this.state.matchOver) return;
+    const now = Date.now();
+    for (const [id, player] of this.state.players) {
+      if (!player.alive || player.health >= CONFIG.playerMaxHealth) continue;
+      const lastDamage = this.lastDamagedAt.get(id) ?? now;
+      if (now - lastDamage < CONFIG.healthRegenDelay * 1000) continue;
+      player.health = Math.min(
+        CONFIG.playerMaxHealth,
+        player.health + CONFIG.healthRegenPerSecond * dt
+      );
+    }
+  }
+
   private respawnPlayer(id: string): void {
     const p = this.state.players.get(id);
     if (!p) return;
@@ -288,6 +307,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     p.vy = 0;
     p.grounded = true;
     p.health = CONFIG.playerMaxHealth;
+    this.lastDamagedAt.delete(id);
     p.alive = true;
 
     const bot = this.bots.get(id);
@@ -366,6 +386,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     }
 
     const ends: Array<{ x: number; y: number; z: number }> = [];
+    let confirmedHit = false;
+    let confirmedHeadshot = false;
 
     for (const rawDir of msg.dirs) {
       const dlen = Math.hypot(rawDir.x, rawDir.y, rawDir.z);
@@ -415,9 +437,15 @@ export class DeathmatchRoom extends Room<MatchState> {
         const base =
           hitPart === "head" ? weapon.damageHead : weapon.damageBody;
         const damage = base * damageFalloff(tBest, weapon);
-        this.applyDamage(hitId, damage, shooterId, weapon.name);
+        if (this.applyDamage(hitId, damage, shooterId, weapon.name)) {
+          confirmedHit = true;
+          confirmedHeadshot ||= hitPart === "head";
+        }
       }
     }
+
+    // O hitmarker do atirador só aparece após dano realmente aplicado.
+    if (confirmedHit) client.send("hitConfirm", { headshot: confirmedHeadshot });
 
     // Tracers para os outros clientes.
     this.broadcast(
@@ -437,19 +465,20 @@ export class DeathmatchRoom extends Room<MatchState> {
     amount: number,
     attackerId: string,
     weaponName: string
-  ): void {
-    if (this.state.matchOver) return;
+  ): boolean {
+    if (this.state.matchOver) return false;
     const target = this.state.players.get(targetId);
     const attacker = this.state.players.get(attackerId);
-    if (!target || !target.alive) return;
+    if (!target || !target.alive) return false;
 
     // Vida infinita precisa ser aplicada aqui, no lado autoritativo.
     if (this.debugClients.has(targetId)) {
       target.health = CONFIG.playerMaxHealth;
-      return;
+      return false;
     }
     target.health = Math.max(0, target.health - Math.round(amount));
-    if (target.health > 0) return;
+    this.lastDamagedAt.set(targetId, Date.now());
+    if (target.health > 0) return true;
 
     target.alive = false;
     target.deaths++;
@@ -476,6 +505,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.matchResetAt = Date.now() + CONFIG.matchResetDelay * 1000;
       this.broadcast("matchEnd", { winnerName: attacker.name });
     }
+    return true;
   }
 
   // --- Bots ---

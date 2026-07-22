@@ -7,6 +7,10 @@ export const CONFIG = {
   /** Segundos até renascer. */
   respawnDelay: 3,
   playerMaxHealth: 100,
+  /** Segundos sem dano antes de iniciar a regeneração. */
+  healthRegenDelay: 3,
+  /** Vida recuperada por segundo após o atraso. */
+  healthRegenPerSecond: 20,
   /** Porta do servidor Colyseus. */
   serverPort: 2567,
   /** Tick da simulação do servidor (ms). */

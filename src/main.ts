@@ -342,6 +342,12 @@ function setupRoom(r: Room): void {
     if (e.killerId === r.sessionId) audio.killConfirm();
   });
 
+  // O servidor confirma que o dano foi aplicado antes de exibir o hitmarker.
+  r.onMessage("hitConfirm", (e: { headshot: boolean }) => {
+    hud.showHitmarker(e.headshot);
+    audio.hitmarker(e.headshot);
+  });
+
   r.onMessage("died", (e: { killerName: string; weaponName: string }) => {
     playerDead = true;
     deathCountdown = CONFIG.respawnDelay;
@@ -546,7 +552,7 @@ function scoreboardRows(r: Room): ScoreRow[] {
 
 // --- Wiring: armas ---
 // O cliente envia origem + direções; o SERVIDOR decide o acerto e o dano
-// (hitscan com lag compensation). O hitmarker local é otimista.
+// (hitscan com lag compensation), incluindo a confirmação do hitmarker.
 weapons.onFire = (data) => {
   if (!room) return;
   room.send("fire", {
@@ -557,11 +563,6 @@ weapons.onFire = (data) => {
     dirs: data.dirs.map((d) => ({ x: d.x, y: d.y, z: d.z })),
   });
 
-  if (data.localHits.length > 0) {
-    const headshot = data.localHits.some((h) => h.part === "head");
-    hud.showHitmarker(headshot);
-    audio.hitmarker(headshot);
-  }
   audio.shoot(weapons.weapon.id);
 };
 
