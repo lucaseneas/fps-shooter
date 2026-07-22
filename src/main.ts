@@ -345,7 +345,7 @@ function openChat(): void {
   player.setMovementEnabled(false);
   player.setLookEnabled(false);
   document.exitPointerLock();
-  chatForm.classList.remove("hidden");
+  chatForm.classList.add("active");
   chatInput.value = "";
   chatInput.focus();
 }
@@ -353,7 +353,8 @@ function openChat(): void {
 function closeChat(relock: boolean): void {
   if (!chatTyping) return;
   chatTyping = false;
-  chatForm.classList.add("hidden");
+  chatForm.classList.remove("active");
+  chatInput.value = "";
   chatInput.blur();
   player.setLookEnabled(true);
   player.setMovementEnabled(!playerDead && !endScreenShown);
@@ -370,7 +371,8 @@ function addChatMessage(name: string, text: string): void {
   sender.textContent = `${name}: `;
   entry.append(sender, document.createTextNode(text));
   chatLog.append(entry);
-  while (chatLog.childElementCount > 8) chatLog.firstElementChild?.remove();
+  while (chatLog.childElementCount > 100) chatLog.firstElementChild?.remove();
+  chatLog.scrollTop = chatLog.scrollHeight;
 }
 
 settingsButton.addEventListener("click", openMenuSettings);

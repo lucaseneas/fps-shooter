@@ -134,10 +134,14 @@ body {
   max-height: 160px;
   flex-direction: column;
   gap: 4px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-color: rgba(255, 157, 47, 0.8) rgba(10, 14, 20, 0.5);
 }
 
 .chat-entry {
+  flex: 0 0 auto;
   width: fit-content;
   max-width: 100%;
   padding: 4px 8px;
@@ -154,6 +158,13 @@ body {
 
 #chatForm {
   margin-top: 7px;
+  opacity: 0.38;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+#chatForm.active {
+  opacity: 1;
   pointer-events: auto;
 }
 
