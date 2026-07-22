@@ -17,4 +17,16 @@ export const CONFIG = {
   simulationIntervalMs: 50,
   /** Segundos após o fim da partida até resetar a sala. */
   matchResetDelay: 8,
+
+  // --- Netcode (visual + lag compensation) ---
+  /**
+   * Atraso estimado da interpolação visual dos remotos (ms).
+   * Usado no rewind do hitscan: RTT/2 + este valor.
+   * Calibre com o modo debug (hitbox vermelha vs modelo).
+   */
+  interpDelayMs: 75,
+  /** Velocidade da interpolação dos inimigos no cliente (maior = cola mais rápido). */
+  remoteInterpSpeed: 20,
+  /** Máximo de extrapolação além do último patch do servidor (ms). */
+  remoteExtrapolationMs: 80,
 } as const;

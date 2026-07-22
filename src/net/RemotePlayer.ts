@@ -5,12 +5,16 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 
+import { CONFIG } from "../../shared/config";
+
 const HEIGHT = 1.8;
+/** Limite de velocidade para extrapolação (evita spikes entre patches). */
+const MAX_EXTRAP_SPEED = 10;
 
 /**
  * Representação visual de outro combatente da sala (humano ou bot — o
- * cliente não distingue). Posição interpolada entre patches do servidor.
- * Hitboxes de cabeça/corpo permitem o hitscan local do player.
+ * cliente não distingue). Interpolação rápida + extrapolação curta entre
+ * patches do servidor para reduzir o gap visual vs hitbox autoritativa.
  */
 export class RemotePlayer {
   readonly id: string;
@@ -23,9 +27,18 @@ export class RemotePlayer {
   private readonly debugBodyHitbox: Mesh;
   private readonly debugHeadHitbox: Mesh;
 
-  /** Alvo de interpolação (pés). */
-  private targetPos = new Vector3(0, 0, 0);
+  /** Centro do corpo no último patch (alvo base). */
+  private readonly targetPos = new Vector3(0, 0, 0);
+  /** Posição renderizada após extrapolação (reutilizada a cada frame). */
+  private readonly renderPos = new Vector3(0, 0, 0);
   private targetYaw = 0;
+
+  private lastServerX = 0;
+  private lastServerZ = 0;
+  private velocityX = 0;
+  private velocityZ = 0;
+  private lastPatchTime = 0;
+  private hasPatch = false;
 
   constructor(scene: Scene, id: string, name: string) {
     this.id = id;
@@ -85,8 +98,6 @@ export class RemotePlayer {
     this.debugHeadHitbox.isPickable = false;
     this.setDebugHitboxes(false);
 
-    // Arma na mão: aponta para +Z local — segue o yaw do corpo, mostrando
-    // para onde o inimigo está mirando.
     const gunMat = new StandardMaterial(`${id}_gunMat`, scene);
     gunMat.diffuseColor = new Color3(0.15, 0.15, 0.17);
     gunMat.specularColor = new Color3(0.05, 0.05, 0.05);
@@ -97,7 +108,7 @@ export class RemotePlayer {
       scene
     );
     this.gun.parent = this.root;
-    this.gun.position = new Vector3(0.32, 0.32, 0.3); // mão direita, ~1.2m
+    this.gun.position = new Vector3(0.32, 0.32, 0.3);
     this.gun.material = gunMat;
     this.gun.isPickable = false;
 
@@ -123,7 +134,7 @@ export class RemotePlayer {
     );
     plane.parent = this.root;
     plane.position.y = HEIGHT / 2 + 0.45;
-    plane.billboardMode = 7; // BILLBOARDMODE_ALL
+    plane.billboardMode = 7;
     plane.isPickable = false;
 
     const texture = new DynamicTexture(
@@ -154,6 +165,30 @@ export class RemotePlayer {
 
   /** Recebe o último estado do servidor (pés em y). */
   applyState(x: number, y: number, z: number, yaw: number, alive: boolean): void {
+    const now = performance.now();
+
+    if (this.hasPatch) {
+      const dt = (now - this.lastPatchTime) / 1000;
+      if (dt > 0.001 && dt < 0.5) {
+        this.velocityX = (x - this.lastServerX) / dt;
+        this.velocityZ = (z - this.lastServerZ) / dt;
+        const speed = Math.hypot(this.velocityX, this.velocityZ);
+        if (speed > MAX_EXTRAP_SPEED) {
+          const scale = MAX_EXTRAP_SPEED / speed;
+          this.velocityX *= scale;
+          this.velocityZ *= scale;
+        }
+      }
+    } else {
+      this.hasPatch = true;
+      this.velocityX = 0;
+      this.velocityZ = 0;
+    }
+
+    this.lastServerX = x;
+    this.lastServerZ = z;
+    this.lastPatchTime = now;
+
     this.targetPos.set(x, y + HEIGHT / 2, z);
     this.targetYaw = yaw;
     this.debugBodyHitbox.position.set(x, y + 0.75, z);
@@ -162,31 +197,43 @@ export class RemotePlayer {
     this.setVisible(alive);
   }
 
-  /** Exibe hitboxes na posição exata do último patch do servidor. */
   setDebugHitboxes(on: boolean): void {
     this.debugBodyHitbox.setEnabled(on);
     this.debugHeadHitbox.setEnabled(on);
   }
 
-  /** Interpola em direção ao último estado (chamar a cada frame). */
+  /** Interpola + extrapola em direção ao estado estimado (chamar a cada frame). */
   update(dt: number): void {
-    const t = Math.min(1, dt * 12);
-    Vector3.LerpToRef(this.root.position, this.targetPos, t, this.root.position);
+    const sincePatchSec =
+      (performance.now() - this.lastPatchTime) / 1000;
+    const extrapSec = Math.min(
+      sincePatchSec,
+      CONFIG.remoteExtrapolationMs / 1000
+    );
 
-    // Interpolação de yaw pelo caminho mais curto.
+    this.renderPos.set(
+      this.targetPos.x + this.velocityX * extrapSec,
+      this.targetPos.y,
+      this.targetPos.z + this.velocityZ * extrapSec
+    );
+
+    const t = Math.min(1, dt * CONFIG.remoteInterpSpeed);
+    Vector3.LerpToRef(this.root.position, this.renderPos, t, this.root.position);
+
     let diff = this.targetYaw - this.root.rotation.y;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
     this.root.rotation.y += diff * t;
   }
 
-  /** Snap imediato (primeiro estado recebido). */
   snapToTarget(): void {
     this.root.position.copyFrom(this.targetPos);
     this.root.rotation.y = this.targetYaw;
+    this.velocityX = 0;
+    this.velocityZ = 0;
+    this.renderPos.copyFrom(this.targetPos);
   }
 
-  /** Posição da cabeça — origem de tracers de tiros remotos. */
   getHead(): Vector3 {
     return this.root.position.add(new Vector3(0, HEIGHT / 2 - 0.1, 0));
   }

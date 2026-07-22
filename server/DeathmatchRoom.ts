@@ -18,8 +18,6 @@ import { raycastMap, rayAabb, raySphere, Vec3 } from "./physics";
 const MAX_RANGE = 200;
 /** Quantos inputs processar por jogador a cada tick (anti-speedhack). */
 const MAX_INPUTS_PER_TICK = 6;
-/** Delay de interpolação estimado dos remotos no cliente (ms). */
-const INTERP_DELAY_MS = 100;
 /** Janela do histórico de posições para lag compensation (ms). */
 const HISTORY_WINDOW_MS = 1000;
 
@@ -388,7 +386,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     // Rewind: metade do RTT + delay de interpolação dos remotos.
     const rewindMs = Math.min(
       HISTORY_WINDOW_MS,
-      (this.rtt.get(shooterId) ?? 0) / 2 + INTERP_DELAY_MS
+      (this.rtt.get(shooterId) ?? 0) / 2 + CONFIG.interpDelayMs
     );
 
     // Posições rebobinadas dos alvos possíveis.
