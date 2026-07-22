@@ -56,6 +56,39 @@ body {
   box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
 }
 
+/* Variações escolhidas nas configurações. */
+#crosshair[data-style="dot"] {
+  width: 6px;
+  height: 6px;
+}
+
+#crosshair[data-style="dot"]::before,
+#crosshair[data-style="dot"]::after,
+#crosshair[data-style="ring"]::before,
+#crosshair[data-style="ring"]::after,
+#crosshair[data-style="chevron"]::before,
+#crosshair[data-style="chevron"]::after {
+  display: none;
+}
+
+#crosshair[data-style="ring"] {
+  width: 15px;
+  height: 15px;
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+
+#crosshair[data-style="chevron"] {
+  width: 14px;
+  height: 14px;
+  background: transparent;
+  border: solid rgba(255, 255, 255, 0.9);
+  border-width: 0 2px 2px 0;
+  border-radius: 0;
+  transform: translate(-50%, -62%) rotate(45deg);
+}
+
 /* linha horizontal */
 #crosshair::before {
   top: 50%;
@@ -84,6 +117,55 @@ body {
   color: rgba(255, 255, 255, 0.75);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   white-space: pre;
+}
+
+/* ---------- Chat da sala ---------- */
+#roomChat {
+  position: absolute;
+  left: 18px;
+  bottom: 122px;
+  width: min(360px, calc(100vw - 36px));
+  font-size: 13px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+#chatLog {
+  display: flex;
+  max-height: 160px;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.chat-entry {
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+  border-radius: 5px;
+  background: rgba(10, 14, 20, 0.68);
+  color: #e8ecf1;
+}
+
+.chat-entry .chat-name {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+#chatForm {
+  margin-top: 7px;
+  pointer-events: auto;
+}
+
+#chatInput {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  outline: none;
+  background: rgba(10, 14, 20, 0.92);
+  color: #fff;
+  font: inherit;
 }
 
 /* ---------- Hitmarker ---------- */
@@ -766,6 +848,17 @@ button:disabled {
 .setting-control input[type="range"] {
   flex: 1;
   accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.setting-select {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: #151b25;
+  color: #e8ecf1;
+  font: inherit;
   cursor: pointer;
 }
 

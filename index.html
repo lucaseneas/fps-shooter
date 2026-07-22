@@ -20,6 +20,20 @@
       <div id="damageVignette"></div>
       <div id="debug"></div>
 
+      <!-- Chat da sala -->
+      <div id="roomChat">
+        <div id="chatLog" aria-live="polite"></div>
+        <form id="chatForm" class="hidden">
+          <input
+            id="chatInput"
+            type="text"
+            maxlength="160"
+            placeholder="Mensagem para a sala..."
+            autocomplete="off"
+          />
+        </form>
+      </div>
+
       <!-- Minimapa (canto superior direito) -->
       <canvas id="minimap" width="180" height="180"></canvas>
 
@@ -110,7 +124,7 @@
               <li><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> / <kbd>Scroll</kbd> Trocar arma</li>
               <li><kbd>R</kbd> Recarregar · <kbd>Espaço</kbd> Pular</li>
               <li><kbd>Shift</kbd> Correr · <kbd>Tab</kbd> Placar</li>
-              <li><kbd>Esc</kbd> Pausa / Configurações</li>
+              <li><kbd>Enter</kbd> Chat · <kbd>Esc</kbd> Pausa / Configurações</li>
             </ul>
             <h3>Arsenal</h3>
             <p class="info-text">
@@ -135,8 +149,8 @@
               <input
                 id="sensSlider"
                 type="range"
-                min="0.1"
-                max="3"
+                min="0.05"
+                max="2"
                 step="0.05"
                 value="1"
               />
@@ -170,6 +184,15 @@
               />
               <span id="volValue">50%</span>
             </div>
+          </div>
+          <div class="setting-row">
+            <label for="reticleSelect">Retícula</label>
+            <select id="reticleSelect" class="setting-select">
+              <option value="cross">Cruz</option>
+              <option value="dot">Ponto</option>
+              <option value="ring">Círculo</option>
+              <option value="chevron">Chevron</option>
+            </select>
           </div>
           <div class="setting-row debug-setting">
             <label for="debugModeToggle">Modo debug</label>

@@ -33,12 +33,16 @@ const menuButton = document.getElementById("menuButton") as HTMLButtonElement;
 const nameInput = document.getElementById("nameInput") as HTMLInputElement;
 const statusEl = document.getElementById("connectionStatus") as HTMLParagraphElement;
 const debugEl = document.getElementById("debug") as HTMLDivElement;
+const chatLog = document.getElementById("chatLog") as HTMLDivElement;
+const chatForm = document.getElementById("chatForm") as HTMLFormElement;
+const chatInput = document.getElementById("chatInput") as HTMLInputElement;
 const sensSlider = document.getElementById("sensSlider") as HTMLInputElement;
 const sensValue = document.getElementById("sensValue") as HTMLSpanElement;
 const botsSlider = document.getElementById("botsSlider") as HTMLInputElement;
 const botsValue = document.getElementById("botsValue") as HTMLSpanElement;
 const volSlider = document.getElementById("volSlider") as HTMLInputElement;
 const volValue = document.getElementById("volValue") as HTMLSpanElement;
+const reticleSelect = document.getElementById("reticleSelect") as HTMLSelectElement;
 const debugModeToggle = document.getElementById("debugModeToggle") as HTMLInputElement;
 const roomListEl = document.getElementById("roomList") as HTMLDivElement;
 const refreshRoomsButton = document.getElementById("refreshRoomsButton") as HTMLButtonElement;
@@ -71,7 +75,7 @@ const SENS_STORAGE_KEY = "fps.sensitivity";
 
 function loadSensitivity(): void {
   const saved = parseFloat(localStorage.getItem(SENS_STORAGE_KEY) ?? "1");
-  const value = Number.isFinite(saved) ? Math.min(3, Math.max(0.1, saved)) : 1;
+  const value = Number.isFinite(saved) ? Math.min(2, Math.max(0.05, saved)) : 1;
   sensSlider.value = String(value);
   applySensitivity(value);
 }
@@ -126,6 +130,22 @@ volSlider.addEventListener("input", () => {
 const savedVol = parseFloat(localStorage.getItem(VOL_STORAGE_KEY) ?? "0.5");
 applyVolume(Number.isFinite(savedVol) ? Math.min(1, Math.max(0, savedVol)) : 0.5);
 
+// --- Retícula ---
+const RETICLE_STORAGE_KEY = "fps.reticle";
+const RETICLE_TYPES = new Set(["cross", "dot", "ring", "chevron"]);
+
+function applyReticle(type: string): void {
+  const selected = RETICLE_TYPES.has(type) ? type : "cross";
+  document.getElementById("crosshair")!.dataset.style = selected;
+  reticleSelect.value = selected;
+}
+
+applyReticle(localStorage.getItem(RETICLE_STORAGE_KEY) ?? "cross");
+reticleSelect.addEventListener("change", () => {
+  applyReticle(reticleSelect.value);
+  localStorage.setItem(RETICLE_STORAGE_KEY, reticleSelect.value);
+});
+
 // --- Modo debug (a vida continua sendo aplicada pelo servidor) ---
 const DEBUG_STORAGE_KEY = "fps.debugMode";
 let debugMode = localStorage.getItem(DEBUG_STORAGE_KEY) === "true";
@@ -154,6 +174,7 @@ let lastKnownHealth: number = CONFIG.playerMaxHealth;
 let playerDead = false;
 let deathCountdown = 0;
 let endScreenShown = false;
+let chatTyping = false;
 /** Ping medido pelo cliente (ms), para o indicador no HUD. */
 let pingMs: number | null = null;
 
@@ -278,6 +299,8 @@ function resetToMenu(errorMsg?: string): void {
   endScreenShown = false;
   lastKnownHealth = CONFIG.playerMaxHealth;
   pingMs = null;
+  closeChat(false);
+  chatLog.replaceChildren();
 
   for (const rp of remotePlayers.values()) rp.dispose();
   remotePlayers.clear();
@@ -315,6 +338,41 @@ function openMenuSettings(): void {
   settingsModal.classList.add("menu-mode");
 }
 
+function openChat(): void {
+  if (!inGame || playerDead || endScreenShown || chatTyping) return;
+  chatTyping = true;
+  weapons.setTrigger(false);
+  player.setMovementEnabled(false);
+  player.setLookEnabled(false);
+  document.exitPointerLock();
+  chatForm.classList.remove("hidden");
+  chatInput.value = "";
+  chatInput.focus();
+}
+
+function closeChat(relock: boolean): void {
+  if (!chatTyping) return;
+  chatTyping = false;
+  chatForm.classList.add("hidden");
+  chatInput.blur();
+  player.setLookEnabled(true);
+  player.setMovementEnabled(!playerDead && !endScreenShown);
+  if (relock && inGame && !playerDead && !endScreenShown) {
+    player.requestPointerLock();
+  }
+}
+
+function addChatMessage(name: string, text: string): void {
+  const entry = document.createElement("div");
+  entry.className = "chat-entry";
+  const sender = document.createElement("span");
+  sender.className = "chat-name";
+  sender.textContent = `${name}: `;
+  entry.append(sender, document.createTextNode(text));
+  chatLog.append(entry);
+  while (chatLog.childElementCount > 8) chatLog.firstElementChild?.remove();
+}
+
 settingsButton.addEventListener("click", openMenuSettings);
 closeSettingsButton.addEventListener("click", () => {
   settingsModal.classList.add("hidden");
@@ -327,6 +385,20 @@ resumeButton.addEventListener("click", () => {
 quitButton.addEventListener("click", () => {
   // O onLeave da sala chama resetToMenu().
   void room?.leave();
+});
+
+chatForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = chatInput.value.trim();
+  if (text) room?.send("chat", { text });
+  closeChat(true);
+});
+
+chatInput.addEventListener("keydown", (e) => {
+  if (e.code === "Escape") {
+    e.preventDefault();
+    closeChat(true);
+  }
 });
 
 function setupRoom(r: Room): void {
@@ -348,7 +420,12 @@ function setupRoom(r: Room): void {
     audio.hitmarker(e.headshot);
   });
 
+  r.onMessage("chat", (e: { name: string; text: string }) => {
+    addChatMessage(e.name, e.text);
+  });
+
   r.onMessage("died", (e: { killerName: string; weaponName: string }) => {
+    closeChat(false);
     playerDead = true;
     deathCountdown = CONFIG.respawnDelay;
     player.setMovementEnabled(false);
@@ -594,6 +671,11 @@ window.addEventListener("wheel", (e) => {
   viewModel.setWeapon(weapons.weapon);
 });
 window.addEventListener("keydown", (e) => {
+  if (e.code === "Enter" && inGame && player.isPointerLocked) {
+    e.preventDefault();
+    openChat();
+    return;
+  }
   if (!player.isPointerLocked) return;
   if (e.code === "KeyR") weapons.startReload();
   if (e.code === "Digit1") switchTo(0);
@@ -641,6 +723,7 @@ document.addEventListener("pointerlockchange", () => {
     audio.resume();
     settingsModal.classList.add("hidden");
   } else if (inGame && !endScreenShown) {
+    if (chatTyping) return;
     // ESC no jogo → modal de pausa (configurações + sair para o menu).
     openPauseModal();
   }

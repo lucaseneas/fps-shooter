@@ -62,6 +62,7 @@ export class FpsController {
   private recoilYawOffset = 0;
   private pointerLocked = false;
   private movementEnabled = true;
+  private lookEnabled = true;
 
   private sensitivityMultiplier = 1;
   private readonly maxPitch = Math.PI / 2 - 0.02;
@@ -154,7 +155,7 @@ export class FpsController {
 
   /** Multiplicador de sensibilidade do mouse (menu de configurações). */
   setSensitivity(multiplier: number): void {
-    this.sensitivityMultiplier = Scalar.Clamp(multiplier, 0.05, 5);
+    this.sensitivityMultiplier = Scalar.Clamp(multiplier, 0.05, 2);
   }
 
   getSensitivity(): number {
@@ -165,6 +166,11 @@ export class FpsController {
   setMovementEnabled(on: boolean): void {
     this.movementEnabled = on;
     if (!on) this.keys.clear();
+  }
+
+  /** Bloqueia a rotação da câmera sem interromper a simulação do jogador. */
+  setLookEnabled(on: boolean): void {
+    this.lookEnabled = on;
   }
 
   /** Chute de recoil visual: levanta a mira enquanto atira. */
@@ -264,6 +270,7 @@ export class FpsController {
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    if (!this.movementEnabled) return;
     this.keys.add(e.code);
     if (e.code === "Space") e.preventDefault();
   };
@@ -273,7 +280,7 @@ export class FpsController {
   };
 
   private onMouseMove = (e: MouseEvent): void => {
-    if (!this.pointerLocked) return;
+    if (!this.pointerLocked || !this.lookEnabled) return;
     const sens = BASE_SENSITIVITY * this.sensitivityMultiplier;
     this.yaw += e.movementX * sens;
     this.basePitch += e.movementY * sens;

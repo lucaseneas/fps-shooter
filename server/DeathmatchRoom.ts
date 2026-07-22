@@ -76,6 +76,7 @@ export class DeathmatchRoom extends Room<MatchState> {
   private debugClients = new Set<string>();
   /** Último instante em que cada combatente recebeu dano. */
   private lastDamagedAt = new Map<string, number>();
+  private lastChatAt = new Map<string, number>();
 
   /** Timestamp (ms) em que cada morto deve renascer. */
   private respawnAt = new Map<string, number>();
@@ -132,6 +133,18 @@ export class DeathmatchRoom extends Room<MatchState> {
       else this.debugClients.delete(client.sessionId);
     });
 
+    this.onMessage("chat", (client, msg: { text?: unknown }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player || typeof msg?.text !== "string") return;
+      const text = msg.text.trim().slice(0, 160);
+      if (!text) return;
+      const now = Date.now();
+      const last = this.lastChatAt.get(client.sessionId) ?? 0;
+      if (now - last < 500) return;
+      this.lastChatAt.set(client.sessionId, now);
+      this.broadcast("chat", { senderId: client.sessionId, name: player.name, text });
+    });
+
     this.setSimulationInterval(
       (dtMs) => this.update(dtMs / 1000),
       CONFIG.simulationIntervalMs
@@ -171,6 +184,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.lastFireAt.delete(id);
     this.debugClients.delete(id);
     this.lastDamagedAt.delete(id);
+    this.lastChatAt.delete(id);
     this.respawnAt.delete(id);
     this.deathPos.delete(id);
     this.rebalanceBots();
