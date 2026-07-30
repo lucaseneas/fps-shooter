@@ -23,9 +23,11 @@ O Blueprint liga `VITE_SERVER_URL` à URL pública do `fps-shooter-api`.
 
 1. [supabase.com](https://supabase.com) → New project → guarda a password da DB.
 2. **Project Settings → Database → Connection string → URI**.
-3. Escolhe **Session pooler** (ou Direct) e substitui `[YOUR-PASSWORD]`.
+3. Escolhe **Session pooler** (não Direct) e substitui `[YOUR-PASSWORD]`.
+   - Host deve ser algo como `aws-0-….pooler.supabase.com` (porta **5432**).
+   - **Não uses** `db.….supabase.co` no Render — resolve em IPv6 e dá `ENETUNREACH`.
 4. No Render → `fps-shooter-api` → Environment:
-   - `DATABASE_URL` = essa URI
+   - `DATABASE_URL` = essa URI do pooler
    - `JWT_SECRET` = (já vem do Blueprint, ou gera um valor longo)
 5. Redeploy da API. No arranque cria a tabela `users` sozinha.
 
