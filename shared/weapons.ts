@@ -26,6 +26,8 @@ export interface WeaponDef {
   falloffMin: number;
   /** Cor do view model (RGB 0–1). */
   viewColor: [number, number, number];
+  /** Espalhamento base em graus. */
+  baseSpread: number;
 }
 
 /** Kit fixo — todo mundo nasce com as 3 armas (decisão do GDD). */
@@ -47,6 +49,7 @@ export const WEAPONS: WeaponDef[] = [
     falloffEnd: 50,
     falloffMin: 0.6,
     viewColor: [0.55, 0.57, 0.6],
+    baseSpread: 0.4,
   },
   {
     id: "rifle",
@@ -65,6 +68,7 @@ export const WEAPONS: WeaponDef[] = [
     falloffEnd: 60,
     falloffMin: 0.7,
     viewColor: [0.3, 0.35, 0.28],
+    baseSpread: 0.4,
   },
   {
     id: "shotgun",
@@ -83,6 +87,7 @@ export const WEAPONS: WeaponDef[] = [
     falloffEnd: 22,
     falloffMin: 0.2,
     viewColor: [0.5, 0.32, 0.18],
+    baseSpread: 1.2,
   },
 ];
 

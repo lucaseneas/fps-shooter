@@ -354,6 +354,11 @@ export class FpsController {
     );
   }
 
+  /** False durante pulo/queda — usado para spread aéreo. */
+  get isGrounded(): boolean {
+    return this.sim.grounded;
+  }
+
   /** Posição dos pés. */
   getFeet(): Vector3 {
     return new Vector3(this.sim.x, this.sim.y, this.sim.z);

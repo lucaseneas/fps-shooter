@@ -53,6 +53,9 @@ export class WeaponSystem {
   private enabled = true;
   private infiniteAmmo = false;
   private crouching = false;
+  private airborne = false;
+  private moving = false;
+  private running = false;
   private readonly recoilShots = new Map<string, number>();
   private readonly lastShotAt = new Map<string, number>();
 
@@ -80,6 +83,31 @@ export class WeaponSystem {
 
   get weapon(): WeaponDef {
     return WEAPONS[this.currentIndex];
+  }
+
+  get currentSpread(): number {
+    let spreadMultiplier = 1.0;
+    const isRifle = this.weapon.id === "rifle";
+    if (this.airborne) {
+      spreadMultiplier = isRifle ? 18.0 : 7.0;
+    } else if (this.crouching) {
+      spreadMultiplier = 0.5;
+    } else if (this.running) {
+      spreadMultiplier = isRifle ? 12.0 : 2.8;
+    } else if (this.moving) {
+      spreadMultiplier = isRifle ? 7.0 : 1.8;
+    }
+
+    // Encontra o maior desvio no padrão de pellets para somar ao spread base
+    let maxPatternOffset = 0;
+    for (const [yaw, pitch] of this.weapon.pelletPattern) {
+      const dist = Math.sqrt(yaw * yaw + pitch * pitch);
+      if (dist > maxPatternOffset) {
+        maxPatternOffset = dist;
+      }
+    }
+
+    return (maxPatternOffset + this.weapon.baseSpread) * spreadMultiplier;
   }
 
   get weaponIndex(): number {
@@ -125,6 +153,19 @@ export class WeaponSystem {
   /** Agachado: reduz recoil e spread dos pellets. */
   setCrouching(on: boolean): void {
     this.crouching = on;
+  }
+
+  /** No ar (pulo/queda): aumenta bastante o spread. */
+  setAirborne(on: boolean): void {
+    this.airborne = on;
+  }
+
+  setMoving(on: boolean): void {
+    this.moving = on;
+  }
+
+  setRunning(on: boolean): void {
+    this.running = on;
   }
 
   switchWeapon(index: number): void {
@@ -206,10 +247,37 @@ export class WeaponSystem {
 
     const hits: HitInfo[] = [];
     const dirs: Vector3[] = [];
-    const accuracy = this.crouching ? 0.4 : 1;
+    // Multiplicadores dinâmicos baseados no movimento
+    const recoilMultiplier = this.crouching ? 0.5 : 1.0;
+
+    let spreadMultiplier = 1.0;
+    const isRifle = this.weapon.id === "rifle";
+    if (this.airborne) {
+      spreadMultiplier = isRifle ? 18.0 : 7.0;
+    } else if (this.crouching) {
+      spreadMultiplier = 0.5;
+    } else if (this.running) {
+      spreadMultiplier = isRifle ? 12.0 : 2.8;
+    } else if (this.moving) {
+      spreadMultiplier = isRifle ? 7.0 : 1.8;
+    }
+
     for (let i = 0; i < this.weapon.pellets; i++) {
       const [yaw, pitch] = this.weapon.pelletPattern[i] ?? [0, 0];
-      const dir = this.applyFixedOffset(baseDir, yaw * accuracy, pitch * accuracy);
+      
+      // Espalhamento aleatório (ângulo e raio)
+      const baseSpread = this.weapon.baseSpread;
+      const maxSpread = baseSpread * spreadMultiplier;
+      const angle = Math.random() * Math.PI * 2;
+      const randRadius = Math.random() * maxSpread;
+      const randYaw = randRadius * Math.cos(angle);
+      const randPitch = randRadius * Math.sin(angle);
+
+      // Padrão fixo + componente aleatório
+      const totalYaw = yaw * spreadMultiplier + randYaw;
+      const totalPitch = pitch * spreadMultiplier + randPitch;
+
+      const dir = this.applyFixedOffset(baseDir, totalYaw, totalPitch);
       dirs.push(dir);
       const result = this.raycast(origin, dir);
       if (result.info) hits.push(result.info);
@@ -217,7 +285,7 @@ export class WeaponSystem {
 
     this.onFire?.({ origin, dirs, localHits: hits });
     const recoil = this.nextRecoil();
-    this.onRecoil?.(recoil.pitch * accuracy, recoil.yaw * accuracy);
+    this.onRecoil?.(recoil.pitch * recoilMultiplier, recoil.yaw * recoilMultiplier);
     this.onStateChanged?.();
   }
 

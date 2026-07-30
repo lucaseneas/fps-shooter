@@ -48,6 +48,7 @@ const guestPanel = document.getElementById("guestPanel") as HTMLDivElement;
 const guestContinueButton = document.getElementById("guestContinueButton") as HTMLButtonElement;
 const statusEl = document.getElementById("connectionStatus") as HTMLParagraphElement;
 const debugEl = document.getElementById("debug") as HTMLDivElement;
+const debugSpreadCircle = document.getElementById("debug-spread-circle") as HTMLDivElement;
 const chatLog = document.getElementById("chatLog") as HTMLDivElement;
 const chatForm = document.getElementById("chatForm") as HTMLFormElement;
 const chatInput = document.getElementById("chatInput") as HTMLInputElement;
@@ -986,8 +987,24 @@ engine.runRenderLoop(() => {
   player.update(dt);
   player.updateRecoil(dt, weapons.isShooting);
   weapons.setCrouching(player.isCrouching);
+  weapons.setAirborne(!player.isGrounded);
+  weapons.setMoving(player.isMovingOnGround);
+  weapons.setRunning(player.isRunning);
   weapons.update(dt);
   viewModel.update(dt);
+
+  if (debugMode) {
+    const canvasHeight = canvas.clientHeight;
+    const spreadRad = (weapons.currentSpread * Math.PI) / 180;
+    const fov = player.camera.fov;
+    const diameter = canvasHeight * Math.tan(spreadRad) / Math.tan(fov / 2);
+    debugSpreadCircle.style.width = `${diameter}px`;
+    debugSpreadCircle.style.height = `${diameter}px`;
+    debugSpreadCircle.style.display = "block";
+  } else {
+    debugSpreadCircle.style.display = "none";
+  }
+
   for (const rp of remotePlayers.values()) rp.update(dt);
 
   // Som de passos.
