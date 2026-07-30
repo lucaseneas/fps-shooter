@@ -18,19 +18,34 @@ import {
   PlayerSnapshot,
   RoomListing,
 } from "./net/NetworkClient";
+import {
+  AuthSession,
+  AuthUser,
+  clearStoredToken,
+  fetchAuthStatus,
+  fetchProfile,
+  loginAccount,
+  registerAccount,
+  restoreSession,
+} from "./net/authApi";
 import { Minimap } from "./ui/Minimap";
 import { CONFIG } from "../shared/config";
+import { AppRoute, navigate, onRouteChange } from "./app/router";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-const mainMenu = document.getElementById("mainMenu") as HTMLDivElement;
+const pageLogin = document.getElementById("pageLogin") as HTMLDivElement;
+const pageHome = document.getElementById("pageHome") as HTMLDivElement;
 const settingsModal = document.getElementById("settingsModal") as HTMLDivElement;
 const settingsButton = document.getElementById("settingsButton") as HTMLButtonElement;
+const homeSettingsButton = document.getElementById("homeSettingsButton") as HTMLButtonElement;
 const resumeButton = document.getElementById("resumeButton") as HTMLButtonElement;
 const quitButton = document.getElementById("quitButton") as HTMLButtonElement;
 const closeSettingsButton = document.getElementById("closeSettingsButton") as HTMLButtonElement;
 const restartButton = document.getElementById("restartButton") as HTMLButtonElement;
 const menuButton = document.getElementById("menuButton") as HTMLButtonElement;
 const nameInput = document.getElementById("nameInput") as HTMLInputElement;
+const guestPanel = document.getElementById("guestPanel") as HTMLDivElement;
+const guestContinueButton = document.getElementById("guestContinueButton") as HTMLButtonElement;
 const statusEl = document.getElementById("connectionStatus") as HTMLParagraphElement;
 const debugEl = document.getElementById("debug") as HTMLDivElement;
 const chatLog = document.getElementById("chatLog") as HTMLDivElement;
@@ -48,6 +63,22 @@ const roomListEl = document.getElementById("roomList") as HTMLDivElement;
 const refreshRoomsButton = document.getElementById("refreshRoomsButton") as HTMLButtonElement;
 const createRoomButton = document.getElementById("createRoomButton") as HTMLButtonElement;
 const minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement;
+const authTabLogin = document.getElementById("authTabLogin") as HTMLButtonElement;
+const authTabRegister = document.getElementById("authTabRegister") as HTMLButtonElement;
+const authForm = document.getElementById("authForm") as HTMLFormElement;
+const authUsername = document.getElementById("authUsername") as HTMLInputElement;
+const authPassword = document.getElementById("authPassword") as HTMLInputElement;
+const authSubmit = document.getElementById("authSubmit") as HTMLButtonElement;
+const authStatus = document.getElementById("authStatus") as HTMLParagraphElement;
+const logoutButton = document.getElementById("logoutButton") as HTMLButtonElement;
+const homeDisplayName = document.getElementById("homeDisplayName") as HTMLElement;
+const homeMemberSince = document.getElementById("homeMemberSince") as HTMLElement;
+const statKills = document.getElementById("statKills") as HTMLElement;
+const statDeaths = document.getElementById("statDeaths") as HTMLElement;
+const statWins = document.getElementById("statWins") as HTMLElement;
+const statMatches = document.getElementById("statMatches") as HTMLElement;
+const statKd = document.getElementById("statKd") as HTMLElement;
+const statWinRate = document.getElementById("statWinRate") as HTMLElement;
 
 const engine = new Engine(canvas, true, {
   preserveDrawingBuffer: true,
@@ -178,17 +209,178 @@ let chatTyping = false;
 /** Ping medido pelo cliente (ms), para o indicador no HUD. */
 let pingMs: number | null = null;
 
-// --- Lobby: lista de salas ---
+// --- Auth / páginas ---
+let authEnabled = false;
+let authMode: "login" | "register" = "login";
+let session: AuthSession | null = null;
+let guestAllowed = false;
 let lobbyRefreshInterval = 0;
 
+function setAuthMessage(text: string, isError = false): void {
+  authStatus.textContent = text;
+  authStatus.classList.toggle("error", isError);
+}
+
+function formatMemberSince(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `Membro desde ${d.toLocaleDateString("pt-BR")}`;
+}
+
+function renderProfile(user: AuthUser): void {
+  homeDisplayName.textContent = user.username;
+  homeMemberSince.textContent = formatMemberSince(user.createdAt);
+  statKills.textContent = String(user.kills);
+  statDeaths.textContent = String(user.deaths);
+  statWins.textContent = String(user.wins);
+  statMatches.textContent = String(user.matches);
+  const kd = user.deaths > 0 ? user.kills / user.deaths : user.kills;
+  statKd.textContent = kd.toFixed(2);
+  const winRate = user.matches > 0 ? Math.round((user.wins / user.matches) * 100) : 0;
+  statWinRate.textContent = `${winRate}%`;
+}
+
+function setAuthMode(mode: "login" | "register"): void {
+  authMode = mode;
+  authTabLogin.classList.toggle("active", mode === "login");
+  authTabRegister.classList.toggle("active", mode === "register");
+  authSubmit.textContent = mode === "login" ? "Entrar" : "Criar conta";
+  authPassword.autocomplete =
+    mode === "login" ? "current-password" : "new-password";
+  setAuthMessage("");
+}
+
+function showPages(route: AppRoute): void {
+  const onLogin = route === "/login";
+  const onHome = route === "/home";
+  pageLogin.classList.toggle("hidden", !onLogin);
+  pageHome.classList.toggle("hidden", !onHome);
+}
+
+function applyRoute(route: AppRoute): void {
+  if (route === "/play") {
+    if (!inGame) {
+      navigate(session || guestAllowed ? "/home" : "/login", true);
+      return;
+    }
+    pageLogin.classList.add("hidden");
+    pageHome.classList.add("hidden");
+    return;
+  }
+
+  if (route === "/home") {
+    if (inGame) {
+      void room?.leave();
+      return;
+    }
+    if (authEnabled && !session && !guestAllowed) {
+      navigate("/login", true);
+      return;
+    }
+    showPages("/home");
+    void enterHome();
+    return;
+  }
+
+  // /login
+  if (inGame) {
+    void room?.leave();
+    return;
+  }
+  if (authEnabled && session) {
+    navigate("/home", true);
+    return;
+  }
+  if (!authEnabled && guestAllowed) {
+    navigate("/home", true);
+    return;
+  }
+  showPages("/login");
+  window.clearInterval(lobbyRefreshInterval);
+}
+
+authTabLogin.addEventListener("click", () => setAuthMode("login"));
+authTabRegister.addEventListener("click", () => setAuthMode("register"));
+
+authForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  void (async () => {
+    const username = authUsername.value.trim();
+    const password = authPassword.value;
+    authSubmit.disabled = true;
+    setAuthMessage(authMode === "login" ? "A entrar…" : "A criar conta…");
+
+    const result =
+      authMode === "login"
+        ? await loginAccount(username, password)
+        : await registerAccount(username, password);
+
+    authSubmit.disabled = false;
+    if (!result.ok) {
+      setAuthMessage(result.error, true);
+      return;
+    }
+
+    session = result.session;
+    guestAllowed = false;
+    authPassword.value = "";
+    setAuthMessage("");
+    navigate("/home");
+  })();
+});
+
+guestContinueButton.addEventListener("click", () => {
+  guestAllowed = true;
+  navigate("/home");
+});
+
+logoutButton.addEventListener("click", () => {
+  clearStoredToken();
+  session = null;
+  guestAllowed = false;
+  window.clearInterval(lobbyRefreshInterval);
+  navigate("/login");
+  setAuthMessage("Sessão terminada.");
+});
+
+async function initAuth(): Promise<void> {
+  authEnabled = await fetchAuthStatus();
+  guestPanel.classList.toggle("hidden", authEnabled);
+  authForm.classList.toggle("hidden", !authEnabled);
+  document.querySelector(".auth-tabs")?.classList.toggle("hidden", !authEnabled);
+
+  if (authEnabled) {
+    session = await restoreSession();
+  } else {
+    session = null;
+  }
+}
+
 function playerName(): string {
+  if (session) return session.user.username;
   return nameInput.value.trim() || `Player${Math.floor(Math.random() * 900 + 100)}`;
 }
 
-async function enterLobby(): Promise<void> {
+async function enterHome(): Promise<void> {
   window.clearInterval(lobbyRefreshInterval);
-  createRoomButton.disabled = false;
-  refreshRoomsButton.disabled = false;
+  if (session) {
+    const profile = await fetchProfile();
+    if (profile) {
+      session = { ...session, user: profile };
+      renderProfile(profile);
+    } else {
+      renderProfile(session.user);
+    }
+  } else {
+    homeDisplayName.textContent = playerName();
+    homeMemberSince.textContent = "Modo convidado";
+    statKills.textContent = "—";
+    statDeaths.textContent = "—";
+    statWins.textContent = "—";
+    statMatches.textContent = "—";
+    statKd.textContent = "—";
+    statWinRate.textContent = "—";
+  }
   await refreshRooms();
   lobbyRefreshInterval = window.setInterval(refreshRooms, 3000);
 }
@@ -236,6 +428,13 @@ function renderRoomList(rooms: RoomListing[]): void {
 
 /** Entra numa sala existente (roomId) ou cria uma nova (null). */
 async function joinLobbyRoom(roomId: string | null): Promise<void> {
+  if (authEnabled && !session) {
+    statusEl.classList.add("error");
+    statusEl.textContent = "Entra na conta para jogar.";
+    navigate("/login");
+    return;
+  }
+
   window.clearInterval(lobbyRefreshInterval);
   createRoomButton.disabled = true;
   refreshRoomsButton.disabled = true;
@@ -249,7 +448,7 @@ async function joinLobbyRoom(roomId: string | null): Promise<void> {
   } catch {
     statusEl.classList.add("error");
     statusEl.textContent = roomId
-      ? "Não foi possível entrar (sala cheia ou fechada)."
+      ? "Não foi possível entrar (sala cheia, fechada ou sem login)."
       : "Não foi possível criar a sala.";
     createRoomButton.disabled = false;
     refreshRoomsButton.disabled = false;
@@ -267,11 +466,15 @@ async function joinLobbyRoom(roomId: string | null): Promise<void> {
 refreshRoomsButton.addEventListener("click", () => void refreshRooms());
 createRoomButton.addEventListener("click", () => void joinLobbyRoom(null));
 
+onRouteChange((route) => applyRoute(route));
+
 // --- Entrar / sair do jogo 3D ---
 function startGame(r: Room): void {
   inGame = true;
-  mainMenu.classList.add("hidden");
+  pageLogin.classList.add("hidden");
+  pageHome.classList.add("hidden");
   settingsModal.classList.add("hidden");
+  navigate("/play");
 
   // Prediction: cada passo fixo local vira um input enviado ao servidor.
   player.onInput = (input) => {
@@ -290,7 +493,7 @@ function startGame(r: Room): void {
   }, 400);
 }
 
-/** Volta ao menu inicial, limpando todo o estado da partida. */
+/** Volta ao /home, limpando todo o estado da partida. */
 function resetToMenu(errorMsg?: string): void {
   inGame = false;
   room = null;
@@ -318,13 +521,12 @@ function resetToMenu(errorMsg?: string): void {
 
   settingsModal.classList.add("hidden");
   document.exitPointerLock();
-  mainMenu.classList.remove("hidden");
 
   if (errorMsg) {
     statusEl.classList.add("error");
     statusEl.textContent = errorMsg;
   }
-  void enterLobby();
+  navigate("/home");
 }
 
 // --- Modal de configurações / pausa ---
@@ -376,6 +578,7 @@ function addChatMessage(name: string, text: string): void {
 }
 
 settingsButton.addEventListener("click", openMenuSettings);
+homeSettingsButton.addEventListener("click", openMenuSettings);
 closeSettingsButton.addEventListener("click", () => {
   settingsModal.classList.add("hidden");
 });
@@ -793,4 +996,8 @@ engine.runRenderLoop(() => {
 
 window.addEventListener("resize", () => engine.resize());
 
-void enterLobby();
+void (async () => {
+  await initAuth();
+  if (session) navigate("/home", true);
+  else navigate("/login", true);
+})();

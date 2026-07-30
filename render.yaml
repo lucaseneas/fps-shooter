@@ -1,11 +1,11 @@
-# Blueprint Render — 2 serviços: API Colyseus + site estático (Vite).
+# Blueprint Render — API Colyseus + site estático (Vite).
 # Docs: https://render.com/docs/blueprint-spec
 #
-# Deploy: conecte o repo no Render → New → Blueprint → selecione este arquivo.
-# Ou crie os dois serviços manualmente seguindo DEPLOY.md
+# Auth usa Postgres externo (ex.: Supabase). Sem DATABASE_URL → modo convidado.
+# Deploy: New → Blueprint → este arquivo. Ou manual via DEPLOY.md
 
 services:
-  # --- Backend: servidor Colyseus (WebSocket) ---
+  # --- Backend: servidor Colyseus (WebSocket) + auth HTTP ---
   - type: web
     name: fps-shooter-api
     runtime: node
@@ -14,6 +14,12 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
+    envVars:
+      # Cola a URI do Supabase no Dashboard na 1ª sync do Blueprint
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
 
   # --- Frontend: build Vite servido como site estático ---
   - type: web
@@ -21,6 +27,10 @@ services:
     runtime: static
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_SERVER_URL
         fromService:

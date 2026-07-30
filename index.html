@@ -86,55 +86,116 @@
       </div>
     </div>
 
-    <!-- Menu inicial (primeira tela, fundo opaco) -->
-    <div id="mainMenu">
-      <button id="settingsButton" title="Configurações">⚙</button>
-
-      <div class="menu-card">
+    <!-- Página /login -->
+    <div id="pageLogin" class="app-page hidden">
+      <button id="settingsButton" class="page-settings-btn" title="Configurações">⚙</button>
+      <div class="login-card">
         <header class="menu-header">
           <h1>FPS Web 3D</h1>
-          <p class="subtitle">Mata-mata · Primeiro a 20 kills vence</p>
+          <p class="subtitle">Mata-mata · Conta para jogar</p>
         </header>
 
-        <input
-          id="nameInput"
-          type="text"
-          maxlength="16"
-          placeholder="Seu nome"
-          autocomplete="off"
-        />
-
-        <div class="menu-columns">
-          <!-- Lobby: lista de salas -->
-          <section id="lobbyPanel">
-            <h3>Salas disponíveis</h3>
-            <div id="roomList"><p class="no-rooms">Carregando…</p></div>
-            <div class="lobby-actions">
-              <button id="refreshRoomsButton" class="secondary">Atualizar</button>
-              <button id="createRoomButton">Criar sala</button>
-            </div>
-          </section>
-
-          <!-- Informações do jogo -->
-          <section class="menu-info">
-            <h3>Como jogar</h3>
-            <ul class="controls">
-              <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Mover</li>
-              <li><kbd>Mouse</kbd> Olhar · <kbd>Click</kbd> Atirar</li>
-              <li><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> / <kbd>Scroll</kbd> Trocar arma</li>
-              <li><kbd>R</kbd> Recarregar · <kbd>Espaço</kbd> Pular</li>
-              <li><kbd>Shift</kbd> Correr · <kbd>Tab</kbd> Placar</li>
-              <li><kbd>Enter</kbd> Chat · <kbd>Esc</kbd> Pausa / Configurações</li>
-            </ul>
-            <h3>Arsenal</h3>
-            <p class="info-text">
-              Pistola, Rifle e Escopeta — todos entram com o kit completo.
-              Sala para 8 jogadores; bots completam as vagas. Mapa: Praça.
-            </p>
-          </section>
+        <div class="auth-tabs">
+          <button type="button" id="authTabLogin" class="auth-tab active">Entrar</button>
+          <button type="button" id="authTabRegister" class="auth-tab">Criar conta</button>
         </div>
 
-        <p id="connectionStatus"></p>
+        <form id="authForm" autocomplete="on">
+          <input
+            id="authUsername"
+            type="text"
+            maxlength="16"
+            placeholder="Username"
+            autocomplete="username"
+            required
+          />
+          <input
+            id="authPassword"
+            type="password"
+            maxlength="72"
+            placeholder="Password"
+            autocomplete="current-password"
+            required
+          />
+          <button type="submit" id="authSubmit">Entrar</button>
+        </form>
+        <p id="authStatus"></p>
+
+        <!-- Modo convidado (servidor sem DATABASE_URL) -->
+        <div id="guestPanel" class="hidden">
+          <p class="guest-hint">Servidor em modo convidado — entra só com o nome:</p>
+          <input
+            id="nameInput"
+            type="text"
+            maxlength="16"
+            placeholder="Seu nome"
+            autocomplete="off"
+          />
+          <button type="button" id="guestContinueButton">Continuar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Página /home — perfil + lobbies -->
+    <div id="pageHome" class="app-page hidden">
+      <button id="homeSettingsButton" class="page-settings-btn" title="Configurações">⚙</button>
+      <div class="home-shell">
+        <header class="home-top">
+          <div>
+            <h1>FPS Web 3D</h1>
+            <p class="subtitle">Lobby</p>
+          </div>
+          <button type="button" id="logoutButton" class="secondary">Sair</button>
+        </header>
+
+        <div class="home-layout">
+          <aside class="home-profile">
+            <h2>Jogador</h2>
+            <p class="profile-name" id="homeDisplayName">—</p>
+            <p class="profile-meta" id="homeMemberSince"></p>
+            <div class="stats-grid">
+              <div class="stat-cell">
+                <span class="stat-value" id="statKills">0</span>
+                <span class="stat-label">Kills</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="statDeaths">0</span>
+                <span class="stat-label">Deaths</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="statWins">0</span>
+                <span class="stat-label">Vitórias</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="statMatches">0</span>
+                <span class="stat-label">Partidas</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="statKd">0.00</span>
+                <span class="stat-label">K/D</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="statWinRate">0%</span>
+                <span class="stat-label">Win rate</span>
+              </div>
+            </div>
+            <p class="info-text home-tip">
+              Pistola, Rifle e Escopeta · Sala até 8 · Mapa Praça · Primeiro a 20 kills.
+            </p>
+          </aside>
+
+          <section class="home-lobbies">
+            <div class="lobbies-header">
+              <h2>Lobbies disponíveis</h2>
+              <div class="lobby-actions">
+                <button id="refreshRoomsButton" class="secondary" type="button">Atualizar</button>
+                <button id="createRoomButton" type="button">Criar sala</button>
+              </div>
+            </div>
+            <div id="roomList"><p class="no-rooms">Carregando…</p></div>
+            <p id="connectionStatus"></p>
+          </section>
+        </div>
       </div>
     </div>
 

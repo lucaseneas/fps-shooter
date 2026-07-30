@@ -1,5 +1,6 @@
 import { Client, Room } from "colyseus.js";
 import { CONFIG } from "../../shared/config";
+import { loadStoredToken } from "./authApi";
 
 export interface PlayerSnapshot {
   name: string;
@@ -19,8 +20,12 @@ export interface PlayerSnapshot {
 
 let cachedClient: Client | null = null;
 
-/** URL do Colyseus: produção via VITE_SERVER_URL; local usa ws na porta do config. */
+/** URL do Colyseus: em `vite` (dev) usa localhost; em build usa VITE_SERVER_URL. */
 function getServerUrl(): string {
+  if (import.meta.env.DEV) {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.hostname}:${CONFIG.serverPort}`;
+  }
   const envUrl = import.meta.env.VITE_SERVER_URL?.trim();
   if (envUrl) return envUrl;
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -32,6 +37,11 @@ function getClient(): Client {
     cachedClient = new Client(getServerUrl());
   }
   return cachedClient;
+}
+
+function joinOptions(name: string): { name: string; token?: string } {
+  const token = loadStoredToken();
+  return token ? { name, token } : { name };
 }
 
 /** Entrada da lista de salas do lobby. */
@@ -55,12 +65,12 @@ export async function listRooms(): Promise<RoomListing[]> {
 
 /** Cria uma sala nova e entra nela. */
 export async function createRoom(name: string): Promise<Room> {
-  return getClient().create("deathmatch", { name });
+  return getClient().create("deathmatch", joinOptions(name));
 }
 
 /** Entra numa sala existente pelo id. */
 export async function joinRoomById(roomId: string, name: string): Promise<Room> {
-  return getClient().joinById(roomId, { name });
+  return getClient().joinById(roomId, joinOptions(name));
 }
 
 /** Lê o mapa de players do estado (schema decodificado por reflexão). */

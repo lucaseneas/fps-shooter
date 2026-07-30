@@ -14,6 +14,8 @@ import {
   EYE_HEIGHT,
 } from "../shared/movement";
 import { raycastMap, rayAabb, raySphere, Vec3 } from "./physics";
+import { verifyToken, recordMatchStats } from "./auth";
+import { isAuthEnabled } from "./db";
 
 const MAX_RANGE = 200;
 /** Quantos inputs processar por jogador a cada tick (anti-speedhack). */
@@ -75,6 +77,11 @@ export class DeathmatchRoom extends Room<MatchState> {
   /** Último instante em que cada combatente recebeu dano. */
   private lastDamagedAt = new Map<string, number>();
   private lastChatAt = new Map<string, number>();
+
+  /** userId da conta autenticada por sessionId (humanos). */
+  private userIds = new Map<string, number>();
+  /** Evita gravar stats duas vezes no mesmo fim de partida. */
+  private statsRecorded = false;
 
   /** Timestamp (ms) em que cada morto deve renascer. */
   private respawnAt = new Map<string, number>();
@@ -149,9 +156,15 @@ export class DeathmatchRoom extends Room<MatchState> {
     );
   }
 
-  onJoin(client: Client, options: { name?: string }): void {
-    const name =
-      typeof options?.name === "string" && options.name.trim().length > 0
+  onJoin(client: Client, options: { name?: string; token?: string }): void {
+    const account = verifyToken(options?.token);
+    if (isAuthEnabled() && !account) {
+      throw new Error("login_required");
+    }
+
+    const name = account
+      ? account.username
+      : typeof options?.name === "string" && options.name.trim().length > 0
         ? options.name.trim().slice(0, 16)
         : `Player${Math.floor(Math.random() * 900 + 100)}`;
 
@@ -164,6 +177,10 @@ export class DeathmatchRoom extends Room<MatchState> {
     p.y = 0;
     this.state.players.set(client.sessionId, p);
 
+    if (account) {
+      this.userIds.set(client.sessionId, account.id);
+    }
+
     this.bodies.set(client.sessionId, createBody(spawn.x, spawn.z));
     this.pendingInputs.set(client.sessionId, []);
     this.history.set(client.sessionId, []);
@@ -174,6 +191,7 @@ export class DeathmatchRoom extends Room<MatchState> {
   onLeave(client: Client): void {
     const id = client.sessionId;
     this.state.players.delete(id);
+    this.userIds.delete(id);
     this.bodies.delete(id);
     this.pendingInputs.delete(id);
     this.history.delete(id);
@@ -340,6 +358,7 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     this.state.matchOver = false;
     this.state.winnerName = "";
+    this.statsRecorded = false;
     this.respawnAt.clear();
     this.deathPos.clear();
 
@@ -516,8 +535,28 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.state.winnerName = attacker.name;
       this.matchResetAt = Date.now() + CONFIG.matchResetDelay * 1000;
       this.broadcast("matchEnd", { winnerName: attacker.name });
+      void this.persistMatchStats(attackerId);
     }
     return true;
+  }
+
+  /** Grava kills/deaths/wins dos humanos autenticados no fim da partida. */
+  private async persistMatchStats(winnerId: string): Promise<void> {
+    if (this.statsRecorded || !isAuthEnabled()) return;
+    this.statsRecorded = true;
+    const jobs: Promise<void>[] = [];
+    for (const [sessionId, userId] of this.userIds) {
+      const p = this.state.players.get(sessionId);
+      if (!p) continue;
+      jobs.push(
+        recordMatchStats(userId, {
+          kills: p.kills,
+          deaths: p.deaths,
+          won: sessionId === winnerId,
+        }).catch((err) => console.error("[auth] stats:", err))
+      );
+    }
+    await Promise.all(jobs);
   }
 
   // --- Bots ---

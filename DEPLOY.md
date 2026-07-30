@@ -1,23 +1,35 @@
 # Deploy no Render
 
-O jogo usa **dois serviços** no Render:
+O jogo usa **dois serviços** no Render + **Postgres no Supabase** (auth):
 
-| Serviço | Tipo | Função |
+| Recurso | Onde | Função |
 |---------|------|--------|
-| `fps-shooter-api` | Web Service (Node) | Servidor Colyseus (WebSocket) |
-| `fps-shooter` | Static Site | Cliente 3D (build Vite → `dist/`) |
+| `fps-shooter-api` | Render Web Service | Colyseus + login HTTP |
+| `fps-shooter` | Render Static Site | Cliente 3D (Vite → `dist/`) |
+| Postgres | Supabase | Contas de utilizadores |
 
 ---
 
 ## Opção A — Blueprint (recomendado)
 
-1. Faça push do projeto para um repositório no **GitHub** ou **GitLab**.
-2. Acesse [render.com](https://render.com) → **New** → **Blueprint**.
-3. Conecte o repositório e selecione o `render.yaml` na raiz.
-4. Confirme a criação dos dois serviços e aguarde o deploy.
-5. Abra a URL do serviço **`fps-shooter`** (Static Site) no navegador.
+1. Cria o projeto no **Supabase** e copia a **Connection string (URI)** (ver secção Auth abaixo).
+2. Push do repo → [render.com](https://render.com) → **New** → **Blueprint**.
+3. Na sync, cola `DATABASE_URL` quando o painel pedir; `JWT_SECRET` é gerado sozinho.
+4. Abre a URL do **`fps-shooter`** (Static Site).
 
-O Blueprint liga automaticamente `VITE_SERVER_URL` à URL pública do `fps-shooter-api`.
+O Blueprint liga `VITE_SERVER_URL` à URL pública do `fps-shooter-api`.
+
+### Auth — Supabase Postgres
+
+1. [supabase.com](https://supabase.com) → New project → guarda a password da DB.
+2. **Project Settings → Database → Connection string → URI**.
+3. Escolhe **Session pooler** (ou Direct) e substitui `[YOUR-PASSWORD]`.
+4. No Render → `fps-shooter-api` → Environment:
+   - `DATABASE_URL` = essa URI
+   - `JWT_SECRET` = (já vem do Blueprint, ou gera um valor longo)
+5. Redeploy da API. No arranque cria a tabela `users` sozinha.
+
+Sem `DATABASE_URL`, a API sobe em modo convidado (só nome).
 
 ---
 
@@ -100,4 +112,6 @@ $env:VITE_SERVER_URL="http://localhost:2567"; npm run build; npm run preview
 | Variável | Onde | Descrição |
 |----------|------|-----------|
 | `PORT` | API (auto) | Porta HTTP/WS — definida pelo Render |
+| `DATABASE_URL` | API | URI Postgres do **Supabase** |
+| `JWT_SECRET` | API (Blueprint) | Segredo para assinar tokens de login |
 | `VITE_SERVER_URL` | Static Site (build) | URL HTTPS do `fps-shooter-api` |
