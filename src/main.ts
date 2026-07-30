@@ -520,7 +520,7 @@ function resetToMenu(errorMsg?: string): void {
   document.getElementById("endScreen")!.classList.add("hidden");
 
   settingsModal.classList.add("hidden");
-  document.exitPointerLock();
+  player.exitImmersive();
 
   if (errorMsg) {
     statusEl.classList.add("error");
@@ -531,6 +531,7 @@ function resetToMenu(errorMsg?: string): void {
 
 // --- Modal de configurações / pausa ---
 function openPauseModal(): void {
+  weapons.setTrigger(false);
   settingsModal.classList.remove("hidden", "menu-mode");
   settingsModal.classList.add("pause-mode");
 }
@@ -929,11 +930,43 @@ document.addEventListener("pointerlockchange", () => {
     settingsModal.classList.add("hidden");
   } else if (inGame && !endScreenShown) {
     if (chatTyping) return;
-    // ESC no jogo → modal de pausa (configurações + sair para o menu).
+    // ESC / perda do lock → modal de pausa (configurações + sair).
     openPauseModal();
   }
 });
 
+// ESC: destrava o mouse e abre configurações (necessário com Keyboard Lock).
+window.addEventListener(
+  "keydown",
+  (e) => {
+    if (e.code !== "Escape" || !inGame || endScreenShown) return;
+
+    if (chatTyping) {
+      e.preventDefault();
+      closeChat(true);
+      return;
+    }
+
+    if (player.isPointerLocked) {
+      e.preventDefault();
+      player.releasePointerLock();
+      openPauseModal();
+      return;
+    }
+
+    // Já na pausa: ESC fecha e retoma o jogo.
+    if (
+      !settingsModal.classList.contains("hidden") &&
+      settingsModal.classList.contains("pause-mode")
+    ) {
+      e.preventDefault();
+      settingsModal.classList.add("hidden");
+      audio.resume();
+      player.requestPointerLock();
+    }
+  },
+  true
+);
 // --- Render loop ---
 let debugAccumulator = 0;
 let footstepAccumulator = 0;
@@ -952,6 +985,7 @@ engine.runRenderLoop(() => {
 
   player.update(dt);
   player.updateRecoil(dt, weapons.isShooting);
+  weapons.setCrouching(player.isCrouching);
   weapons.update(dt);
   viewModel.update(dt);
   for (const rp of remotePlayers.values()) rp.update(dt);
@@ -959,7 +993,11 @@ engine.runRenderLoop(() => {
   // Som de passos.
   if (player.isMovingOnGround) {
     footstepAccumulator += dt;
-    const interval = player.isRunning ? 0.3 : 0.42;
+    const interval = player.isCrouching
+      ? 0.55
+      : player.isRunning
+        ? 0.3
+        : 0.42;
     if (footstepAccumulator >= interval) {
       footstepAccumulator = 0;
       audio.footstep();

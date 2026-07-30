@@ -36,6 +36,7 @@ async function main(): Promise<void> {
       yaw: 0,
       jump: false,
       run: false,
+      crouch: false,
     });
   }
   await new Promise((r) => setTimeout(r, 1500));

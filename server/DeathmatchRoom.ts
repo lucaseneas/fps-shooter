@@ -12,6 +12,7 @@ import {
   createBody,
   stepPlayer,
   EYE_HEIGHT,
+  CROUCH_EYE_HEIGHT,
 } from "../shared/movement";
 import { raycastMap, rayAabb, raySphere, Vec3 } from "./physics";
 import { verifyToken, recordMatchStats } from "./auth";
@@ -65,6 +66,8 @@ export class DeathmatchRoom extends Room<MatchState> {
   private bodies = new Map<string, BodyState>();
   /** Fila de inputs pendentes por humano. */
   private pendingInputs = new Map<string, PlayerInput[]>();
+  /** Agachado (último input) — afeta altura do olho no hitscan. */
+  private crouching = new Map<string, boolean>();
   /** Histórico de posições (lag compensation), por combatente. */
   private history = new Map<string, HistoryEntry[]>();
   /** RTT medido por cliente (ms). */
@@ -183,6 +186,7 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     this.bodies.set(client.sessionId, createBody(spawn.x, spawn.z));
     this.pendingInputs.set(client.sessionId, []);
+    this.crouching.set(client.sessionId, false);
     this.history.set(client.sessionId, []);
 
     this.rebalanceBots();
@@ -194,6 +198,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.userIds.delete(id);
     this.bodies.delete(id);
     this.pendingInputs.delete(id);
+    this.crouching.delete(id);
     this.history.delete(id);
     this.rtt.delete(id);
     this.lastPingAt.delete(id);
@@ -236,6 +241,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         stepPlayer(body, input);
         p.lastSeq = input.seq;
         p.yaw = input.yaw;
+        this.crouching.set(id, Boolean(input.crouch));
       }
       queue.splice(0, count);
 
@@ -389,9 +395,12 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.lastFireAt.set(shooterId, now);
 
     // Origem precisa estar perto do olho do jogador no servidor.
+    const eyeH = this.crouching.get(shooterId)
+      ? CROUCH_EYE_HEIGHT
+      : EYE_HEIGHT;
     const eye: Vec3 = {
       x: shooter.x,
-      y: shooter.y + EYE_HEIGHT,
+      y: shooter.y + eyeH,
       z: shooter.z,
     };
     const originDist = Math.sqrt(

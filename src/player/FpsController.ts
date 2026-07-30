@@ -12,10 +12,62 @@ import {
   copyBody,
   stepPlayer,
   EYE_HEIGHT,
+  CROUCH_EYE_HEIGHT,
   FIXED_DT,
 } from "../../shared/movement";
 
 const BASE_SENSITIVITY = 0.0022;
+/** Velocidade de transição da câmera ao agachar/levantar. */
+const CROUCH_CAM_SPEED = 12;
+
+/**
+ * Teclas capturadas pelo Keyboard Lock (bloqueia atalhos do Chrome).
+ * Escape propositalmente fora da lista para o ESC soltar o mouse.
+ */
+const LOCKED_KEYS = [
+  "KeyW",
+  "KeyA",
+  "KeyS",
+  "KeyD",
+  "KeyR",
+  "KeyT",
+  "KeyN",
+  "KeyP",
+  "KeyF",
+  "KeyG",
+  "KeyH",
+  "KeyJ",
+  "KeyL",
+  "KeyO",
+  "KeyU",
+  "KeyE",
+  "KeyC",
+  "KeyV",
+  "KeyX",
+  "KeyZ",
+  "KeyY",
+  "Digit1",
+  "Digit2",
+  "Digit3",
+  "Digit4",
+  "Digit5",
+  "Digit6",
+  "Digit7",
+  "Digit8",
+  "Digit9",
+  "Digit0",
+  "F5",
+  "Tab",
+  "Space",
+  "ControlLeft",
+  "ControlRight",
+  "ShiftLeft",
+  "ShiftRight",
+  "AltLeft",
+  "AltRight",
+  "MetaLeft",
+  "MetaRight",
+];
 
 /** Estado autoritativo recebido do servidor para reconciliação. */
 export interface ServerBodyState {
@@ -68,6 +120,8 @@ export class FpsController {
   private readonly maxPitch = Math.PI / 2 - 0.02;
   /** Velocidade de retorno da mira após soltar o gatilho. */
   private readonly recoilRecoverySpeed = 16;
+  /** Altura atual dos olhos (interpolada entre em pé e agachado). */
+  private eyeY = EYE_HEIGHT;
 
   constructor(
     scene: Scene,
@@ -130,15 +184,15 @@ export class FpsController {
   }
 
   private registerInput(): void {
-    window.addEventListener("keydown", this.onKeyDown);
-    window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("keydown", this.onKeyDown, true);
+    window.addEventListener("keyup", this.onKeyUp, true);
     document.addEventListener("pointerlockchange", this.onPointerLockChange);
     document.addEventListener("mousemove", this.onMouseMove);
   }
 
   dispose(): void {
-    window.removeEventListener("keydown", this.onKeyDown);
-    window.removeEventListener("keyup", this.onKeyUp);
+    window.removeEventListener("keydown", this.onKeyDown, true);
+    window.removeEventListener("keyup", this.onKeyUp, true);
     document.removeEventListener("pointerlockchange", this.onPointerLockChange);
     document.removeEventListener("mousemove", this.onMouseMove);
     this.body.dispose();
@@ -146,7 +200,47 @@ export class FpsController {
 
   /** Solicita o travamento do ponteiro (chamado ao clicar em "jogar"). */
   requestPointerLock(): void {
-    this.canvas.requestPointerLock();
+    void this.enterImmersive();
+  }
+
+  /**
+   * Fullscreen + pointer lock + Keyboard Lock.
+   * Sem fullscreen o Chrome ignora preventDefault em Ctrl+R / Ctrl+W.
+   * Não trava Escape — assim ESC continua soltando o mouse.
+   */
+  private async enterImmersive(): Promise<void> {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      /* gesto inválido ou política do browser */
+    }
+
+    if (document.pointerLockElement !== this.canvas) {
+      this.canvas.requestPointerLock();
+    }
+
+    try {
+      await navigator.keyboard?.lock?.(LOCKED_KEYS);
+    } catch {
+      /* API indisponível ou sem fullscreen */
+    }
+  }
+
+  /** Sai de fullscreen / pointer lock / keyboard lock (voltar ao menu). */
+  exitImmersive(): void {
+    navigator.keyboard?.unlock?.();
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    }
+  }
+
+  /** Solta o mouse e o keyboard lock (pausa / ESC), mantém fullscreen. */
+  releasePointerLock(): void {
+    navigator.keyboard?.unlock?.();
+    if (document.pointerLockElement) document.exitPointerLock();
   }
 
   get isPointerLocked(): boolean {
@@ -247,7 +341,17 @@ export class FpsController {
   }
 
   get isRunning(): boolean {
-    return this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+    return (
+      !this.isCrouching &&
+      (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"))
+    );
+  }
+
+  get isCrouching(): boolean {
+    return (
+      this.movementEnabled &&
+      (this.keys.has("ControlLeft") || this.keys.has("ControlRight"))
+    );
   }
 
   /** Posição dos pés. */
@@ -262,20 +366,47 @@ export class FpsController {
 
   /** Posição do olho (origem do hitscan). */
   getHead(): Vector3 {
-    return new Vector3(this.sim.x, this.sim.y + EYE_HEIGHT, this.sim.z);
+    return new Vector3(this.sim.x, this.sim.y + this.eyeY, this.sim.z);
   }
 
   private onPointerLockChange = (): void => {
     this.pointerLocked = document.pointerLockElement === this.canvas;
+    if (this.pointerLocked) {
+      // Reaplica o lock se o fullscreen já estiver ativo.
+      void navigator.keyboard?.lock?.(LOCKED_KEYS).catch(() => {});
+    } else {
+      navigator.keyboard?.unlock?.();
+    }
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    if (this.pointerLocked) {
+      const browserChord =
+        e.ctrlKey ||
+        e.metaKey ||
+        e.code === "ControlLeft" ||
+        e.code === "ControlRight" ||
+        e.key === "F5" ||
+        (e.key === "r" && (e.ctrlKey || e.metaKey)) ||
+        (e.key === "R" && (e.ctrlKey || e.metaKey));
+      if (browserChord) e.preventDefault();
+    }
+
     if (!this.movementEnabled) return;
     this.keys.add(e.code);
     if (e.code === "Space") e.preventDefault();
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
+    if (
+      this.pointerLocked &&
+      (e.ctrlKey ||
+        e.metaKey ||
+        e.code === "ControlLeft" ||
+        e.code === "ControlRight")
+    ) {
+      e.preventDefault();
+    }
     this.keys.delete(e.code);
   };
 
@@ -300,6 +431,9 @@ export class FpsController {
       }
     }
 
+    const targetEye = this.isCrouching ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
+    this.eyeY += (targetEye - this.eyeY) * Math.min(1, dt * CROUCH_CAM_SPEED);
+
     this.syncVisual();
   }
 
@@ -312,13 +446,18 @@ export class FpsController {
     if (this.keys.has("KeyD")) strafe += 1;
     if (this.keys.has("KeyA")) strafe -= 1;
 
+    const crouch =
+      this.keys.has("ControlLeft") || this.keys.has("ControlRight");
     const input: PlayerInput = {
       seq: ++this.inputSeq,
       forward,
       strafe,
       yaw: this.yaw,
       jump: this.keys.has("Space"),
-      run: this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"),
+      run:
+        !crouch &&
+        (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight")),
+      crouch,
     };
 
     stepPlayer(this.sim, input);
@@ -329,11 +468,7 @@ export class FpsController {
 
   private syncVisual(): void {
     this.body.position.set(this.sim.x, this.sim.y, this.sim.z);
-    this.camera.position.set(
-      this.sim.x,
-      this.sim.y + EYE_HEIGHT,
-      this.sim.z
-    );
+    this.camera.position.set(this.sim.x, this.sim.y + this.eyeY, this.sim.z);
     this.camera.rotation.set(
       Scalar.Clamp(this.basePitch + this.recoilOffset, -this.maxPitch, this.maxPitch),
       this.yaw + this.recoilYawOffset,

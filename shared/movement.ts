@@ -12,8 +12,12 @@ import { MAP_BOXES, PLAY_BOUND } from "./mapData";
 export const PLAYER_RADIUS = 0.5;
 export const PLAYER_HEIGHT = 1.8;
 export const EYE_HEIGHT = 1.7;
+/** Altura dos olhos ao agachar (CTRL). */
+export const CROUCH_EYE_HEIGHT = 1.05;
 export const WALK_SPEED = 5.5;
 export const RUN_MULTIPLIER = 1.5;
+/** Multiplicador de velocidade ao agachar (bem lento). */
+export const CROUCH_MULTIPLIER = 0.32;
 /** Strafe lateral é mais lento que andar para frente (CS-like). */
 export const STRAFE_MULTIPLIER = 0.75;
 export const JUMP_STRENGTH = 7.5;
@@ -35,6 +39,8 @@ export interface PlayerInput {
   yaw: number;
   jump: boolean;
   run: boolean;
+  /** Agachado (CTRL) — movimento lento e mais precisão no tiro. */
+  crouch: boolean;
 }
 
 /** Estado físico do corpo (posição = pés). */
@@ -81,7 +87,10 @@ export function stepPlayer(s: BodyState, input: PlayerInput): void {
     wx /= len;
     wz /= len;
   }
-  const speed = WALK_SPEED * (input.run ? RUN_MULTIPLIER : 1);
+  const crouched = Boolean(input.crouch);
+  const speed =
+    WALK_SPEED *
+    (crouched ? CROUCH_MULTIPLIER : input.run ? RUN_MULTIPLIER : 1);
 
   // --- Movimento horizontal com push-out contra AABBs ---
   s.x += wx * speed * dt;

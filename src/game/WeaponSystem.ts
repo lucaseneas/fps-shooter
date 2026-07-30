@@ -52,6 +52,7 @@ export class WeaponSystem {
   private semiAutoLock = false;
   private enabled = true;
   private infiniteAmmo = false;
+  private crouching = false;
   private readonly recoilShots = new Map<string, number>();
   private readonly lastShotAt = new Map<string, number>();
 
@@ -119,6 +120,11 @@ export class WeaponSystem {
   setTrigger(held: boolean): void {
     this.triggerHeld = held;
     if (!held) this.semiAutoLock = false;
+  }
+
+  /** Agachado: reduz recoil e spread dos pellets. */
+  setCrouching(on: boolean): void {
+    this.crouching = on;
   }
 
   switchWeapon(index: number): void {
@@ -200,9 +206,10 @@ export class WeaponSystem {
 
     const hits: HitInfo[] = [];
     const dirs: Vector3[] = [];
+    const accuracy = this.crouching ? 0.4 : 1;
     for (let i = 0; i < this.weapon.pellets; i++) {
       const [yaw, pitch] = this.weapon.pelletPattern[i] ?? [0, 0];
-      const dir = this.applyFixedOffset(baseDir, yaw, pitch);
+      const dir = this.applyFixedOffset(baseDir, yaw * accuracy, pitch * accuracy);
       dirs.push(dir);
       const result = this.raycast(origin, dir);
       if (result.info) hits.push(result.info);
@@ -210,7 +217,7 @@ export class WeaponSystem {
 
     this.onFire?.({ origin, dirs, localHits: hits });
     const recoil = this.nextRecoil();
-    this.onRecoil?.(recoil.pitch, recoil.yaw);
+    this.onRecoil?.(recoil.pitch * accuracy, recoil.yaw * accuracy);
     this.onStateChanged?.();
   }
 
