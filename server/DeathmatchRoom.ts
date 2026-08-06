@@ -121,7 +121,10 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     this.onMessage("spong", (client, msg: { t: number }) => {
       if (typeof msg?.t !== "number") return;
-      this.rtt.set(client.sessionId, Math.max(0, Date.now() - msg.t));
+      const rtt = Math.max(0, Date.now() - msg.t);
+      this.rtt.set(client.sessionId, rtt);
+      // Mesmo RTT que o rewind usa — o cliente alinha modelo/hitbox com ele.
+      client.send("srtt", { rtt });
     });
 
     // Eco para o cliente medir o próprio ping (indicador no HUD).
@@ -201,6 +204,10 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     this.pendingInputs.set(client.sessionId, []);
     this.history.set(client.sessionId, []);
+
+    // Primeiro RTT o quanto antes — rewind com rtt=0 faz o hit “à frente” da hitbox.
+    this.lastPingAt.set(client.sessionId, Date.now());
+    client.send("sping", { t: Date.now() });
 
     this.rebalanceBots();
   }
@@ -284,7 +291,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     const now = Date.now();
     for (const client of this.clients) {
       const last = this.lastPingAt.get(client.sessionId) ?? 0;
-      if (now - last < 2000) continue;
+      if (now - last < 500) continue;
       this.lastPingAt.set(client.sessionId, now);
       client.send("sping", { t: now });
     }
@@ -424,7 +431,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     // servidor — nunca da posição declarada pelo cliente.
     const origin: Vec3 = eye;
 
-    // Rewind: metade do RTT + delay de interpolação dos remotos.
+    // Rewind: RTT/2 + interpDelay (mesma janela do RemotePlayer no cliente).
     const rewindMs = Math.min(
       HISTORY_WINDOW_MS,
       (this.rtt.get(shooterId) ?? 0) / 2 + CONFIG.interpDelayMs

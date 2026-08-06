@@ -238,6 +238,8 @@ let preSpawnKitReady = false;
 let lastWeaponIndex = 1;
 /** Ping medido pelo cliente (ms), para o indicador no HUD. */
 let pingMs: number | null = null;
+/** RTT autoritativo do servidor (rewind / pose dos remotos). */
+let serverRttMs = 0;
 
 // --- Auth / páginas ---
 let authEnabled = false;
@@ -744,6 +746,7 @@ function resetToMenu(errorMsg?: string): void {
   freeSpectating = false;
   lastKnownHealth = CONFIG.playerMaxHealth;
   pingMs = null;
+  serverRttMs = 0;
   closeChat(false);
   chatLog.replaceChildren();
   if (loadoutPicking) {
@@ -994,10 +997,18 @@ function setupRoom(r: Room): void {
   r.onMessage("sping", (msg: { t: number }) => {
     r.send("spong", msg);
   });
+  r.onMessage("srtt", (msg: { rtt: number }) => {
+    if (typeof msg?.rtt === "number" && Number.isFinite(msg.rtt)) {
+      serverRttMs = Math.max(0, msg.rtt);
+      pingMs = Math.round(serverRttMs);
+    }
+  });
 
-  // Ping do cliente (indicador no HUD): eco a cada 2s.
+  // Ping do cliente (fallback no HUD até o primeiro srtt).
   r.onMessage("cpong", (msg: { t: number }) => {
-    pingMs = Math.max(0, Math.round(performance.now() - msg.t));
+    if (serverRttMs <= 0) {
+      pingMs = Math.max(0, Math.round(performance.now() - msg.t));
+    }
   });
   const pingInterval = window.setInterval(() => {
     r.send("cping", { t: performance.now() });
@@ -1449,7 +1460,9 @@ engine.runRenderLoop(() => {
     debugSpreadCircle.style.display = "none";
   }
 
-  for (const rp of remotePlayers.values()) rp.update(dt, pingMs ?? 0);
+  for (const rp of remotePlayers.values()) {
+    rp.update(dt, serverRttMs > 0 ? serverRttMs : pingMs ?? 0);
+  }
 
   // Som de passos.
   if (player.isMovingOnGround) {

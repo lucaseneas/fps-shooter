@@ -20,13 +20,13 @@ export const CONFIG = {
 
   // --- Netcode (visual + lag compensation) ---
   /**
-   * Atraso estimado da interpolação visual dos remotos (ms).
-   * Usado no rewind do hitscan: RTT/2 + este valor.
-   * A hitbox vermelha do debug amostra o mesmo instante (lag comp).
+   * Folga no rewind do hitscan (ms), além de RTT/2.
+   * Remotos no cliente amostram a mesma janela
+   * (now - interpDelay + RTT/2) — boneco e hitbox colados nela.
    */
-  interpDelayMs: 75,
-  /** Velocidade da interpolação dos inimigos no cliente (maior = cola mais rápido). */
+  interpDelayMs: 50,
+  /** @deprecated Visual remoto segue a pose do hitscan. */
   remoteInterpSpeed: 20,
-  /** Máximo de extrapolação além do último patch do servidor (ms). */
+  /** @deprecated Visual remoto segue a pose do hitscan. */
   remoteExtrapolationMs: 80,
 } as const;

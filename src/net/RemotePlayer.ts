@@ -11,31 +11,28 @@ import { CROUCH_EYE_HEIGHT, EYE_HEIGHT } from "../../shared/movement";
 
 const STAND_HEIGHT = 1.8;
 const CROUCH_HEIGHT = 1.15;
-/** Velocidade de transição visual ao agachar/levantar. */
-const CROUCH_LERP = 12;
-/** Limite de velocidade para extrapolação (evita spikes entre patches). */
 const MAX_EXTRAP_SPEED = 10;
+const HISTORY_MS = 1000;
+/** Teto ao prever além do último patch (equivale ao rewind com ping alto). */
+const EXTRAP_CAP_MS = 350;
 
 const STAND_BODY_H = 1.3;
 const CROUCH_BODY_H = 0.85;
-
-/** Histórico local para amostrar a mesma janela do rewind do servidor. */
-const HISTORY_MS = 1000;
-/** Teto de extrapolação da hitbox de debug (ms). */
-const DEBUG_EXTRAP_CAP_MS = 250;
 
 interface PosSample {
   t: number;
   x: number;
   y: number;
   z: number;
+  yaw: number;
 }
 
 /**
- * Representação visual de outro combatente da sala (humano ou bot — o
- * cliente não distingue). Interpolação rápida + extrapolação curta entre
- * patches do servidor. A hitbox de debug mostra a pose de lag compensation
- * (onde o hitscan do servidor realmente testa o tiro).
+ * Combatente remoto colado na pose do hitscan.
+ *
+ * Servidor: sampleHistory(now - (RTT/2 + interpDelayMs)).
+ * Cliente (receive-time): sample(now - interpDelayMs + RTT/2).
+ * Modelo e hitbox vermelha usam a mesma pose — o que você vê é o que conta.
  */
 export class RemotePlayer {
   readonly id: string;
@@ -48,24 +45,16 @@ export class RemotePlayer {
   private readonly debugBodyHitbox: Mesh;
   private readonly debugHeadHitbox: Mesh;
 
-  /** Centro do corpo no último patch (alvo base). */
-  private readonly targetPos = new Vector3(0, 0, 0);
-  /** Posição renderizada após extrapolação (reutilizada a cada frame). */
-  private readonly renderPos = new Vector3(0, 0, 0);
-  private targetYaw = 0;
-
-  private feetX = 0;
-  private feetY = 0;
-  private feetZ = 0;
-  private crouching = false;
-  /** 0 = em pé, 1 = agachado (interpolado). */
   private crouchT = 0;
+  /** Crouch atual do servidor (hitscan usa o valor corrente, não o histórico). */
+  private crouching = false;
 
-  private lastServerX = 0;
-  private lastServerZ = 0;
   private velocityX = 0;
   private velocityZ = 0;
+  private lastServerX = 0;
+  private lastServerZ = 0;
   private lastPatchTime = 0;
+  private lastYaw = 0;
   private hasPatch = false;
   private readonly history: PosSample[] = [];
 
@@ -105,7 +94,7 @@ export class RemotePlayer {
     this.headMesh.material = headMat;
     this.headMesh.metadata = { hitbox: { id, part: "head" } };
 
-    // AABB do hitscan autoritativo (lag-compensated), sem yaw — igual ao servidor.
+    // AABB idêntico ao hitscan do servidor (sem yaw — o server usa AABB).
     const debugMat = new StandardMaterial(`${id}_debugHitboxMat`, scene);
     debugMat.diffuseColor = new Color3(1, 0, 0);
     debugMat.emissiveColor = new Color3(1, 0, 0);
@@ -218,67 +207,85 @@ export class RemotePlayer {
   }
 
   /**
-   * Amostra a pose que o servidor usaria no hitscan para o nosso RTT:
-   * rewind = RTT/2 + interpDelayMs. O histórico é stampado no receive time;
-   * targetRecvT = now - interpDelay + RTT/2 alinha com esse rewind.
+   * Mesma janela do `sampleHistory` do servidor:
+   * rewindMs = RTT/2 + interpDelayMs → world ≈ T_click - interpDelay.
+   * Com stamps de receive: targetRecv = now - interpDelay + RTT/2.
    */
-  private sampleLagCompFeet(rttMs: number): PosSample {
+  private sampleHitscanFeet(rttMs: number): PosSample {
     const now = performance.now();
     const oneWay = Math.max(0, rttMs) / 2;
-    const targetRecvT = now - CONFIG.interpDelayMs + oneWay;
+    const targetT = now - CONFIG.interpDelayMs + oneWay;
 
     if (this.history.length === 0) {
-      return { t: now, x: this.feetX, y: this.feetY, z: this.feetZ };
+      return {
+        t: now,
+        x: this.lastServerX,
+        y: 0,
+        z: this.lastServerZ,
+        yaw: this.lastYaw,
+      };
     }
 
     const last = this.history[this.history.length - 1];
-    if (targetRecvT >= last.t) {
-      const aheadMs = Math.min(DEBUG_EXTRAP_CAP_MS, targetRecvT - last.t);
-      const aheadSec = aheadMs / 1000;
+    if (targetT >= last.t) {
+      // Ainda não chegou o patch desse instante — mesma ideia do
+      // servidor quando o alvo está “à frente” do histórico: segura no
+      // último ponto e projeta com a velocidade estimada.
+      const aheadMs = Math.min(EXTRAP_CAP_MS, targetT - last.t);
+      const s = aheadMs / 1000;
       return {
-        t: targetRecvT,
-        x: last.x + this.velocityX * aheadSec,
+        t: targetT,
+        x: last.x + this.velocityX * s,
         y: last.y,
-        z: last.z + this.velocityZ * aheadSec,
+        z: last.z + this.velocityZ * s,
+        yaw: last.yaw,
       };
     }
 
     const first = this.history[0];
-    if (targetRecvT <= first.t) {
-      return { t: first.t, x: first.x, y: first.y, z: first.z };
-    }
+    if (targetT <= first.t) return { ...first };
 
     for (let i = this.history.length - 2; i >= 0; i--) {
-      if (this.history[i].t <= targetRecvT) {
+      if (this.history[i].t <= targetT) {
         const a = this.history[i];
         const b = this.history[i + 1];
-        const f = (targetRecvT - a.t) / Math.max(1, b.t - a.t);
+        const f = (targetT - a.t) / Math.max(1, b.t - a.t);
         return {
-          t: targetRecvT,
+          t: targetT,
           x: a.x + (b.x - a.x) * f,
           y: a.y + (b.y - a.y) * f,
           z: a.z + (b.z - a.z) * f,
+          yaw: a.yaw,
         };
       }
     }
 
-    return { t: last.t, x: last.x, y: last.y, z: last.z };
+    return { ...last };
   }
 
-  /** Posiciona a hitbox vermelha no volume que o servidor testa no tiro. */
-  private updateDebugHitboxes(rttMs: number): void {
-    const feet = this.sampleLagCompFeet(rttMs);
-    const crouched = this.crouching;
-    const bodyCy = crouched ? HITBOX.crouchBodyCenterY : HITBOX.bodyCenterY;
-    const bodyHalfY = crouched ? HITBOX.crouchBodyHalfY : HITBOX.bodyHalf.y;
-    const headCy = crouched ? HITBOX.crouchHeadCenterY : HITBOX.headCenterY;
+  /** Aplica pés do hitscan no modelo + AABB debug (geometria do servidor). */
+  private applyHitscanPose(feet: PosSample): void {
+    this.crouchT = this.crouching ? 1 : 0;
+    this.applyCrouchPose();
+
+    this.root.position.set(feet.x, feet.y + this.height() / 2, feet.z);
+    this.root.rotation.y = feet.yaw;
+
+    const bodyCy = this.crouching
+      ? HITBOX.crouchBodyCenterY
+      : HITBOX.bodyCenterY;
+    const bodyHalfY = this.crouching
+      ? HITBOX.crouchBodyHalfY
+      : HITBOX.bodyHalf.y;
+    const headCy = this.crouching
+      ? HITBOX.crouchHeadCenterY
+      : HITBOX.headCenterY;
 
     this.debugBodyHitbox.scaling.y = bodyHalfY / HITBOX.bodyHalf.y;
     this.debugBodyHitbox.position.set(feet.x, feet.y + bodyCy, feet.z);
     this.debugHeadHitbox.position.set(feet.x, feet.y + headCy, feet.z);
   }
 
-  /** Recebe o último estado do servidor (pés em y). */
   applyState(
     x: number,
     y: number,
@@ -292,13 +299,17 @@ export class RemotePlayer {
     if (this.hasPatch) {
       const dt = (now - this.lastPatchTime) / 1000;
       if (dt > 0.001 && dt < 0.5) {
-        this.velocityX = (x - this.lastServerX) / dt;
-        this.velocityZ = (z - this.lastServerZ) / dt;
-        const speed = Math.hypot(this.velocityX, this.velocityZ);
-        if (speed > MAX_EXTRAP_SPEED) {
-          const scale = MAX_EXTRAP_SPEED / speed;
-          this.velocityX *= scale;
-          this.velocityZ *= scale;
+        const dx = x - this.lastServerX;
+        const dz = z - this.lastServerZ;
+        if (Math.hypot(dx, dz) > 0.001) {
+          this.velocityX = dx / dt;
+          this.velocityZ = dz / dt;
+          const speed = Math.hypot(this.velocityX, this.velocityZ);
+          if (speed > MAX_EXTRAP_SPEED) {
+            const scale = MAX_EXTRAP_SPEED / speed;
+            this.velocityX *= scale;
+            this.velocityZ *= scale;
+          }
         }
       }
     } else {
@@ -310,15 +321,10 @@ export class RemotePlayer {
     this.lastServerX = x;
     this.lastServerZ = z;
     this.lastPatchTime = now;
-
-    this.feetX = x;
-    this.feetY = y;
-    this.feetZ = z;
+    this.lastYaw = yaw;
     this.crouching = crouch;
-    this.targetPos.set(x, y + this.height() / 2, z);
-    this.targetYaw = yaw;
 
-    this.history.push({ t: now, x, y, z });
+    this.history.push({ t: now, x, y, z, yaw });
     while (
       this.history.length > 0 &&
       now - this.history[0].t > HISTORY_MS
@@ -326,7 +332,6 @@ export class RemotePlayer {
       this.history.shift();
     }
 
-    this.applyCrouchPose();
     this.setVisible(alive);
   }
 
@@ -335,50 +340,18 @@ export class RemotePlayer {
     this.debugHeadHitbox.setEnabled(on);
   }
 
-  /**
-   * Interpola + extrapola o modelo; atualiza a hitbox de debug na pose
-   * de lag compensation (chamar a cada frame).
-   */
-  update(dt: number, rttMs = 0): void {
-    const crouchTarget = this.crouching ? 1 : 0;
-    this.crouchT +=
-      (crouchTarget - this.crouchT) * Math.min(1, dt * CROUCH_LERP);
-    this.applyCrouchPose();
-    this.targetPos.y = this.feetY + this.height() / 2;
-
-    const sincePatchSec =
-      (performance.now() - this.lastPatchTime) / 1000;
-    const extrapSec = Math.min(
-      sincePatchSec,
-      CONFIG.remoteExtrapolationMs / 1000
-    );
-
-    this.renderPos.set(
-      this.targetPos.x + this.velocityX * extrapSec,
-      this.targetPos.y,
-      this.targetPos.z + this.velocityZ * extrapSec
-    );
-
-    const t = Math.min(1, dt * CONFIG.remoteInterpSpeed);
-    Vector3.LerpToRef(this.root.position, this.renderPos, t, this.root.position);
-
-    let diff = this.targetYaw - this.root.rotation.y;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    this.root.rotation.y += diff * t;
-
-    this.updateDebugHitboxes(rttMs);
+  /** `rttMs` = RTT autoritativo do servidor (mesmo do rewind). */
+  update(_dt: number, rttMs = 0): void {
+    if (!this.hasPatch) return;
+    this.applyHitscanPose(this.sampleHitscanFeet(rttMs));
   }
 
   snapToTarget(): void {
-    this.crouchT = this.crouching ? 1 : 0;
-    this.applyCrouchPose();
-    this.targetPos.y = this.feetY + this.height() / 2;
-    this.root.position.copyFrom(this.targetPos);
-    this.root.rotation.y = this.targetYaw;
+    if (this.history.length === 0) return;
+    const last = this.history[this.history.length - 1];
     this.velocityX = 0;
     this.velocityZ = 0;
-    this.renderPos.copyFrom(this.targetPos);
+    this.applyHitscanPose(last);
   }
 
   getHead(): Vector3 {
