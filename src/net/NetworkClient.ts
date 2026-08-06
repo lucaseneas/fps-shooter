@@ -12,6 +12,8 @@ export interface PlayerSnapshot {
   kills: number;
   deaths: number;
   alive: boolean;
+  /** Agachado — usado no visual dos remotos. */
+  crouch: boolean;
   // Reconciliação (apenas para o próprio jogador):
   vy: number;
   grounded: boolean;

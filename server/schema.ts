@@ -10,6 +10,8 @@ export class PlayerState extends Schema {
   @type("number") kills = 0;
   @type("number") deaths = 0;
   @type("boolean") alive = true;
+  /** Agachado — sincronizado para visual remoto e hitboxes. */
+  @type("boolean") crouch = false;
   // Reconciliação do movimento (apenas humanos):
   /** Velocidade vertical da simulação server-side. */
   @type("number") vy = 0;

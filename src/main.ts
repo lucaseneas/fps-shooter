@@ -1036,10 +1036,10 @@ function reconcile(r: Room): void {
       rp = new RemotePlayer(scene, id, p.name);
       remotePlayers.set(id, rp);
       rp.setDebugHitboxes(debugMode);
-      rp.applyState(p.x, p.y, p.z, p.yaw, p.alive);
+      rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
       rp.snapToTarget();
     } else {
-      rp.applyState(p.x, p.y, p.z, p.yaw, p.alive);
+      rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
     }
   });
 

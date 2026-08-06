@@ -6,10 +6,17 @@ import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTextur
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 
 import { CONFIG } from "../../shared/config";
+import { CROUCH_EYE_HEIGHT, EYE_HEIGHT } from "../../shared/movement";
 
-const HEIGHT = 1.8;
+const STAND_HEIGHT = 1.8;
+const CROUCH_HEIGHT = 1.15;
+/** Velocidade de transição visual ao agachar/levantar. */
+const CROUCH_LERP = 12;
 /** Limite de velocidade para extrapolação (evita spikes entre patches). */
 const MAX_EXTRAP_SPEED = 10;
+
+const STAND_BODY_H = 1.3;
+const CROUCH_BODY_H = 0.85;
 
 /**
  * Representação visual de outro combatente da sala (humano ou bot — o
@@ -33,6 +40,13 @@ export class RemotePlayer {
   private readonly renderPos = new Vector3(0, 0, 0);
   private targetYaw = 0;
 
+  private feetX = 0;
+  private feetY = 0;
+  private feetZ = 0;
+  private crouching = false;
+  /** 0 = em pé, 1 = agachado (interpolado). */
+  private crouchT = 0;
+
   private lastServerX = 0;
   private lastServerZ = 0;
   private velocityX = 0;
@@ -45,7 +59,7 @@ export class RemotePlayer {
 
     this.root = MeshBuilder.CreateBox(
       `${id}_root`,
-      { width: 0.9, height: HEIGHT, depth: 0.6 },
+      { width: 0.9, height: STAND_HEIGHT, depth: 0.6 },
       scene
     );
     this.root.isVisible = false;
@@ -58,7 +72,7 @@ export class RemotePlayer {
 
     this.bodyMesh = MeshBuilder.CreateBox(
       `${id}_body`,
-      { width: 0.9, height: 1.3, depth: 0.6 },
+      { width: 0.9, height: STAND_BODY_H, depth: 0.6 },
       scene
     );
     this.bodyMesh.parent = this.root;
@@ -72,7 +86,7 @@ export class RemotePlayer {
       scene
     );
     this.headMesh.parent = this.root;
-    this.headMesh.position.y = HEIGHT / 2 - 0.1;
+    this.headMesh.position.y = STAND_HEIGHT / 2 - 0.1;
     this.headMesh.material = headMat;
     this.headMesh.metadata = { hitbox: { id, part: "head" } };
 
@@ -84,7 +98,7 @@ export class RemotePlayer {
     debugMat.alpha = 0.9;
     this.debugBodyHitbox = MeshBuilder.CreateBox(
       `${id}_debugBodyHitbox`,
-      { width: 0.9, height: 1.3, depth: 0.6 },
+      { width: 0.9, height: STAND_BODY_H, depth: 0.6 },
       scene
     );
     this.debugBodyHitbox.material = debugMat;
@@ -133,7 +147,7 @@ export class RemotePlayer {
       scene
     );
     plane.parent = this.root;
-    plane.position.y = HEIGHT / 2 + 0.45;
+    plane.position.y = STAND_HEIGHT / 2 + 0.45;
     plane.billboardMode = 7;
     plane.isPickable = false;
 
@@ -163,8 +177,48 @@ export class RemotePlayer {
     return plane;
   }
 
+  private height(): number {
+    return STAND_HEIGHT + (CROUCH_HEIGHT - STAND_HEIGHT) * this.crouchT;
+  }
+
+  private eyeHeight(): number {
+    return EYE_HEIGHT + (CROUCH_EYE_HEIGHT - EYE_HEIGHT) * this.crouchT;
+  }
+
+  private applyCrouchPose(): void {
+    const t = this.crouchT;
+    const h = this.height();
+    const eye = this.eyeHeight();
+    const bodyH = STAND_BODY_H + (CROUCH_BODY_H - STAND_BODY_H) * t;
+
+    this.bodyMesh.scaling.y = bodyH / STAND_BODY_H;
+    this.bodyMesh.position.y = -0.15 - 0.05 * t;
+    this.headMesh.position.y = eye - h / 2;
+    this.gun.position.y = 0.32 - 0.27 * t;
+    this.nameplate.position.y = h / 2 + 0.45 - 0.2 * t;
+
+    this.debugBodyHitbox.scaling.y = bodyH / STAND_BODY_H;
+    this.debugBodyHitbox.position.set(
+      this.feetX,
+      this.feetY + bodyH / 2,
+      this.feetZ
+    );
+    this.debugHeadHitbox.position.set(
+      this.feetX,
+      this.feetY + eye,
+      this.feetZ
+    );
+  }
+
   /** Recebe o último estado do servidor (pés em y). */
-  applyState(x: number, y: number, z: number, yaw: number, alive: boolean): void {
+  applyState(
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    alive: boolean,
+    crouch = false
+  ): void {
     const now = performance.now();
 
     if (this.hasPatch) {
@@ -189,11 +243,14 @@ export class RemotePlayer {
     this.lastServerZ = z;
     this.lastPatchTime = now;
 
-    this.targetPos.set(x, y + HEIGHT / 2, z);
+    this.feetX = x;
+    this.feetY = y;
+    this.feetZ = z;
+    this.crouching = crouch;
+    this.targetPos.set(x, y + this.height() / 2, z);
     this.targetYaw = yaw;
-    this.debugBodyHitbox.position.set(x, y + 0.75, z);
     this.debugBodyHitbox.rotation.y = yaw;
-    this.debugHeadHitbox.position.set(x, y + 1.7, z);
+    this.applyCrouchPose();
     this.setVisible(alive);
   }
 
@@ -204,6 +261,12 @@ export class RemotePlayer {
 
   /** Interpola + extrapola em direção ao estado estimado (chamar a cada frame). */
   update(dt: number): void {
+    const crouchTarget = this.crouching ? 1 : 0;
+    this.crouchT +=
+      (crouchTarget - this.crouchT) * Math.min(1, dt * CROUCH_LERP);
+    this.applyCrouchPose();
+    this.targetPos.y = this.feetY + this.height() / 2;
+
     const sincePatchSec =
       (performance.now() - this.lastPatchTime) / 1000;
     const extrapSec = Math.min(
@@ -227,6 +290,9 @@ export class RemotePlayer {
   }
 
   snapToTarget(): void {
+    this.crouchT = this.crouching ? 1 : 0;
+    this.applyCrouchPose();
+    this.targetPos.y = this.feetY + this.height() / 2;
     this.root.position.copyFrom(this.targetPos);
     this.root.rotation.y = this.targetYaw;
     this.velocityX = 0;
@@ -235,7 +301,9 @@ export class RemotePlayer {
   }
 
   getHead(): Vector3 {
-    return this.root.position.add(new Vector3(0, HEIGHT / 2 - 0.1, 0));
+    return this.root.position.add(
+      new Vector3(0, this.eyeHeight() - this.height() / 2, 0)
+    );
   }
 
   private setVisible(on: boolean): void {

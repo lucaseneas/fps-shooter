@@ -31,6 +31,9 @@ const HEAD_CENTER_Y = 1.7;
 const HEAD_RADIUS = 0.225;
 const BODY_CENTER_Y = 0.75;
 const BODY_HALF = { x: 0.45, y: 0.65, z: 0.45 };
+const CROUCH_HEAD_CENTER_Y = CROUCH_EYE_HEIGHT;
+const CROUCH_BODY_CENTER_Y = 0.5;
+const CROUCH_BODY_HALF_Y = 0.5;
 
 interface FireMessage {
   weaponId: string;
@@ -68,8 +71,6 @@ export class DeathmatchRoom extends Room<MatchState> {
   private bodies = new Map<string, BodyState>();
   /** Fila de inputs pendentes por humano. */
   private pendingInputs = new Map<string, PlayerInput[]>();
-  /** Agachado (último input) — afeta altura do olho no hitscan. */
-  private crouching = new Map<string, boolean>();
   /** Histórico de posições (lag compensation), por combatente. */
   private history = new Map<string, HistoryEntry[]>();
   /** RTT medido por cliente (ms). */
@@ -199,7 +200,6 @@ export class DeathmatchRoom extends Room<MatchState> {
     }
 
     this.pendingInputs.set(client.sessionId, []);
-    this.crouching.set(client.sessionId, false);
     this.history.set(client.sessionId, []);
 
     this.rebalanceBots();
@@ -211,7 +211,6 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.userIds.delete(id);
     this.bodies.delete(id);
     this.pendingInputs.delete(id);
-    this.crouching.delete(id);
     this.history.delete(id);
     this.rtt.delete(id);
     this.lastPingAt.delete(id);
@@ -254,7 +253,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         stepPlayer(body, input);
         p.lastSeq = input.seq;
         p.yaw = input.yaw;
-        this.crouching.set(id, Boolean(input.crouch));
+        p.crouch = Boolean(input.crouch);
       }
       queue.splice(0, count);
 
@@ -411,9 +410,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.lastFireAt.set(shooterId, now);
 
     // Origem precisa estar perto do olho do jogador no servidor.
-    const eyeH = this.crouching.get(shooterId)
-      ? CROUCH_EYE_HEIGHT
-      : EYE_HEIGHT;
+    const eyeH = shooter.crouch ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
     const eye: Vec3 = {
       x: shooter.x,
       y: shooter.y + eyeH,
@@ -461,9 +458,13 @@ export class DeathmatchRoom extends Room<MatchState> {
       let hitPart: "head" | "body" = "body";
 
       for (const target of targets) {
+        const crouched = Boolean(this.state.players.get(target.id)?.crouch);
+        const headY = crouched ? CROUCH_HEAD_CENTER_Y : HEAD_CENTER_Y;
+        const bodyY = crouched ? CROUCH_BODY_CENTER_Y : BODY_CENTER_Y;
+        const bodyHalfY = crouched ? CROUCH_BODY_HALF_Y : BODY_HALF.y;
         const tHead = raySphere(
           origin, dir,
-          target.pos.x, target.pos.y + HEAD_CENTER_Y, target.pos.z,
+          target.pos.x, target.pos.y + headY, target.pos.z,
           HEAD_RADIUS, tBest
         );
         if (tHead !== null && tHead < tBest) {
@@ -474,8 +475,8 @@ export class DeathmatchRoom extends Room<MatchState> {
         }
         const tBody = rayAabb(
           origin, dir,
-          target.pos.x, target.pos.y + BODY_CENTER_Y, target.pos.z,
-          BODY_HALF.x, BODY_HALF.y, BODY_HALF.z, tBest
+          target.pos.x, target.pos.y + bodyY, target.pos.z,
+          BODY_HALF.x, bodyHalfY, BODY_HALF.z, tBest
         );
         if (tBody !== null && tBody < tBest) {
           tBest = tBody;
