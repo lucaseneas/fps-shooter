@@ -773,6 +773,7 @@ function resetToMenu(errorMsg?: string): void {
   hud.setScoreboardVisible(false);
   hud.setHealth(CONFIG.playerMaxHealth);
   hud.setKills(0);
+  hud.clearAllKillStreaks();
   document.getElementById("endScreen")!.classList.add("hidden");
 
   settingsModal.classList.add("hidden");
@@ -877,11 +878,20 @@ function setupRoom(r: Room): void {
   r.onMessage("kill", (e: {
     killerId: string;
     killerName: string;
+    victimId?: string;
     victimName: string;
     weaponName: string;
   }) => {
-    hud.addKillFeedEntry(e.killerName, e.victimName, e.weaponName);
-    if (e.killerId === r.sessionId) audio.killConfirm();
+    const isLocal = e.killerId === r.sessionId;
+    const streak = hud.handleKill(
+      e.killerId,
+      e.killerName,
+      e.victimId,
+      e.victimName,
+      e.weaponName,
+      isLocal
+    );
+    if (isLocal) audio.killConfirm(streak);
   });
 
   // O servidor confirma que o dano foi aplicado antes de exibir o hitmarker.
@@ -902,6 +912,7 @@ function setupRoom(r: Room): void {
     weapons.setEnabled(false);
     exitAdsImmediate();
     hud.showDeathScreen(e.killerName, e.weaponName);
+    hud.resetKillStreak();
     audio.death();
   });
 
@@ -1002,6 +1013,7 @@ function setupRoom(r: Room): void {
     document.getElementById("endScreen")!.classList.add("hidden");
     hud.setScoreboardVisible(false);
     hud.setKills(0);
+    hud.clearAllKillStreaks();
   });
 
   r.onLeave((code) => {

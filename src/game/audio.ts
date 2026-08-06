@@ -128,9 +128,36 @@ export class AudioManager {
     this.noise(0.1, 0.15, "lowpass", 400);
   }
 
-  killConfirm(): void {
-    this.tone(520, 0.08, 0.2, "triangle");
-    this.tone(780, 0.1, 0.2, "triangle", undefined, 0.08);
+  /**
+   * Confirmação de kill — timbre distinto do hitmarker.
+   * `streak` 1–5 escala o fanfarre (kill → multi kill).
+   */
+  killConfirm(streak = 1): void {
+    const level = Math.max(1, Math.min(5, streak));
+    // Impacto baixo + “clang” metálico (bem diferente do hitmarker agudo).
+    this.noise(0.08, 0.18, "bandpass", 900);
+    this.tone(180, 0.12, 0.28, "sawtooth", 90);
+    this.tone(660, 0.09, 0.22, "triangle");
+    this.tone(990, 0.12, 0.24, "triangle", undefined, 0.07);
+
+    if (level >= 2) {
+      this.tone(1320, 0.14, 0.2, "sine", undefined, 0.14);
+      this.tone(440, 0.1, 0.12, "square", 660, 0.12);
+    }
+    if (level >= 3) {
+      this.tone(1760, 0.16, 0.18, "sine", undefined, 0.22);
+      this.tone(880, 0.18, 0.14, "triangle", 1320, 0.2);
+      this.noise(0.1, 0.12, "highpass", 2200, 0.18);
+    }
+    if (level >= 4) {
+      this.tone(1980, 0.14, 0.16, "sine", undefined, 0.28);
+      this.tone(550, 0.12, 0.14, "square", 880, 0.26);
+    }
+    if (level >= 5) {
+      this.tone(2200, 0.18, 0.2, "sine", undefined, 0.34);
+      this.tone(1100, 0.2, 0.16, "triangle", 1760, 0.32);
+      this.noise(0.14, 0.14, "bandpass", 2800, 0.3);
+    }
   }
 
   death(): void {

@@ -31,12 +31,31 @@ export class Hud {
   private readonly endScreen = el<HTMLDivElement>("endScreen");
   private readonly endTitle = el<HTMLDivElement>("endTitle");
   private readonly hitmarker = el<HTMLDivElement>("hitmarker");
+  private readonly killBadge = el<HTMLDivElement>("killBadge");
+  private readonly killStars = el<HTMLDivElement>("killStars");
+  private readonly killBadgeLabel = el<HTMLSpanElement>("killBadgeLabel");
   private readonly damageVignette = el<HTMLDivElement>("damageVignette");
 
   private hitmarkerTimeout = 0;
   private vignetteTimeout = 0;
+  private killBadgeTimeout = 0;
+  /** Sequências de multi-kill por id (janela de 5s). */
+  private readonly playerStreaks = new Map<
+    string,
+    { count: number; timeout: number }
+  >();
   private activeWeaponIndex = 0;
   private loadoutWeapons: WeaponDef[] = [];
+
+  private static readonly KILL_STREAK_WINDOW_MS = 5000;
+  private static readonly KILL_BADGE_VISIBLE_MS = 2200;
+  private static readonly KILL_LABELS = [
+    "KILL",
+    "DOUBLE KILL",
+    "TRIPLE KILL",
+    "QUADRA KILL",
+    "MULTI KILL",
+  ] as const;
 
   setHealth(current: number): void {
     const pct = Math.max(0, Math.min(1, current / CONFIG.playerMaxHealth));
@@ -85,10 +104,43 @@ export class Hud {
     this.killCount.textContent = `${kills} / ${CONFIG.killsToWin}`;
   }
 
-  addKillFeedEntry(killer: string, victim: string, weapon: string): void {
+  /**
+   * Atualiza streaks, kill feed e (opcionalmente) a insignia local.
+   * Retorna a sequência atual do killer (1–5).
+   */
+  handleKill(
+    killerId: string,
+    killerName: string,
+    victimId: string | undefined,
+    victimName: string,
+    weapon: string,
+    showLocalBadge: boolean
+  ): number {
+    if (victimId) this.clearPlayerStreak(victimId);
+    const streak = this.bumpPlayerStreak(killerId);
+    this.addKillFeedEntry(killerName, victimName, weapon, streak);
+    if (showLocalBadge) this.showKillBadge(streak);
+    return streak;
+  }
+
+  addKillFeedEntry(
+    killer: string,
+    victim: string,
+    weapon: string,
+    streak = 1
+  ): void {
     const entry = document.createElement("div");
-    entry.className = "feed-entry";
-    entry.innerHTML = `<b>${killer}</b> <span class="feed-weapon">[${weapon}]</span> ${victim}`;
+    const onStreak = streak >= 2;
+    entry.className = onStreak
+      ? `feed-entry streak streak-${Math.min(5, streak)}`
+      : "feed-entry";
+    const streakTag = onStreak
+      ? `<span class="feed-streak">x${streak}</span>`
+      : "";
+    entry.innerHTML =
+      `<b class="feed-killer">${killer}</b>` +
+      ` <span class="feed-weapon">[${weapon}]</span> ${victim}` +
+      streakTag;
     this.killFeed.prepend(entry);
     while (this.killFeed.children.length > 5) {
       this.killFeed.lastElementChild?.remove();
@@ -107,6 +159,58 @@ export class Hud {
       () => this.hitmarker.classList.remove("show", "headshot"),
       120
     );
+  }
+
+  /** Esconde a insignia local (ex.: ao morrer). */
+  resetKillStreak(): void {
+    clearTimeout(this.killBadgeTimeout);
+    this.killBadge.classList.remove("show");
+  }
+
+  /** Zera todas as sequências (fim de partida / saída). */
+  clearAllKillStreaks(): void {
+    for (const { timeout } of this.playerStreaks.values()) {
+      clearTimeout(timeout);
+    }
+    this.playerStreaks.clear();
+    this.resetKillStreak();
+  }
+
+  private bumpPlayerStreak(playerId: string): number {
+    const prev = this.playerStreaks.get(playerId);
+    if (prev) clearTimeout(prev.timeout);
+    const count = Math.min(5, (prev?.count ?? 0) + 1);
+    const timeout = window.setTimeout(() => {
+      this.playerStreaks.delete(playerId);
+    }, Hud.KILL_STREAK_WINDOW_MS);
+    this.playerStreaks.set(playerId, { count, timeout });
+    return count;
+  }
+
+  private clearPlayerStreak(playerId: string): void {
+    const prev = this.playerStreaks.get(playerId);
+    if (!prev) return;
+    clearTimeout(prev.timeout);
+    this.playerStreaks.delete(playerId);
+  }
+
+  private showKillBadge(streak: number): void {
+    const level = Math.max(1, Math.min(5, streak));
+    this.killBadge.dataset.streak = String(level);
+    this.killBadgeLabel.textContent = Hud.KILL_LABELS[level - 1];
+    this.killStars.innerHTML = Array.from(
+      { length: level },
+      () => `<span class="kill-star"></span>`
+    ).join("");
+
+    this.killBadge.classList.remove("show");
+    void this.killBadge.offsetWidth;
+    this.killBadge.classList.add("show");
+
+    clearTimeout(this.killBadgeTimeout);
+    this.killBadgeTimeout = window.setTimeout(() => {
+      this.killBadge.classList.remove("show");
+    }, Hud.KILL_BADGE_VISIBLE_MS);
   }
 
   flashDamage(): void {
