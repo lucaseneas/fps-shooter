@@ -148,8 +148,8 @@ export const WEAPONS: WeaponDef[] = [
     name: "Escopeta",
     auto: false,
     fireInterval: 0.9,
-    damageBody: 8, // por pellet (9 pellets = até 72 de perto)
-    damageHead: 8, // sem multiplicador de headshot (GDD)
+    damageBody: 16, // por pellet (9 pellets = até 144 de perto)
+    damageHead: 16, // sem multiplicador de headshot (GDD)
     pellets: 9,
     pelletPattern: [[0, 0], [2.6, 0], [-2.6, 0], [0, 2.6], [0, -2.6], [1.9, 1.9], [-1.9, 1.9], [1.9, -1.9], [-1.9, -1.9]],
     magSize: 6,
@@ -180,7 +180,7 @@ export const WEAPONS: WeaponDef[] = [
     falloffEnd: 120,
     falloffMin: 1,
     viewColor: [0.18, 0.2, 0.24],
-    baseSpread: 2.2, // imprecisa no hipfire; ADS zera o spread
+    baseSpread: 6.5, // hipfire bem imprecisa; ADS zera o spread
     drawTime: 0.7,
   },
   {

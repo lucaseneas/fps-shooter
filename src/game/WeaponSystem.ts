@@ -147,9 +147,13 @@ export class WeaponSystem {
 
     if (this.airborne) {
       if (isSniper) return 9.0;
-      return isRifle ? 18.0 : 7.0;
+      if (isRifle) return 18.0;
+      // Escopeta: mesmo spread de correndo (não punir o pulo)
+      if (id === "shotgun") return 2.8;
+      return 7.0;
     }
-    if (this.crouching) return 0.5;
+    // Escopeta: agachado = parado (sem bônus de precisão)
+    if (this.crouching) return id === "shotgun" ? 1.0 : 0.5;
     if (this.running) {
       if (isSniper) return 4.5;
       return isRifle ? 12.0 : 2.8;
