@@ -126,8 +126,8 @@ export class FpsController {
   private readonly recoilRecoverySpeed = 16;
   /** Altura atual dos olhos (interpolada entre em pé e agachado). */
   private eyeY = EYE_HEIGHT;
-  /** Câmera top-down enquanto escolhe kit / espera spawn. */
-  private spectator = false;
+  /** fps = jogando · overview = topo pré-spawn · freefly = espectador livre. */
+  private cameraMode: "fps" | "overview" | "freefly" = "fps";
 
   constructor(
     scene: Scene,
@@ -279,12 +279,16 @@ export class FpsController {
   }
 
   get isSpectating(): boolean {
-    return this.spectator;
+    return this.cameraMode !== "fps";
+  }
+
+  get isFreeFlying(): boolean {
+    return this.cameraMode === "freefly";
   }
 
   /** Visão de cima do mapa (pré-spawn / escolha de kit). */
   enterSpectatorOverview(): void {
-    this.spectator = true;
+    this.cameraMode = "overview";
     this.movementEnabled = false;
     this.lookEnabled = false;
     this.keys.clear();
@@ -295,10 +299,36 @@ export class FpsController {
     this.camera.setTarget(new Vector3(0, 0, 0));
   }
 
+  /**
+   * Espectador invisível: câmera livre (andar + voar), sem física/arma.
+   * Posição só local — o servidor mantém o player como não-spawnado.
+   */
+  enterFreeFlySpectator(start?: { x: number; y: number; z: number }): void {
+    this.cameraMode = "freefly";
+    this.movementEnabled = false;
+    this.lookEnabled = true;
+    this.keys.clear();
+    this.pendingInputs.length = 0;
+    this.recoilOffset = 0;
+    this.recoilYawOffset = 0;
+    this.camera.fov = 1.15;
+
+    const x = start?.x ?? 0;
+    const y = start?.y ?? 16;
+    const z = start?.z ?? -22;
+    this.sim.x = x;
+    this.sim.y = y;
+    this.sim.z = z;
+    this.yaw = 0;
+    this.basePitch = 0.4;
+    this.camera.position.set(x, y, z);
+    this.camera.rotation.set(this.basePitch, this.yaw, 0);
+  }
+
   /** Volta à câmera FPS após o spawn. */
   exitSpectatorOverview(): void {
-    if (!this.spectator) return;
-    this.spectator = false;
+    if (this.cameraMode === "fps") return;
+    this.cameraMode = "fps";
     this.camera.fov = 1.15;
     this.syncVisual();
   }
@@ -433,7 +463,7 @@ export class FpsController {
       if (browserChord) e.preventDefault();
     }
 
-    if (!this.movementEnabled) return;
+    if (!this.movementEnabled && this.cameraMode !== "freefly") return;
     this.keys.add(e.code);
     if (e.code === "Space") e.preventDefault();
   };
@@ -461,10 +491,14 @@ export class FpsController {
 
   /** Deve ser chamado a cada frame do render loop. */
   update(deltaSeconds: number): void {
-    if (this.spectator) return;
-
-    // Clampa dt para evitar rajada de passos após perda de foco/aba.
     const dt = Math.min(deltaSeconds, 0.1);
+
+    if (this.cameraMode === "overview") return;
+
+    if (this.cameraMode === "freefly") {
+      this.updateFreeFly(dt);
+      return;
+    }
 
     if (this.movementEnabled) {
       this.accumulator += dt;
@@ -478,6 +512,56 @@ export class FpsController {
     this.eyeY += (targetEye - this.eyeY) * Math.min(1, dt * CROUCH_CAM_SPEED);
 
     this.syncVisual();
+  }
+
+  /** Voo livre relativo à mira (sem gravidade / colisão). */
+  private updateFreeFly(dt: number): void {
+    let forward = 0;
+    let strafe = 0;
+    let up = 0;
+    if (this.keys.has("KeyW")) forward += 1;
+    if (this.keys.has("KeyS")) forward -= 1;
+    if (this.keys.has("KeyD")) strafe += 1;
+    if (this.keys.has("KeyA")) strafe -= 1;
+    if (this.keys.has("Space") || this.keys.has("KeyE")) up += 1;
+    if (
+      this.keys.has("ControlLeft") ||
+      this.keys.has("ControlRight") ||
+      this.keys.has("KeyQ") ||
+      this.keys.has("KeyC")
+    ) {
+      up -= 1;
+    }
+
+    const speeding =
+      this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+    const speed = speeding ? 32 : 14;
+
+    const len = Math.hypot(forward, strafe, up);
+    if (len > 0) {
+      const nF = forward / len;
+      const nS = strafe / len;
+      const nU = up / len;
+      const pitch = this.basePitch;
+      const yaw = this.yaw;
+      const cosP = Math.cos(pitch);
+      const fx = Math.sin(yaw) * cosP;
+      const fy = -Math.sin(pitch);
+      const fz = Math.cos(yaw) * cosP;
+      const rx = Math.cos(yaw);
+      const rz = -Math.sin(yaw);
+
+      this.camera.position.x += (fx * nF + rx * nS) * speed * dt;
+      this.camera.position.y += (fy * nF + nU) * speed * dt;
+      this.camera.position.z += (fz * nF + rz * nS) * speed * dt;
+    }
+
+    this.camera.position.y = Math.max(1.2, Math.min(90, this.camera.position.y));
+    this.sim.x = this.camera.position.x;
+    this.sim.y = this.camera.position.y;
+    this.sim.z = this.camera.position.z;
+    this.body.position.set(this.sim.x, this.sim.y, this.sim.z);
+    this.camera.rotation.set(this.basePitch, this.yaw, 0);
   }
 
   /** Um passo fixo: monta o input, aplica localmente e envia ao servidor. */

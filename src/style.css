@@ -1018,6 +1018,13 @@ kbd {
   visibility: hidden;
 }
 
+#hud.freefly #crosshair,
+#hud.freefly #ammoPanel,
+#hud.freefly #healthPanel,
+#hud.freefly #scopeOverlay {
+  visibility: hidden;
+}
+
 .loadout-card {
   min-width: min(920px, 94vw);
   max-width: 960px;
@@ -1115,6 +1122,46 @@ kbd {
 .spawn-btn:disabled {
   opacity: 0.55;
   cursor: wait;
+}
+
+.spectate-btn {
+  min-width: 200px;
+  padding: 10px 28px !important;
+  font-size: 14px !important;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: 600 !important;
+  background: #222a35 !important;
+  color: #c3ccd6 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+}
+
+.spectate-btn:hover {
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  color: #e8eef4 !important;
+}
+
+#spectateBanner {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(10, 14, 20, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #b7c2cd;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: min(920px, 92vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#spectateBanner.hidden {
+  display: none;
 }
 
 @media (max-width: 720px) {

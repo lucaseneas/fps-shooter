@@ -384,7 +384,10 @@ export class DeathmatchRoom extends Room<MatchState> {
     for (const [id, p] of this.state.players) {
       p.kills = 0;
       p.deaths = 0;
-      this.respawnPlayer(id);
+      // Espectadores que nunca spawnaram continuam fora do mapa.
+      if (this.bots.has(id) || this.bodies.has(id) || p.alive || this.respawnAt.has(id)) {
+        this.respawnPlayer(id);
+      }
     }
     this.broadcast("matchReset");
   }

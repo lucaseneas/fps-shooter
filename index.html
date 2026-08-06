@@ -42,6 +42,11 @@
       <!-- Kill feed (abaixo do minimapa) -->
       <div id="killFeed"></div>
 
+      <!-- Banner do modo espectador livre -->
+      <div id="spectateBanner" class="hidden">
+        Espectador · WASD mover · Espaço/Ctrl subir/descer · Shift rápido · I para spawnar
+      </div>
+
       <!-- Kills (topo centro) -->
       <div id="killsPanel">Kills: <span id="killCount">0 / 20</span></div>
 
@@ -211,6 +216,7 @@
         <div id="loadoutOptions" class="loadout-options"></div>
         <div class="modal-actions loadout-actions">
           <button id="spawnButton" class="spawn-btn hidden" type="button">Spawn</button>
+          <button id="spectateButton" class="spectate-btn hidden" type="button">Espectador</button>
           <button id="loadoutCancelButton" class="secondary hidden" type="button">Cancelar</button>
         </div>
       </div>

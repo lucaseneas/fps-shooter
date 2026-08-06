@@ -50,6 +50,8 @@ const loadoutCancelButton = document.getElementById(
   "loadoutCancelButton"
 ) as HTMLButtonElement;
 const spawnButton = document.getElementById("spawnButton") as HTMLButtonElement;
+const spectateButton = document.getElementById("spectateButton") as HTMLButtonElement;
+const spectateBanner = document.getElementById("spectateBanner") as HTMLDivElement;
 const hudRoot = document.getElementById("hud") as HTMLDivElement;
 const settingsButton = document.getElementById("settingsButton") as HTMLButtonElement;
 const homeSettingsButton = document.getElementById("homeSettingsButton") as HTMLButtonElement;
@@ -226,8 +228,10 @@ let chatTyping = false;
 let loadoutPicking = false;
 /** true = troca a meio da partida (pode cancelar). */
 let loadoutPickInMatch = false;
-/** Na sala, ainda não pediu spawn (espectador top-down). */
+/** Na sala, ainda não pediu spawn (espectador top-down ou freefly). */
 let awaitingSpawn = false;
+/** Em câmera livre no mapa (invisível, sem arma). */
+let freeSpectating = false;
 /** Kit já escolhido nesta sessão de pré-spawn (habilita o botão Spawn). */
 let preSpawnKitReady = false;
 /** Última arma antes da troca atual — Q alterna entre as duas. */
@@ -568,10 +572,13 @@ function enterPreSpawn(): void {
 function exitPreSpawn(): void {
   awaitingSpawn = false;
   preSpawnKitReady = false;
-  hudRoot.classList.remove("prespawn");
+  freeSpectating = false;
+  hudRoot.classList.remove("prespawn", "freefly");
   loadoutModal.classList.remove("prespawn");
   spawnButton.classList.add("hidden");
   spawnButton.disabled = false;
+  spectateButton.classList.add("hidden");
+  spectateBanner.classList.add("hidden");
   player.exitSpectatorOverview();
   viewModel.setVisible(true);
   viewModel.setWeapon(weapons.weapon);
@@ -591,14 +598,20 @@ function openLoadoutModal(inMatch: boolean): void {
       "Troca o kit agora. 1 Principal · 2 Secundária · 3 Melee. ESC cancela.";
     loadoutCancelButton.classList.remove("hidden");
     spawnButton.classList.add("hidden");
+    spectateButton.classList.add("hidden");
     loadoutModal.classList.remove("prespawn");
   } else {
-    loadoutHint.textContent =
-      "Escolhe um kit e aperta Spawn para entrar no mapa. Na partida, I troca o kit.";
-    loadoutCancelButton.classList.add("hidden");
+    loadoutHint.textContent = freeSpectating
+      ? "Escolhe o kit e Spawn para jogar · ou ESC para continuar a voar."
+      : "Escolhe um kit e Spawn, ou entra só a observar. Na partida, I troca o kit.";
+    loadoutCancelButton.classList.toggle("hidden", !freeSpectating);
     loadoutModal.classList.add("prespawn");
     spawnButton.classList.toggle("hidden", !preSpawnKitReady);
     spawnButton.disabled = false;
+    spectateButton.classList.toggle("hidden", freeSpectating);
+    if (freeSpectating && player.isPointerLocked) {
+      player.releasePointerLock();
+    }
   }
 
   renderLoadoutOptions();
@@ -613,9 +626,19 @@ function closeLoadoutModal(relock: boolean): void {
   loadoutModal.classList.remove("prespawn");
   loadoutCancelButton.classList.add("hidden");
   spawnButton.classList.add("hidden");
+  spectateButton.classList.add("hidden");
+
+  if (freeSpectating) {
+    player.setLookEnabled(true);
+    player.setMovementEnabled(false);
+    if (relock && inGame && !endScreenShown) {
+      player.requestPointerLock();
+    }
+    return;
+  }
 
   if (awaitingSpawn) {
-    // Pré-spawn: mantém espectador até o Spawn (ou se o modal reabrir).
+    // Pré-spawn overview: mantém câmera de cima até Spawn / Espectador.
     player.setLookEnabled(false);
     player.setMovementEnabled(false);
     return;
@@ -633,11 +656,12 @@ function confirmLoadout(id: LoadoutId): void {
   exitAds();
   renderLoadoutOptions();
 
-  // Pré-spawn: só marca o kit; o jogador ainda precisa clicar em Spawn.
+  // Pré-spawn / freefly: só marca o kit; precisa clicar em Spawn.
   if (awaitingSpawn && !loadoutPickInMatch) {
     preSpawnKitReady = true;
     spawnButton.classList.remove("hidden");
     spawnButton.disabled = false;
+    if (!freeSpectating) spectateButton.classList.remove("hidden");
     return;
   }
 
@@ -646,8 +670,10 @@ function confirmLoadout(id: LoadoutId): void {
 }
 
 function cancelLoadoutPick(): void {
-  if (!loadoutPicking || !loadoutPickInMatch) return;
-  closeLoadoutModal(true);
+  if (!loadoutPicking) return;
+  if (loadoutPickInMatch || freeSpectating) {
+    closeLoadoutModal(true);
+  }
 }
 
 function requestPlayerSpawn(): void {
@@ -656,8 +682,32 @@ function requestPlayerSpawn(): void {
   room.send("requestSpawn");
 }
 
+/** Entra no mapa invisível, sem arma, câmera livre. */
+function enterFreeSpectate(): void {
+  if (!awaitingSpawn) return;
+  freeSpectating = true;
+  loadoutPicking = false;
+  loadoutModal.classList.add("hidden");
+  loadoutModal.classList.remove("prespawn");
+  spawnButton.classList.add("hidden");
+  spectateButton.classList.add("hidden");
+  loadoutCancelButton.classList.add("hidden");
+
+  hudRoot.classList.remove("prespawn");
+  hudRoot.classList.add("freefly");
+  spectateBanner.classList.remove("hidden");
+  viewModel.setVisible(false);
+  weapons.setTrigger(false);
+  weapons.setEnabled(false);
+  settingsModal.classList.add("hidden");
+
+  player.enterFreeFlySpectator();
+  player.requestPointerLock();
+}
+
 loadoutCancelButton.addEventListener("click", () => cancelLoadoutPick());
 spawnButton.addEventListener("click", () => requestPlayerSpawn());
+spectateButton.addEventListener("click", () => enterFreeSpectate());
 
 // Aplica o último kit guardado (ou Assault) ao arrancar.
 applySelectedLoadout(savedLoadoutId());
@@ -691,6 +741,7 @@ function resetToMenu(errorMsg?: string): void {
   endScreenShown = false;
   awaitingSpawn = false;
   preSpawnKitReady = false;
+  freeSpectating = false;
   lastKnownHealth = CONFIG.playerMaxHealth;
   pingMs = null;
   closeChat(false);
@@ -702,8 +753,10 @@ function resetToMenu(errorMsg?: string): void {
     loadoutModal.classList.remove("prespawn");
     loadoutCancelButton.classList.add("hidden");
     spawnButton.classList.add("hidden");
+    spectateButton.classList.add("hidden");
   }
-  hudRoot.classList.remove("prespawn");
+  hudRoot.classList.remove("prespawn", "freefly");
+  spectateBanner.classList.add("hidden");
   player.exitSpectatorOverview();
   viewModel.setVisible(true);
 
@@ -790,6 +843,10 @@ resumeButton.addEventListener("click", () => {
   settingsModal.classList.add("hidden");
   audio.resume();
   if (awaitingSpawn) {
+    if (freeSpectating) {
+      if (!loadoutPicking) player.requestPointerLock();
+      return;
+    }
     if (!loadoutPicking) openLoadoutModal(false);
     return;
   }
@@ -1197,9 +1254,12 @@ window.addEventListener("keydown", (e) => {
   if (!player.isPointerLocked) return;
   if (e.code === "KeyI") {
     e.preventDefault();
-    if (!playerDead && !endScreenShown && !awaitingSpawn) {
-      openLoadoutModal(true);
+    if (awaitingSpawn) {
+      // Em freefly: abre kit para spawnar. Em overview o modal já está aberto.
+      if (freeSpectating && !loadoutPicking) openLoadoutModal(false);
+      return;
     }
+    if (!playerDead && !endScreenShown) openLoadoutModal(true);
     return;
   }
   if (e.code === "KeyR") weapons.startReload();
@@ -1255,7 +1315,7 @@ restartButton.addEventListener("click", () => audio.resume());
 canvas.addEventListener("click", () => {
   if (
     inGame &&
-    !awaitingSpawn &&
+    (!awaitingSpawn || freeSpectating) &&
     !player.isPointerLocked &&
     settingsModal.classList.contains("hidden") &&
     !loadoutPicking &&
@@ -1271,8 +1331,9 @@ document.addEventListener("pointerlockchange", () => {
     settingsModal.classList.add("hidden");
   } else if (inGame && !endScreenShown) {
     exitAdsImmediate();
-    if (chatTyping || loadoutPicking || awaitingSpawn) return;
-    // ESC / perda do lock → modal de pausa (configurações + sair).
+    if (chatTyping || loadoutPicking) return;
+    // Overview pré-spawn: sem pointer lock; não abre pausa por isso.
+    if (awaitingSpawn && !freeSpectating) return;
     openPauseModal();
   }
 });
@@ -1283,8 +1344,8 @@ window.addEventListener(
   (e) => {
     if (e.code !== "Escape" || endScreenShown) return;
 
-    // Troca de kit a meio da partida: ESC cancela.
-    if (loadoutPicking && loadoutPickInMatch) {
+    // Troca de kit a meio da partida, ou kit aberto no freefly: ESC cancela.
+    if (loadoutPicking && (loadoutPickInMatch || freeSpectating)) {
       e.preventDefault();
       cancelLoadoutPick();
       return;
@@ -1298,8 +1359,8 @@ window.addEventListener(
       return;
     }
 
-    // Pré-spawn: ESC abre pausa (Sair) por cima da escolha de kit.
-    if (awaitingSpawn) {
+    // Pré-spawn overview: ESC abre pausa (Sair) por cima da escolha de kit.
+    if (awaitingSpawn && !freeSpectating) {
       e.preventDefault();
       if (
         !settingsModal.classList.contains("hidden") &&
@@ -1313,6 +1374,7 @@ window.addEventListener(
       return;
     }
 
+    // Freefly / jogando: ESC solta o mouse e abre pausa.
     if (player.isPointerLocked) {
       e.preventDefault();
       player.releasePointerLock();
@@ -1320,7 +1382,7 @@ window.addEventListener(
       return;
     }
 
-    // Já na pausa: ESC fecha e retoma o jogo.
+    // Já na pausa: ESC fecha e retoma.
     if (
       !settingsModal.classList.contains("hidden") &&
       settingsModal.classList.contains("pause-mode")
@@ -1328,7 +1390,11 @@ window.addEventListener(
       e.preventDefault();
       settingsModal.classList.add("hidden");
       audio.resume();
-      player.requestPointerLock();
+      if (awaitingSpawn && !freeSpectating) {
+        if (!loadoutPicking) openLoadoutModal(false);
+      } else {
+        player.requestPointerLock();
+      }
     }
   },
   true
