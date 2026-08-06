@@ -1,4 +1,5 @@
 import { MAP_BOXES, PLAY_BOUND } from "./mapData";
+import { MAX_MOVE_SPEED_MULT } from "./weapons";
 
 /**
  * Simulação de movimento do player — código COMPARTILHADO e determinístico.
@@ -41,6 +42,11 @@ export interface PlayerInput {
   run: boolean;
   /** Agachado (CTRL) — movimento lento e mais precisão no tiro. */
   crouch: boolean;
+  /**
+   * Multiplicador de velocidade da arma (ex.: faca = 1.2).
+   * Sempre limitado em stepPlayer (anti-speedhack).
+   */
+  speedMult?: number;
 }
 
 /** Estado físico do corpo (posição = pés). */
@@ -88,9 +94,15 @@ export function stepPlayer(s: BodyState, input: PlayerInput): void {
     wz /= len;
   }
   const crouched = Boolean(input.crouch);
+  const rawMult =
+    typeof input.speedMult === "number" && Number.isFinite(input.speedMult)
+      ? input.speedMult
+      : 1;
+  const speedMult = clamp(rawMult, 1, MAX_MOVE_SPEED_MULT);
   const speed =
     WALK_SPEED *
-    (crouched ? CROUCH_MULTIPLIER : input.run ? RUN_MULTIPLIER : 1);
+    (crouched ? CROUCH_MULTIPLIER : input.run ? RUN_MULTIPLIER : 1) *
+    speedMult;
 
   // --- Movimento horizontal com push-out contra AABBs ---
   s.x += wx * speed * dt;

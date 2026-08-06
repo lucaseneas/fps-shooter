@@ -99,6 +99,15 @@ export class AudioManager {
         this.noise(0.24, 0.6, "lowpass", 600);
         this.tone(95, 0.16, 0.4, "square", 45);
         break;
+      case "sniper":
+        this.noise(0.32, 0.55, "bandpass", 700);
+        this.tone(130, 0.22, 0.45, "square", 40);
+        this.tone(55, 0.28, 0.25, "sawtooth", 30, 0.04);
+        break;
+      case "knife":
+        this.noise(0.08, 0.22, "highpass", 1800);
+        this.tone(420, 0.06, 0.12, "triangle", 180);
+        break;
     }
   }
 

@@ -1,4 +1,4 @@
-export type WeaponId = "pistol" | "rifle" | "shotgun";
+export type WeaponId = "pistol" | "rifle" | "shotgun" | "sniper" | "knife";
 
 export interface WeaponDef {
   id: WeaponId;
@@ -28,9 +28,18 @@ export interface WeaponDef {
   viewColor: [number, number, number];
   /** Espalhamento base em graus. */
   baseSpread: number;
+  /** Tempo para sacar a arma e poder atirar (segundos). */
+  drawTime: number;
+  /** Alcance do golpe melee (metros). Se definido, a arma não gasta munição. */
+  meleeRange?: number;
+  /** Multiplicador de velocidade de movimento com esta arma equipada. */
+  moveSpeedMult?: number;
 }
 
-/** Kit fixo — todo mundo nasce com as 3 armas (decisão do GDD). */
+/** Teto do multiplicador de velocidade (faca) — servidor/cliente limitam aqui. */
+export const MAX_MOVE_SPEED_MULT = 1.2;
+
+/** Kit fixo — todo mundo nasce com as 5 armas. */
 export const WEAPONS: WeaponDef[] = [
   {
     id: "pistol",
@@ -50,6 +59,7 @@ export const WEAPONS: WeaponDef[] = [
     falloffMin: 0.6,
     viewColor: [0.55, 0.57, 0.6],
     baseSpread: 0.4,
+    drawTime: 0.7,
   },
   {
     id: "rifle",
@@ -69,6 +79,7 @@ export const WEAPONS: WeaponDef[] = [
     falloffMin: 0.7,
     viewColor: [0.3, 0.35, 0.28],
     baseSpread: 0.4,
+    drawTime: 0.7,
   },
   {
     id: "shotgun",
@@ -88,11 +99,66 @@ export const WEAPONS: WeaponDef[] = [
     falloffMin: 0.2,
     viewColor: [0.5, 0.32, 0.18],
     baseSpread: 1.2,
+    drawTime: 0.7,
+  },
+  {
+    id: "sniper",
+    name: "Sniper",
+    auto: false,
+    fireInterval: 1.45,
+    damageBody: 75,
+    damageHead: 100, // headshot = kill (HP máximo 100; falloffMin 1)
+    pellets: 1,
+    pelletPattern: [[0, 0]],
+    magSize: 5,
+    reserveAmmo: 20,
+    reloadTime: 2.8,
+    recoilPattern: [[0.15, 2.2]],
+    falloffStart: 80,
+    falloffEnd: 120,
+    falloffMin: 1,
+    viewColor: [0.18, 0.2, 0.24],
+    baseSpread: 2.2, // imprecisa no hipfire; ADS zera o spread
+    drawTime: 0.7,
+  },
+  {
+    id: "knife",
+    name: "Faca",
+    auto: false,
+    fireInterval: 0.55,
+    damageBody: 55,
+    damageHead: 100,
+    pellets: 1,
+    pelletPattern: [[0, 0]],
+    magSize: 1,
+    reserveAmmo: 0,
+    reloadTime: 0,
+    recoilPattern: [[0.35, 0.6]],
+    falloffStart: 2.0,
+    falloffEnd: 2.3,
+    falloffMin: 0,
+    viewColor: [0.72, 0.74, 0.78],
+    baseSpread: 0,
+    drawTime: 0.7,
+    meleeRange: 2.2,
+    moveSpeedMult: MAX_MOVE_SPEED_MULT,
   },
 ];
 
 export function getWeapon(id: string): WeaponDef | undefined {
   return WEAPONS.find((w) => w.id === id);
+}
+
+export function isMeleeWeapon(weapon: WeaponDef): boolean {
+  return weapon.meleeRange != null;
+}
+
+export function weaponMaxRange(weapon: WeaponDef): number {
+  return weapon.meleeRange ?? 200;
+}
+
+export function weaponMoveSpeedMult(weapon: WeaponDef): number {
+  return weapon.moveSpeedMult ?? 1;
 }
 
 /** Multiplicador de dano pela distância (linear entre start e end). */

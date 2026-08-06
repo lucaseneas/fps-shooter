@@ -1,4 +1,4 @@
-import { WEAPONS } from "../../shared/weapons";
+import { WEAPONS, isMeleeWeapon } from "../../shared/weapons";
 import { CONFIG } from "../../shared/config";
 
 /** Linha do placar (dados vêm do estado do servidor). */
@@ -35,6 +35,7 @@ export class Hud {
 
   private hitmarkerTimeout = 0;
   private vignetteTimeout = 0;
+  private activeWeaponIndex = 0;
 
   constructor() {
     this.renderWeaponSlots(0);
@@ -49,12 +50,20 @@ export class Hud {
   }
 
   setAmmo(mag: number, reserve: number, reloading: boolean): void {
+    const weapon = WEAPONS[this.activeWeaponIndex];
+    if (weapon && isMeleeWeapon(weapon)) {
+      this.ammoMag.textContent = "—";
+      this.ammoReserve.textContent = "melee";
+      this.ammoMag.classList.remove("low");
+      return;
+    }
     this.ammoMag.textContent = reloading ? "--" : String(mag);
     this.ammoReserve.textContent = String(reserve);
     this.ammoMag.classList.toggle("low", !reloading && mag <= 5);
   }
 
   setWeapon(index: number): void {
+    this.activeWeaponIndex = index;
     this.weaponName.textContent = WEAPONS[index].name;
     this.renderWeaponSlots(index);
   }

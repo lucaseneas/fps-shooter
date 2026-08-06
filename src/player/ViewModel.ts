@@ -7,9 +7,14 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 
 import { WeaponDef } from "../../shared/weapons";
 
+function easeOutCubic(t: number): number {
+  const u = 1 - t;
+  return 1 - u * u * u;
+}
+
 /**
  * "Arma na mão" em primeira pessoa: geometria simples (corpo + cano)
- * parentada à câmera, com kick ao atirar e abaixada durante o reload.
+ * parentada à câmera, com kick ao atirar, reload e animação de sacar.
  */
 export class ViewModel {
   private readonly root: Mesh;
@@ -17,10 +22,15 @@ export class ViewModel {
   private readonly barrel: Mesh;
   private readonly flash: Mesh;
   private flashTimeout = 0;
+  private melee = false;
 
   private kick = 0;
   private reloadDip = 0;
   private reloading = false;
+
+  /** 0 = no coldre (baixo), 1 = pronta para atirar. */
+  private drawProgress = 1;
+  private drawDuration = 0.7;
 
   private readonly basePos = new Vector3(0.28, -0.24, 0.65);
 
@@ -72,16 +82,40 @@ export class ViewModel {
   setWeapon(weapon: WeaponDef): void {
     const [r, g, b] = weapon.viewColor;
     this.bodyMat.diffuseColor = new Color3(r, g, b);
-    // Escopeta/rifle com cano mais longo que pistola.
-    this.barrel.scaling.y = weapon.id === "pistol" ? 0.6 : 1.2;
-    this.kick = 0.4; // pequeno movimento de "sacar"
+    this.melee = weapon.id === "knife";
+
+    if (this.melee) {
+      // Lâmina curta na mão — sem cano.
+      this.root.scaling.set(0.45, 1.35, 0.55);
+      this.barrel.setEnabled(false);
+    } else {
+      this.root.scaling.set(1, 1, 1);
+      this.barrel.setEnabled(true);
+      this.barrel.scaling.y =
+        weapon.id === "pistol" ? 0.6 : weapon.id === "sniper" ? 1.85 : 1.2;
+    }
+
+    this.startDraw(weapon.drawTime);
+  }
+
+  /** Começa a animação de sacar do coldre (baixo → frente). */
+  startDraw(duration: number): void {
+    this.drawDuration = Math.max(0.05, duration);
+    this.drawProgress = 0;
+    this.kick = 0;
+  }
+
+  /** Esconde o view model (ex.: enquanto mira com scope). */
+  setVisible(on: boolean): void {
+    this.root.setEnabled(on);
   }
 
   triggerKick(strength = 1): void {
     this.kick = Math.min(1, this.kick + 0.55 * strength);
 
+    if (this.melee) return;
+
     this.flash.setEnabled(true);
-    // Rotação aleatória para o flash não parecer estático em automático.
     this.flash.scaling.setAll(0.8 + Math.random() * 0.5);
     window.clearTimeout(this.flashTimeout);
     this.flashTimeout = window.setTimeout(() => this.flash.setEnabled(false), 45);
@@ -96,15 +130,23 @@ export class ViewModel {
     const targetDip = this.reloading ? 1 : 0;
     this.reloadDip += (targetDip - this.reloadDip) * Math.min(1, dt * 8);
 
+    if (this.drawProgress < 1) {
+      this.drawProgress = Math.min(1, this.drawProgress + dt / this.drawDuration);
+    }
+    // 1 - ease: começa no coldre e sobe mirando para frente.
+    const holster = 1 - easeOutCubic(this.drawProgress);
+
     this.root.position.set(
-      this.basePos.x,
-      this.basePos.y - this.reloadDip * 0.18,
-      this.basePos.z - this.kick * 0.07
+      this.basePos.x + holster * 0.08,
+      this.basePos.y - this.reloadDip * 0.18 - holster * 0.52,
+      this.basePos.z - this.kick * 0.07 - holster * 0.22
     );
+
+    // Faca: corte lateral; armas: kick de recuo; draw: ponta baixa → frente.
     this.root.rotation.set(
-      -this.kick * 0.12 + this.reloadDip * 0.5,
-      0,
-      0
+      -this.kick * 0.12 + this.reloadDip * 0.5 + holster * 1.15,
+      (this.melee ? this.kick * 0.9 : 0) + holster * 0.25,
+      (this.melee ? -this.kick * 0.55 : 0) - holster * 0.4
     );
   }
 }

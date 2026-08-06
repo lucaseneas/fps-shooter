@@ -30,6 +30,7 @@ const LOCKED_KEYS = [
   "KeyS",
   "KeyD",
   "KeyR",
+  "KeyQ",
   "KeyT",
   "KeyN",
   "KeyP",
@@ -117,6 +118,8 @@ export class FpsController {
   private lookEnabled = true;
 
   private sensitivityMultiplier = 1;
+  /** Multiplicador de velocidade da arma equipada (ex.: faca = 1.2). */
+  private speedMult = 1;
   private readonly maxPitch = Math.PI / 2 - 0.02;
   /** Velocidade de retorno da mira após soltar o gatilho. */
   private readonly recoilRecoverySpeed = 16;
@@ -250,6 +253,11 @@ export class FpsController {
   /** Multiplicador de sensibilidade do mouse (menu de configurações). */
   setSensitivity(multiplier: number): void {
     this.sensitivityMultiplier = Scalar.Clamp(multiplier, 0.05, 2);
+  }
+
+  /** Velocidade extra da arma (faca +20%). Limitado em stepPlayer. */
+  setSpeedMult(mult: number): void {
+    this.speedMult = Number.isFinite(mult) ? Math.max(1, mult) : 1;
   }
 
   getSensitivity(): number {
@@ -463,6 +471,7 @@ export class FpsController {
         !crouch &&
         (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight")),
       crouch,
+      speedMult: this.speedMult,
     };
 
     stepPlayer(this.sim, input);

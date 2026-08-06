@@ -30,6 +30,7 @@ import {
 } from "./net/authApi";
 import { Minimap } from "./ui/Minimap";
 import { CONFIG } from "../shared/config";
+import { weaponMoveSpeedMult } from "../shared/weapons";
 import { AppRoute, navigate, onRouteChange } from "./app/router";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
@@ -637,6 +638,7 @@ function setupRoom(r: Room): void {
     deathCountdown = CONFIG.respawnDelay;
     player.setMovementEnabled(false);
     weapons.setEnabled(false);
+    exitAdsImmediate();
     hud.showDeathScreen(e.killerName, e.weaponName);
     audio.death();
   });
@@ -857,25 +859,101 @@ weapons.onRecoil = (pitchKick, yawKick) => {
 
 let wasReloading = false;
 weapons.onStateChanged = () => {
-  hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, weapons.isReloading);
   hud.setWeapon(weapons.weaponIndex);
+  hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, weapons.isReloading);
   viewModel.setReloading(weapons.isReloading);
   if (weapons.isReloading && !wasReloading) audio.reload();
   wasReloading = weapons.isReloading;
 };
 
+// --- Scope / ADS (sniper, botão direito = toggle) ---
+const HIP_FOV = 1.15;
+const SCOPE_FOV = 0.42; // zoom um pouco mais forte; overlay largo ainda mostra periferia
+const ADS_SENS_SCALE = 0.38;
+const scopeOverlay = document.getElementById("scopeOverlay")!;
+const crosshairEl = document.getElementById("crosshair")!;
+
+/** Scope por clique. Sai só no 2º RMB ou troca de arma (morte/unlock forçam saída). */
+let adsToggled = false;
+let adsAmount = 0;
+
+function canAds(): boolean {
+  return (
+    player.isPointerLocked &&
+    weapons.weapon.id === "sniper" &&
+    !playerDead
+  );
+}
+
+function refreshAds(): void {
+  if (adsToggled && !canAds()) adsToggled = false;
+  weapons.setAiming(adsToggled && canAds());
+}
+
+/** Sai do scope com lerp (RMB / troca de arma). */
+function exitAds(): void {
+  adsToggled = false;
+  weapons.setAiming(false);
+}
+
+function exitAdsImmediate(): void {
+  adsToggled = false;
+  adsAmount = 0;
+  weapons.setAiming(false);
+  player.camera.fov = HIP_FOV;
+  viewModel.setVisible(true);
+  scopeOverlay.classList.remove("active");
+  crosshairEl.classList.remove("scoped");
+  const baseSens = parseFloat(sensSlider.value);
+  if (Number.isFinite(baseSens)) player.setSensitivity(baseSens);
+}
+
+function updateAds(dt: number): void {
+  refreshAds();
+  const target = weapons.isAiming ? 1 : 0;
+  adsAmount += (target - adsAmount) * Math.min(1, dt * 14);
+
+  if (adsAmount < 0.01) adsAmount = 0;
+  if (adsAmount > 0.99) adsAmount = 1;
+
+  player.camera.fov = HIP_FOV + (SCOPE_FOV - HIP_FOV) * adsAmount;
+  viewModel.setVisible(adsAmount < 0.45);
+  scopeOverlay.classList.toggle("active", adsAmount > 0.5);
+  crosshairEl.classList.toggle("scoped", adsAmount > 0.35);
+
+  const baseSens = parseFloat(sensSlider.value);
+  if (Number.isFinite(baseSens)) {
+    player.setSensitivity(baseSens * (1 - adsAmount * (1 - ADS_SENS_SCALE)));
+  }
+}
+
 // --- Input de combate ---
 canvas.addEventListener("mousedown", (e) => {
   if (!player.isPointerLocked) return;
   if (e.button === 0) weapons.setTrigger(true);
+  if (e.button === 2) {
+    e.preventDefault();
+    // Sempre permite fechar; só abre se ainda puder usar ADS.
+    if (adsToggled) {
+      exitAds();
+      return;
+    }
+    if (!canAds()) return;
+    adsToggled = true;
+    refreshAds();
+  }
 });
 window.addEventListener("mouseup", (e) => {
   if (e.button === 0) weapons.setTrigger(false);
 });
+canvas.addEventListener("contextmenu", (e) => {
+  if (player.isPointerLocked) e.preventDefault();
+});
 window.addEventListener("wheel", (e) => {
   if (!player.isPointerLocked) return;
+  const from = weapons.weaponIndex;
   weapons.cycleWeapon(e.deltaY > 0 ? 1 : -1);
-  viewModel.setWeapon(weapons.weapon);
+  rememberWeaponSwitch(from);
 });
 window.addEventListener("keydown", (e) => {
   if (e.code === "Enter" && inGame && player.isPointerLocked) {
@@ -885,9 +963,15 @@ window.addEventListener("keydown", (e) => {
   }
   if (!player.isPointerLocked) return;
   if (e.code === "KeyR") weapons.startReload();
+  if (e.code === "KeyQ") {
+    e.preventDefault();
+    switchTo(lastWeaponIndex);
+  }
   if (e.code === "Digit1") switchTo(0);
   if (e.code === "Digit2") switchTo(1);
   if (e.code === "Digit3") switchTo(2);
+  if (e.code === "Digit4") switchTo(3);
+  if (e.code === "Digit5") switchTo(4);
   if (e.code === "Tab") {
     e.preventDefault();
     if (room) hud.setScoreboardVisible(true, scoreboardRows(room));
@@ -899,9 +983,21 @@ window.addEventListener("keyup", (e) => {
   }
 });
 
-function switchTo(index: number): void {
-  weapons.switchWeapon(index);
+/** Última arma antes da troca atual — Q alterna entre as duas. */
+let lastWeaponIndex = 1;
+
+function rememberWeaponSwitch(fromIndex: number): void {
+  if (weapons.weaponIndex === fromIndex) return;
+  lastWeaponIndex = fromIndex;
   viewModel.setWeapon(weapons.weapon);
+  player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
+  exitAds();
+}
+
+function switchTo(index: number): void {
+  const from = weapons.weaponIndex;
+  weapons.switchWeapon(index);
+  rememberWeaponSwitch(from);
 }
 
 // --- Overlay / Pointer Lock ---
@@ -930,6 +1026,7 @@ document.addEventListener("pointerlockchange", () => {
     audio.resume();
     settingsModal.classList.add("hidden");
   } else if (inGame && !endScreenShown) {
+    exitAdsImmediate();
     if (chatTyping) return;
     // ESC / perda do lock → modal de pausa (configurações + sair).
     openPauseModal();
@@ -991,6 +1088,7 @@ engine.runRenderLoop(() => {
   weapons.setMoving(player.isMovingOnGround);
   weapons.setRunning(player.isRunning);
   weapons.update(dt);
+  updateAds(dt);
   viewModel.update(dt);
 
   if (debugMode) {

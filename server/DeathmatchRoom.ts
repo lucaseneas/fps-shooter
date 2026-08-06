@@ -5,7 +5,11 @@ import { BotAi, BotWorld, ShotEvent } from "./BotAi";
 import { CONFIG } from "../shared/config";
 import { pickBotNames } from "../shared/names";
 import { pickSpawnFarFrom, randomSpawn } from "../shared/spawnPoints";
-import { getWeapon, damageFalloff, WeaponDef } from "../shared/weapons";
+import {
+  getWeapon,
+  damageFalloff,
+  weaponMaxRange,
+} from "../shared/weapons";
 import {
   BodyState,
   PlayerInput,
@@ -18,11 +22,9 @@ import { raycastMap, rayAabb, raySphere, Vec3 } from "./physics";
 import { verifyToken, recordMatchStats } from "./auth";
 import { isAuthEnabled } from "./db";
 
-const MAX_RANGE = 200;
+const HISTORY_WINDOW_MS = 1000;
 /** Quantos inputs processar por jogador a cada tick (anti-speedhack). */
 const MAX_INPUTS_PER_TICK = 6;
-/** Janela do histórico de posições para lag compensation (ms). */
-const HISTORY_WINDOW_MS = 1000;
 
 // Hitboxes server-side (alinhadas com o visual do RemotePlayer no cliente).
 const HEAD_CENTER_Y = 1.7;
@@ -438,7 +440,8 @@ export class DeathmatchRoom extends Room<MatchState> {
         z: rawDir.z / dlen,
       };
 
-      const tMap = raycastMap(origin, dir, MAX_RANGE);
+      const range = weaponMaxRange(weapon);
+      const tMap = raycastMap(origin, dir, range);
       let tBest = tMap;
       let hitId: string | null = null;
       let hitPart: "head" | "body" = "body";

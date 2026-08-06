@@ -4,7 +4,13 @@ import { Vector3 } from "@babylonjs/core/Maths/math";
 import { Ray } from "@babylonjs/core/Culling/ray";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 
-import { WEAPONS, WeaponDef, damageFalloff } from "../../shared/weapons";
+import {
+  WEAPONS,
+  WeaponDef,
+  damageFalloff,
+  isMeleeWeapon,
+  weaponMaxRange,
+} from "../../shared/weapons";
 import { EffectsManager } from "./effects";
 
 import "@babylonjs/core/Culling/ray";
@@ -28,14 +34,10 @@ interface AmmoState {
   reserve: number;
 }
 
-const MAX_RANGE = 200;
-
 /**
- * Sistema de armas do player local (Fase 2, sem rede).
+ * Sistema de armas do player local.
  * Hitscan por raycast a partir do centro da câmera, com spread em cone.
- *
- * Na fase de rede, o disparo vira um comando enviado ao servidor;
- * este módulo continua responsável pela parte visual/preditiva.
+ * Melee (faca) usa o mesmo hitscan com alcance curto e sem munição.
  */
 export class WeaponSystem {
   private readonly scene: Scene;
@@ -56,6 +58,8 @@ export class WeaponSystem {
   private airborne = false;
   private moving = false;
   private running = false;
+  /** Mira com scope (sniper) — reduz/zera o espalhamento. */
+  private aiming = false;
   private readonly recoilShots = new Map<string, number>();
   private readonly lastShotAt = new Map<string, number>();
 
@@ -86,19 +90,9 @@ export class WeaponSystem {
   }
 
   get currentSpread(): number {
-    let spreadMultiplier = 1.0;
-    const isRifle = this.weapon.id === "rifle";
-    if (this.airborne) {
-      spreadMultiplier = isRifle ? 18.0 : 7.0;
-    } else if (this.crouching) {
-      spreadMultiplier = 0.5;
-    } else if (this.running) {
-      spreadMultiplier = isRifle ? 12.0 : 2.8;
-    } else if (this.moving) {
-      spreadMultiplier = isRifle ? 7.0 : 1.8;
-    }
+    if (isMeleeWeapon(this.weapon)) return 0;
+    const spreadMultiplier = this.spreadMultiplier();
 
-    // Encontra o maior desvio no padrão de pellets para somar ao spread base
     let maxPatternOffset = 0;
     for (const [yaw, pitch] of this.weapon.pelletPattern) {
       const dist = Math.sqrt(yaw * yaw + pitch * pitch);
@@ -108,6 +102,39 @@ export class WeaponSystem {
     }
 
     return (maxPatternOffset + this.weapon.baseSpread) * spreadMultiplier;
+  }
+
+  /**
+   * Multiplicador de espalhamento por postura/movimento.
+   * Sniper: preciso só parado (ADS); andando/pulando = spread alto.
+   */
+  private spreadMultiplier(): number {
+    const id = this.weapon.id;
+    const isRifle = id === "rifle";
+    const isSniper = id === "sniper";
+
+    if (isSniper && this.aiming) {
+      if (this.airborne) return 5.5;
+      if (this.running) return 3.8;
+      if (this.moving) return 3.2;
+      if (this.crouching) return 0;
+      return 0;
+    }
+
+    if (this.airborne) {
+      if (isSniper) return 9.0;
+      return isRifle ? 18.0 : 7.0;
+    }
+    if (this.crouching) return 0.5;
+    if (this.running) {
+      if (isSniper) return 4.5;
+      return isRifle ? 12.0 : 2.8;
+    }
+    if (this.moving) {
+      if (isSniper) return 3.5;
+      return isRifle ? 7.0 : 1.8;
+    }
+    return 1.0;
   }
 
   get weaponIndex(): number {
@@ -129,6 +156,7 @@ export class WeaponSystem {
   /** True enquanto o gatilho está pressionado e ainda pode disparar. */
   get isShooting(): boolean {
     if (!this.enabled || !this.triggerHeld || this.reloadRemaining > 0) return false;
+    if (isMeleeWeapon(this.weapon)) return true;
     return this.ammo.get(this.weapon.id)!.mag > 0;
   }
 
@@ -150,12 +178,10 @@ export class WeaponSystem {
     if (!held) this.semiAutoLock = false;
   }
 
-  /** Agachado: reduz recoil e spread dos pellets. */
   setCrouching(on: boolean): void {
     this.crouching = on;
   }
 
-  /** No ar (pulo/queda): aumenta bastante o spread. */
   setAirborne(on: boolean): void {
     this.airborne = on;
   }
@@ -168,13 +194,22 @@ export class WeaponSystem {
     this.running = on;
   }
 
+  setAiming(on: boolean): void {
+    this.aiming = on;
+  }
+
+  get isAiming(): boolean {
+    return this.aiming;
+  }
+
   switchWeapon(index: number): void {
     if (index < 0 || index >= WEAPONS.length || index === this.currentIndex) {
       return;
     }
     this.currentIndex = index;
     this.reloadRemaining = 0;
-    this.cooldown = Math.max(this.cooldown, 0.25); // tempo de "sacar"
+    // Bloqueia tiro até terminar o draw (por arma).
+    this.cooldown = Math.max(this.cooldown, this.weapon.drawTime);
     this.semiAutoLock = false;
     this.onStateChanged?.();
   }
@@ -186,6 +221,7 @@ export class WeaponSystem {
   }
 
   startReload(): void {
+    if (isMeleeWeapon(this.weapon)) return;
     const state = this.ammo.get(this.weapon.id)!;
     if (
       this.isReloading ||
@@ -198,7 +234,6 @@ export class WeaponSystem {
     this.onStateChanged?.();
   }
 
-  /** Restaura munição de todas as armas (usado no respawn). */
   refillAll(): void {
     for (const w of WEAPONS) {
       this.ammo.set(w.id, { mag: w.magSize, reserve: w.reserveAmmo });
@@ -221,7 +256,7 @@ export class WeaponSystem {
         state.reserve -= taken;
         this.onStateChanged?.();
       }
-      return; // não atira durante reload
+      return;
     }
 
     if (!this.enabled || !this.triggerHeld || this.cooldown > 0) return;
@@ -231,14 +266,17 @@ export class WeaponSystem {
   }
 
   private fire(): void {
-    const state = this.ammo.get(this.weapon.id)!;
-    if (state.mag <= 0) {
-      this.startReload();
-      this.semiAutoLock = true;
-      return;
+    const melee = isMeleeWeapon(this.weapon);
+    if (!melee) {
+      const state = this.ammo.get(this.weapon.id)!;
+      if (state.mag <= 0) {
+        this.startReload();
+        this.semiAutoLock = true;
+        return;
+      }
+      if (!this.infiniteAmmo) state.mag--;
     }
 
-    if (!this.infiniteAmmo) state.mag--;
     this.cooldown = this.weapon.fireInterval;
     if (!this.weapon.auto) this.semiAutoLock = true;
 
@@ -247,25 +285,14 @@ export class WeaponSystem {
 
     const hits: HitInfo[] = [];
     const dirs: Vector3[] = [];
-    // Multiplicadores dinâmicos baseados no movimento
     const recoilMultiplier = this.crouching ? 0.5 : 1.0;
 
-    let spreadMultiplier = 1.0;
-    const isRifle = this.weapon.id === "rifle";
-    if (this.airborne) {
-      spreadMultiplier = isRifle ? 18.0 : 7.0;
-    } else if (this.crouching) {
-      spreadMultiplier = 0.5;
-    } else if (this.running) {
-      spreadMultiplier = isRifle ? 12.0 : 2.8;
-    } else if (this.moving) {
-      spreadMultiplier = isRifle ? 7.0 : 1.8;
-    }
+    const spreadMultiplier = melee ? 0 : this.spreadMultiplier();
+    const range = weaponMaxRange(this.weapon);
 
     for (let i = 0; i < this.weapon.pellets; i++) {
       const [yaw, pitch] = this.weapon.pelletPattern[i] ?? [0, 0];
-      
-      // Espalhamento aleatório (ângulo e raio)
+
       const baseSpread = this.weapon.baseSpread;
       const maxSpread = baseSpread * spreadMultiplier;
       const angle = Math.random() * Math.PI * 2;
@@ -273,13 +300,12 @@ export class WeaponSystem {
       const randYaw = randRadius * Math.cos(angle);
       const randPitch = randRadius * Math.sin(angle);
 
-      // Padrão fixo + componente aleatório
       const totalYaw = yaw * spreadMultiplier + randYaw;
       const totalPitch = pitch * spreadMultiplier + randPitch;
 
       const dir = this.applyFixedOffset(baseDir, totalYaw, totalPitch);
       dirs.push(dir);
-      const result = this.raycast(origin, dir);
+      const result = this.raycast(origin, dir, range, !melee);
       if (result.info) hits.push(result.info);
     }
 
@@ -289,11 +315,9 @@ export class WeaponSystem {
     this.onStateChanged?.();
   }
 
-  /** Aplica um desvio fixo ao padrão de pellets. */
   private applyFixedOffset(dir: Vector3, yawDeg: number, pitchDeg: number): Vector3 {
     if (yawDeg === 0 && pitchDeg === 0) return dir.clone();
 
-    // Base ortonormal em torno da direção.
     const up = Math.abs(dir.y) > 0.99 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0);
     const right = Vector3.Cross(dir, up).normalize();
     const realUp = Vector3.Cross(right, dir).normalize();
@@ -304,7 +328,6 @@ export class WeaponSystem {
       .normalize();
   }
 
-  /** Próximo passo do padrão; após uma pausa, o padrão reinicia. */
   private nextRecoil(): { yaw: number; pitch: number } {
     const now = performance.now();
     const id = this.weapon.id;
@@ -319,9 +342,11 @@ export class WeaponSystem {
 
   private raycast(
     origin: Vector3,
-    dir: Vector3
+    dir: Vector3,
+    range: number,
+    withTracer: boolean
   ): { info: HitInfo | null; end: Vector3 } {
-    const ray = new Ray(origin, dir, MAX_RANGE);
+    const ray = new Ray(origin, dir, range);
     const pick = this.scene.pickWithRay(ray, (mesh: AbstractMesh) => {
       const meta = mesh.metadata;
       if (meta?.hitbox?.id === this.ownerId) return false;
@@ -331,14 +356,15 @@ export class WeaponSystem {
     const end =
       pick?.hit && pick.pickedPoint
         ? pick.pickedPoint
-        : origin.add(dir.scale(MAX_RANGE));
+        : origin.add(dir.scale(range));
 
-    // Tracer sai levemente abaixo/direita da câmera (posição do "cano").
-    const muzzle = origin
-      .add(this.camera.getDirection(Vector3.Right()).scale(0.25))
-      .add(new Vector3(0, -0.2, 0))
-      .add(dir.scale(0.6));
-    this.effects.spawnTracer(muzzle, end);
+    if (withTracer) {
+      const muzzle = origin
+        .add(this.camera.getDirection(Vector3.Right()).scale(0.25))
+        .add(new Vector3(0, -0.2, 0))
+        .add(dir.scale(0.6));
+      this.effects.spawnTracer(muzzle, end);
+    }
 
     if (!pick?.hit || !pick.pickedMesh || !pick.pickedPoint) {
       return { info: null, end };
