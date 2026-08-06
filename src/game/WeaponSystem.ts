@@ -7,8 +7,14 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import {
   WEAPONS,
   WeaponDef,
+  WeaponId,
+  LoadoutDef,
+  LoadoutId,
   damageFalloff,
+  getLoadout,
+  getWeapon,
   isMeleeWeapon,
+  loadoutWeaponIds,
   weaponMaxRange,
 } from "../../shared/weapons";
 import { EffectsManager } from "./effects";
@@ -34,8 +40,11 @@ interface AmmoState {
   reserve: number;
 }
 
+const SLOT_COUNT = 3;
+
 /**
  * Sistema de armas do player local.
+ * Inventário = 3 slots do kit (principal / secundária / melee).
  * Hitscan por raycast a partir do centro da câmera, com spread em cone.
  * Melee (faca) usa o mesmo hitscan com alcance curto e sem munição.
  */
@@ -44,7 +53,10 @@ export class WeaponSystem {
   private readonly camera: UniversalCamera;
   private readonly effects: EffectsManager;
 
-  private currentIndex = 0;
+  /** Slot ativo: 0 principal, 1 secundária, 2 melee. */
+  private currentSlot = 0;
+  private slotIds: [WeaponId, WeaponId, WeaponId] = ["rifle", "pistol", "knife"];
+  private loadoutId: LoadoutId = "assault";
   private readonly ammo = new Map<string, AmmoState>();
 
   private triggerHeld = false;
@@ -83,10 +95,22 @@ export class WeaponSystem {
     for (const w of WEAPONS) {
       this.ammo.set(w.id, { mag: w.magSize, reserve: w.reserveAmmo });
     }
+
+    const initial = getLoadout("assault")!;
+    this.applyLoadout(initial, false);
+  }
+
+  get loadout(): LoadoutId {
+    return this.loadoutId;
+  }
+
+  /** Armas dos 3 slots na ordem das teclas 1–3. */
+  get loadoutWeapons(): WeaponDef[] {
+    return this.slotIds.map((id) => getWeapon(id)!);
   }
 
   get weapon(): WeaponDef {
-    return WEAPONS[this.currentIndex];
+    return getWeapon(this.slotIds[this.currentSlot])!;
   }
 
   get currentSpread(): number {
@@ -137,8 +161,9 @@ export class WeaponSystem {
     return 1.0;
   }
 
+  /** Índice do slot ativo (0–2), não o índice no catálogo WEAPONS. */
   get weaponIndex(): number {
-    return this.currentIndex;
+    return this.currentSlot;
   }
 
   get magAmmo(): number {
@@ -158,6 +183,25 @@ export class WeaponSystem {
     if (!this.enabled || !this.triggerHeld || this.reloadRemaining > 0) return false;
     if (isMeleeWeapon(this.weapon)) return true;
     return this.ammo.get(this.weapon.id)!.mag > 0;
+  }
+
+  /** Aplica um kit; por padrão equipa a arma principal e recarrega munição. */
+  applyLoadout(loadout: LoadoutDef, refill = true): void {
+    this.loadoutId = loadout.id;
+    this.slotIds = loadoutWeaponIds(loadout);
+    this.currentSlot = 0;
+    this.reloadRemaining = 0;
+    this.semiAutoLock = false;
+    this.cooldown = Math.max(this.cooldown, this.weapon.drawTime);
+    if (refill) this.refillAll();
+    else this.onStateChanged?.();
+  }
+
+  setLoadoutById(id: LoadoutId, refill = true): boolean {
+    const loadout = getLoadout(id);
+    if (!loadout) return false;
+    this.applyLoadout(loadout, refill);
+    return true;
   }
 
   /** Habilita/desabilita o disparo (morte, fim de partida, overlay). */
@@ -202,21 +246,20 @@ export class WeaponSystem {
     return this.aiming;
   }
 
-  switchWeapon(index: number): void {
-    if (index < 0 || index >= WEAPONS.length || index === this.currentIndex) {
+  /** Troca para o slot 0–2 (teclas 1 / 2 / 3). */
+  switchWeapon(slot: number): void {
+    if (slot < 0 || slot >= SLOT_COUNT || slot === this.currentSlot) {
       return;
     }
-    this.currentIndex = index;
+    this.currentSlot = slot;
     this.reloadRemaining = 0;
-    // Bloqueia tiro até terminar o draw (por arma).
     this.cooldown = Math.max(this.cooldown, this.weapon.drawTime);
     this.semiAutoLock = false;
     this.onStateChanged?.();
   }
 
   cycleWeapon(direction: 1 | -1): void {
-    const next =
-      (this.currentIndex + direction + WEAPONS.length) % WEAPONS.length;
+    const next = (this.currentSlot + direction + SLOT_COUNT) % SLOT_COUNT;
     this.switchWeapon(next);
   }
 

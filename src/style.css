@@ -987,6 +987,142 @@ kbd {
   display: none;
 }
 
+/* ---------- Seleção de kit ---------- */
+#loadoutModal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 13, 0.78);
+  backdrop-filter: blur(6px);
+}
+
+#loadoutModal.hidden {
+  display: none;
+}
+
+/* Pré-spawn: vê o mapa de cima atrás do painel. */
+#loadoutModal.prespawn {
+  background: rgba(6, 9, 13, 0.28);
+  backdrop-filter: blur(2px);
+}
+
+#hud.prespawn #crosshair,
+#hud.prespawn #ammoPanel,
+#hud.prespawn #healthPanel,
+#hud.prespawn #scopeOverlay,
+#hud.prespawn #minimap,
+#hud.prespawn #debug-spread-circle {
+  visibility: hidden;
+}
+
+.loadout-card {
+  min-width: min(920px, 94vw);
+  max-width: 960px;
+}
+
+.loadout-hint {
+  margin: 8px 0 18px;
+  color: #9aa6b2;
+  font-size: 13px;
+}
+
+.loadout-hint kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.loadout-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.loadout-option {
+  text-align: left;
+  padding: 16px 16px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(28, 34, 44, 0.95);
+  color: #e8eef4;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.loadout-option:hover,
+.loadout-option:focus-visible {
+  border-color: var(--accent);
+  background: rgba(36, 44, 56, 0.98);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.loadout-option.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(255, 157, 47, 0.35);
+}
+
+.loadout-option-name {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.loadout-option-blurb {
+  display: block;
+  font-size: 13px;
+  color: #b7c2cd;
+  line-height: 1.35;
+}
+
+.loadout-option-slots {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #8b97a3;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.loadout-actions {
+  margin-top: 26px;
+  flex-direction: column;
+  align-items: center;
+}
+
+.spawn-btn {
+  min-width: 200px;
+  padding: 14px 36px !important;
+  font-size: 18px !important;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-weight: 800 !important;
+}
+
+.spawn-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+@media (max-width: 720px) {
+  .loadout-options {
+    grid-template-columns: 1fr;
+  }
+}
+
 .modal-card {
   text-align: center;
   padding: 30px 38px;

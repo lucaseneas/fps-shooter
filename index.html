@@ -182,7 +182,7 @@
               </div>
             </div>
             <p class="info-text home-tip">
-              Pistola, Rifle, Escopeta, Sniper e Faca · Sala até 8 · Mapa Praça · Primeiro a 20 kills.
+              Kits Assault / Recon / Rusher · 1 principal · 2 secundária · 3 melee · I troca kit · Sala até 8 · Primeiro a 20 kills.
             </p>
           </aside>
 
@@ -197,6 +197,21 @@
             <div id="roomList"><p class="no-rooms">Carregando…</p></div>
             <p id="connectionStatus"></p>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seleção de kit (pré-spawn na sala / tecla I na partida) -->
+    <div id="loadoutModal" class="hidden">
+      <div class="modal-card loadout-card">
+        <h2>Escolhe o kit</h2>
+        <p class="loadout-hint" id="loadoutHint">
+          1 Principal · 2 Secundária · 3 Melee — na partida, aperte <kbd>I</kbd> para trocar.
+        </p>
+        <div id="loadoutOptions" class="loadout-options"></div>
+        <div class="modal-actions loadout-actions">
+          <button id="spawnButton" class="spawn-btn hidden" type="button">Spawn</button>
+          <button id="loadoutCancelButton" class="secondary hidden" type="button">Cancelar</button>
         </div>
       </div>
     </div>

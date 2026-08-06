@@ -42,6 +42,7 @@ const LOCKED_KEYS = [
   "KeyO",
   "KeyU",
   "KeyE",
+  "KeyI",
   "KeyC",
   "KeyV",
   "KeyX",
@@ -125,6 +126,8 @@ export class FpsController {
   private readonly recoilRecoverySpeed = 16;
   /** Altura atual dos olhos (interpolada entre em pé e agachado). */
   private eyeY = EYE_HEIGHT;
+  /** Câmera top-down enquanto escolhe kit / espera spawn. */
+  private spectator = false;
 
   constructor(
     scene: Scene,
@@ -273,6 +276,31 @@ export class FpsController {
   /** Bloqueia a rotação da câmera sem interromper a simulação do jogador. */
   setLookEnabled(on: boolean): void {
     this.lookEnabled = on;
+  }
+
+  get isSpectating(): boolean {
+    return this.spectator;
+  }
+
+  /** Visão de cima do mapa (pré-spawn / escolha de kit). */
+  enterSpectatorOverview(): void {
+    this.spectator = true;
+    this.movementEnabled = false;
+    this.lookEnabled = false;
+    this.keys.clear();
+    this.pendingInputs.length = 0;
+    this.camera.fov = 0.92;
+    // Leve offset em Z evita look-at degenerado no eixo Y.
+    this.camera.position.set(0, 72, 0.05);
+    this.camera.setTarget(new Vector3(0, 0, 0));
+  }
+
+  /** Volta à câmera FPS após o spawn. */
+  exitSpectatorOverview(): void {
+    if (!this.spectator) return;
+    this.spectator = false;
+    this.camera.fov = 1.15;
+    this.syncVisual();
   }
 
   /** Chute de recoil visual: levanta a mira enquanto atira. */
@@ -433,6 +461,8 @@ export class FpsController {
 
   /** Deve ser chamado a cada frame do render loop. */
   update(deltaSeconds: number): void {
+    if (this.spectator) return;
+
     // Clampa dt para evitar rajada de passos após perda de foco/aba.
     const dt = Math.min(deltaSeconds, 0.1);
 

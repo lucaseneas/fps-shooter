@@ -1,5 +1,20 @@
 export type WeaponId = "pistol" | "rifle" | "shotgun" | "sniper" | "knife";
 
+/** Slot de equipamento no kit (teclas 1 / 2 / 3). */
+export type WeaponCategory = "primary" | "secondary" | "melee";
+
+export type LoadoutId = "assault" | "recon" | "rusher";
+
+export interface LoadoutDef {
+  id: LoadoutId;
+  name: string;
+  /** Resumo mostrado na UI (ex.: "Rifle · Pistola · Faca"). */
+  blurb: string;
+  primary: WeaponId;
+  secondary: WeaponId;
+  melee: WeaponId;
+}
+
 export interface WeaponDef {
   id: WeaponId;
   name: string;
@@ -39,7 +54,54 @@ export interface WeaponDef {
 /** Teto do multiplicador de velocidade (faca) — servidor/cliente limitam aqui. */
 export const MAX_MOVE_SPEED_MULT = 1.2;
 
-/** Kit fixo — todo mundo nasce com as 5 armas. */
+/** Categoria da arma no inventário do kit. */
+export function weaponCategory(id: WeaponId): WeaponCategory {
+  if (id === "knife") return "melee";
+  if (id === "pistol") return "secondary";
+  return "primary";
+}
+
+/**
+ * Kits disponíveis no início da partida (e via tecla I).
+ * 1 = principal · 2 = secundária · 3 = melee.
+ */
+export const LOADOUTS: LoadoutDef[] = [
+  {
+    id: "assault",
+    name: "Assault",
+    blurb: "Rifle · Pistola · Faca",
+    primary: "rifle",
+    secondary: "pistol",
+    melee: "knife",
+  },
+  {
+    id: "recon",
+    name: "Recon",
+    blurb: "Sniper · Pistola · Faca",
+    primary: "sniper",
+    secondary: "pistol",
+    melee: "knife",
+  },
+  {
+    id: "rusher",
+    name: "Rusher",
+    blurb: "Escopeta · Pistola · Faca",
+    primary: "shotgun",
+    secondary: "pistol",
+    melee: "knife",
+  },
+];
+
+export function getLoadout(id: string): LoadoutDef | undefined {
+  return LOADOUTS.find((l) => l.id === id);
+}
+
+/** Ordem dos slots: principal, secundária, melee. */
+export function loadoutWeaponIds(loadout: LoadoutDef): [WeaponId, WeaponId, WeaponId] {
+  return [loadout.primary, loadout.secondary, loadout.melee];
+}
+
+/** Catálogo de armas (defs). O inventário do jogador vem do kit. */
 export const WEAPONS: WeaponDef[] = [
   {
     id: "pistol",

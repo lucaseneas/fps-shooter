@@ -155,6 +155,17 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.broadcast("chat", { senderId: client.sessionId, name: player.name, text });
     });
 
+    /** Primeiro spawn do humano (após escolher kit no cliente). */
+    this.onMessage("requestSpawn", (client) => {
+      if (this.state.matchOver) return;
+      const id = client.sessionId;
+      const p = this.state.players.get(id);
+      if (!p || p.alive) return;
+      // Morte: o timer de respawn manda; aqui só o spawn inicial / pós-reset.
+      if (this.respawnAt.has(id)) return;
+      this.respawnPlayer(id);
+    });
+
     this.setSimulationInterval(
       (dtMs) => this.update(dtMs / 1000),
       CONFIG.simulationIntervalMs
@@ -176,17 +187,17 @@ export class DeathmatchRoom extends Room<MatchState> {
     const p = new PlayerState();
     p.name = name;
     p.health = CONFIG.playerMaxHealth;
-    const spawn = randomSpawn();
-    p.x = spawn.x;
-    p.z = spawn.z;
+    // Entra em espectador: só aparece no mapa após requestSpawn.
+    p.alive = false;
+    p.x = 0;
     p.y = 0;
+    p.z = 0;
     this.state.players.set(client.sessionId, p);
 
     if (account) {
       this.userIds.set(client.sessionId, account.id);
     }
 
-    this.bodies.set(client.sessionId, createBody(spawn.x, spawn.z));
     this.pendingInputs.set(client.sessionId, []);
     this.crouching.set(client.sessionId, false);
     this.history.set(client.sessionId, []);

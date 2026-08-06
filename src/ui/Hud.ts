@@ -1,4 +1,4 @@
-import { WEAPONS, isMeleeWeapon } from "../../shared/weapons";
+import { WeaponDef, isMeleeWeapon } from "../../shared/weapons";
 import { CONFIG } from "../../shared/config";
 
 /** Linha do placar (dados vêm do estado do servidor). */
@@ -36,10 +36,7 @@ export class Hud {
   private hitmarkerTimeout = 0;
   private vignetteTimeout = 0;
   private activeWeaponIndex = 0;
-
-  constructor() {
-    this.renderWeaponSlots(0);
-  }
+  private loadoutWeapons: WeaponDef[] = [];
 
   setHealth(current: number): void {
     const pct = Math.max(0, Math.min(1, current / CONFIG.playerMaxHealth));
@@ -49,8 +46,14 @@ export class Hud {
     this.healthText.textContent = String(Math.ceil(current));
   }
 
+  /** Atualiza os 3 slots do kit (principal / secundária / melee). */
+  setLoadoutWeapons(weapons: WeaponDef[], activeIndex = 0): void {
+    this.loadoutWeapons = weapons;
+    this.setWeapon(activeIndex);
+  }
+
   setAmmo(mag: number, reserve: number, reloading: boolean): void {
-    const weapon = WEAPONS[this.activeWeaponIndex];
+    const weapon = this.loadoutWeapons[this.activeWeaponIndex];
     if (weapon && isMeleeWeapon(weapon)) {
       this.ammoMag.textContent = "—";
       this.ammoReserve.textContent = "melee";
@@ -64,15 +67,18 @@ export class Hud {
 
   setWeapon(index: number): void {
     this.activeWeaponIndex = index;
-    this.weaponName.textContent = WEAPONS[index].name;
+    const weapon = this.loadoutWeapons[index];
+    this.weaponName.textContent = weapon?.name ?? "—";
     this.renderWeaponSlots(index);
   }
 
   private renderWeaponSlots(activeIndex: number): void {
-    this.weaponSlots.innerHTML = WEAPONS.map(
-      (w, i) =>
-        `<div class="slot${i === activeIndex ? " active" : ""}">${i + 1}·${w.name}</div>`
-    ).join("");
+    this.weaponSlots.innerHTML = this.loadoutWeapons
+      .map(
+        (w, i) =>
+          `<div class="slot${i === activeIndex ? " active" : ""}">${i + 1}·${w.name}</div>`
+      )
+      .join("");
   }
 
   setKills(kills: number): void {

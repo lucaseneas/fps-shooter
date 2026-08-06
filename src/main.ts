@@ -30,13 +30,27 @@ import {
 } from "./net/authApi";
 import { Minimap } from "./ui/Minimap";
 import { CONFIG } from "../shared/config";
-import { weaponMoveSpeedMult } from "../shared/weapons";
+import {
+  LOADOUTS,
+  LoadoutId,
+  getLoadout,
+  getWeapon,
+  weaponMoveSpeedMult,
+} from "../shared/weapons";
 import { AppRoute, navigate, onRouteChange } from "./app/router";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const pageLogin = document.getElementById("pageLogin") as HTMLDivElement;
 const pageHome = document.getElementById("pageHome") as HTMLDivElement;
 const settingsModal = document.getElementById("settingsModal") as HTMLDivElement;
+const loadoutModal = document.getElementById("loadoutModal") as HTMLDivElement;
+const loadoutOptions = document.getElementById("loadoutOptions") as HTMLDivElement;
+const loadoutHint = document.getElementById("loadoutHint") as HTMLParagraphElement;
+const loadoutCancelButton = document.getElementById(
+  "loadoutCancelButton"
+) as HTMLButtonElement;
+const spawnButton = document.getElementById("spawnButton") as HTMLButtonElement;
+const hudRoot = document.getElementById("hud") as HTMLDivElement;
 const settingsButton = document.getElementById("settingsButton") as HTMLButtonElement;
 const homeSettingsButton = document.getElementById("homeSettingsButton") as HTMLButtonElement;
 const resumeButton = document.getElementById("resumeButton") as HTMLButtonElement;
@@ -208,6 +222,16 @@ let playerDead = false;
 let deathCountdown = 0;
 let endScreenShown = false;
 let chatTyping = false;
+/** Overlay de seleção de kit aberto (pré-spawn ou tecla I). */
+let loadoutPicking = false;
+/** true = troca a meio da partida (pode cancelar). */
+let loadoutPickInMatch = false;
+/** Na sala, ainda não pediu spawn (espectador top-down). */
+let awaitingSpawn = false;
+/** Kit já escolhido nesta sessão de pré-spawn (habilita o botão Spawn). */
+let preSpawnKitReady = false;
+/** Última arma antes da troca atual — Q alterna entre as duas. */
+let lastWeaponIndex = 1;
 /** Ping medido pelo cliente (ms), para o indicador no HUD. */
 let pingMs: number | null = null;
 
@@ -421,7 +445,7 @@ function renderRoomList(rooms: RoomListing[]): void {
 
     const joinBtn = document.createElement("button");
     joinBtn.textContent = "Entrar";
-    joinBtn.addEventListener("click", () => void joinLobbyRoom(r.roomId));
+    joinBtn.addEventListener("click", () => beginJoinFlow(r.roomId));
 
     row.append(info, joinBtn);
     roomListEl.appendChild(row);
@@ -465,10 +489,178 @@ async function joinLobbyRoom(roomId: string | null): Promise<void> {
   startGame(room);
 }
 
+/** Abre a escolha de kit e só depois entra/cria a sala. */
+function beginJoinFlow(roomId: string | null): void {
+  if (authEnabled && !session) {
+    statusEl.classList.add("error");
+    statusEl.textContent = "Entra na conta para jogar.";
+    navigate("/login");
+    return;
+  }
+  void joinLobbyRoom(roomId);
+}
+
 refreshRoomsButton.addEventListener("click", () => void refreshRooms());
-createRoomButton.addEventListener("click", () => void joinLobbyRoom(null));
+createRoomButton.addEventListener("click", () => beginJoinFlow(null));
 
 onRouteChange((route) => applyRoute(route));
+
+// --- Kit de armamento (Assault / Recon / Rusher) ---
+const LOADOUT_STORAGE_KEY = "fps.loadout";
+const SLOT_LABELS = ["1 Principal", "2 Secundária", "3 Melee"] as const;
+
+function savedLoadoutId(): LoadoutId {
+  const saved = localStorage.getItem(LOADOUT_STORAGE_KEY);
+  return getLoadout(saved ?? "")?.id ?? "assault";
+}
+
+function renderLoadoutOptions(): void {
+  const selected = weapons.loadout;
+  loadoutOptions.innerHTML = "";
+  for (const kit of LOADOUTS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `loadout-option${kit.id === selected ? " selected" : ""}`;
+    const slots = [kit.primary, kit.secondary, kit.melee]
+      .map((id, i) => {
+        const name = getWeapon(id)?.name ?? id;
+        return `<span>${SLOT_LABELS[i]} — ${name}</span>`;
+      })
+      .join("");
+    btn.innerHTML = `
+      <span class="loadout-option-name">${kit.name}</span>
+      <span class="loadout-option-blurb">${kit.blurb}</span>
+      <span class="loadout-option-slots">${slots}</span>
+    `;
+    btn.addEventListener("click", () => confirmLoadout(kit.id));
+    loadoutOptions.appendChild(btn);
+  }
+}
+
+function applySelectedLoadout(id: LoadoutId): void {
+  weapons.setLoadoutById(id, true);
+  localStorage.setItem(LOADOUT_STORAGE_KEY, id);
+  lastWeaponIndex = 1;
+  hud.setLoadoutWeapons(weapons.loadoutWeapons, weapons.weaponIndex);
+  hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, weapons.isReloading);
+  viewModel.setWeapon(weapons.weapon);
+  player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
+}
+
+/** Entra na sala em espectador (topo) até escolher kit e clicar Spawn. */
+function enterPreSpawn(): void {
+  awaitingSpawn = true;
+  // Já há um kit guardado — basta confirmar com Spawn (pode trocar antes).
+  applySelectedLoadout(savedLoadoutId());
+  preSpawnKitReady = true;
+  ownInitialized = false;
+  playerDead = false;
+  weapons.setTrigger(false);
+  weapons.setEnabled(false);
+  player.setMovementEnabled(false);
+  player.setLookEnabled(false);
+  viewModel.setVisible(false);
+  player.enterSpectatorOverview();
+  hudRoot.classList.add("prespawn");
+  openLoadoutModal(false);
+}
+
+function exitPreSpawn(): void {
+  awaitingSpawn = false;
+  preSpawnKitReady = false;
+  hudRoot.classList.remove("prespawn");
+  loadoutModal.classList.remove("prespawn");
+  spawnButton.classList.add("hidden");
+  spawnButton.disabled = false;
+  player.exitSpectatorOverview();
+  viewModel.setVisible(true);
+  viewModel.setWeapon(weapons.weapon);
+}
+
+function openLoadoutModal(inMatch: boolean): void {
+  loadoutPicking = true;
+  loadoutPickInMatch = inMatch;
+  weapons.setTrigger(false);
+  settingsModal.classList.add("hidden");
+
+  if (inMatch) {
+    player.setMovementEnabled(false);
+    player.setLookEnabled(false);
+    if (player.isPointerLocked) player.releasePointerLock();
+    loadoutHint.textContent =
+      "Troca o kit agora. 1 Principal · 2 Secundária · 3 Melee. ESC cancela.";
+    loadoutCancelButton.classList.remove("hidden");
+    spawnButton.classList.add("hidden");
+    loadoutModal.classList.remove("prespawn");
+  } else {
+    loadoutHint.textContent =
+      "Escolhe um kit e aperta Spawn para entrar no mapa. Na partida, I troca o kit.";
+    loadoutCancelButton.classList.add("hidden");
+    loadoutModal.classList.add("prespawn");
+    spawnButton.classList.toggle("hidden", !preSpawnKitReady);
+    spawnButton.disabled = false;
+  }
+
+  renderLoadoutOptions();
+  loadoutModal.classList.remove("hidden");
+}
+
+function closeLoadoutModal(relock: boolean): void {
+  if (!loadoutPicking) return;
+  loadoutPicking = false;
+  loadoutPickInMatch = false;
+  loadoutModal.classList.add("hidden");
+  loadoutModal.classList.remove("prespawn");
+  loadoutCancelButton.classList.add("hidden");
+  spawnButton.classList.add("hidden");
+
+  if (awaitingSpawn) {
+    // Pré-spawn: mantém espectador até o Spawn (ou se o modal reabrir).
+    player.setLookEnabled(false);
+    player.setMovementEnabled(false);
+    return;
+  }
+
+  player.setLookEnabled(true);
+  player.setMovementEnabled(!playerDead && !endScreenShown);
+  if (relock && inGame && !playerDead && !endScreenShown) {
+    player.requestPointerLock();
+  }
+}
+
+function confirmLoadout(id: LoadoutId): void {
+  applySelectedLoadout(id);
+  exitAds();
+  renderLoadoutOptions();
+
+  // Pré-spawn: só marca o kit; o jogador ainda precisa clicar em Spawn.
+  if (awaitingSpawn && !loadoutPickInMatch) {
+    preSpawnKitReady = true;
+    spawnButton.classList.remove("hidden");
+    spawnButton.disabled = false;
+    return;
+  }
+
+  // Troca a meio da partida (tecla I).
+  closeLoadoutModal(true);
+}
+
+function cancelLoadoutPick(): void {
+  if (!loadoutPicking || !loadoutPickInMatch) return;
+  closeLoadoutModal(true);
+}
+
+function requestPlayerSpawn(): void {
+  if (!awaitingSpawn || !preSpawnKitReady || !room) return;
+  spawnButton.disabled = true;
+  room.send("requestSpawn");
+}
+
+loadoutCancelButton.addEventListener("click", () => cancelLoadoutPick());
+spawnButton.addEventListener("click", () => requestPlayerSpawn());
+
+// Aplica o último kit guardado (ou Assault) ao arrancar.
+applySelectedLoadout(savedLoadoutId());
 
 // --- Entrar / sair do jogo 3D ---
 function startGame(r: Room): void {
@@ -480,19 +672,14 @@ function startGame(r: Room): void {
 
   // Prediction: cada passo fixo local vira um input enviado ao servidor.
   player.onInput = (input) => {
-    if (ownInitialized) room?.send("input", input);
+    if (ownInitialized && !awaitingSpawn) room?.send("input", input);
   };
 
   setupRoom(r);
   applyDebugMode(debugMode);
 
   audio.resume();
-  player.requestPointerLock();
-  // Se o navegador negar o lock (gesto "gasto" pelo await do join),
-  // mostra o modal de pausa como porta de entrada.
-  window.setTimeout(() => {
-    if (inGame && !player.isPointerLocked) openPauseModal();
-  }, 400);
+  enterPreSpawn();
 }
 
 /** Volta ao /home, limpando todo o estado da partida. */
@@ -502,10 +689,23 @@ function resetToMenu(errorMsg?: string): void {
   ownInitialized = false;
   playerDead = false;
   endScreenShown = false;
+  awaitingSpawn = false;
+  preSpawnKitReady = false;
   lastKnownHealth = CONFIG.playerMaxHealth;
   pingMs = null;
   closeChat(false);
   chatLog.replaceChildren();
+  if (loadoutPicking) {
+    loadoutPicking = false;
+    loadoutPickInMatch = false;
+    loadoutModal.classList.add("hidden");
+    loadoutModal.classList.remove("prespawn");
+    loadoutCancelButton.classList.add("hidden");
+    spawnButton.classList.add("hidden");
+  }
+  hudRoot.classList.remove("prespawn");
+  player.exitSpectatorOverview();
+  viewModel.setVisible(true);
 
   for (const rp of remotePlayers.values()) rp.dispose();
   remotePlayers.clear();
@@ -514,6 +714,7 @@ function resetToMenu(errorMsg?: string): void {
   weapons.refillAll();
   weapons.setEnabled(true);
   player.setMovementEnabled(true);
+  player.setLookEnabled(true);
 
   hud.hideDeathScreen();
   hud.setScoreboardVisible(false);
@@ -588,6 +789,10 @@ closeSettingsButton.addEventListener("click", () => {
 resumeButton.addEventListener("click", () => {
   settingsModal.classList.add("hidden");
   audio.resume();
+  if (awaitingSpawn) {
+    if (!loadoutPicking) openLoadoutModal(false);
+    return;
+  }
   player.requestPointerLock();
 });
 quitButton.addEventListener("click", () => {
@@ -644,13 +849,30 @@ function setupRoom(r: Room): void {
   });
 
   r.onMessage("respawn", (e: { x: number; z: number }) => {
+    const wasPreSpawn = awaitingSpawn;
+    if (wasPreSpawn) {
+      loadoutPicking = false;
+      loadoutPickInMatch = false;
+      loadoutModal.classList.add("hidden");
+      loadoutModal.classList.remove("prespawn");
+      loadoutCancelButton.classList.add("hidden");
+      exitPreSpawn();
+    }
+
     player.teleport(new Vector3(e.x, 0, e.z));
+    ownInitialized = true;
     weapons.refillAll();
     weapons.setEnabled(true);
     player.setMovementEnabled(true);
+    player.setLookEnabled(true);
     playerDead = false;
     hud.hideDeathScreen();
     audio.respawn();
+
+    if (wasPreSpawn) {
+      settingsModal.classList.add("hidden");
+      player.requestPointerLock();
+    }
   });
 
   // Tiros dos bots (server-side).
@@ -787,6 +1009,11 @@ function reconcile(r: Room): void {
 }
 
 function handleOwnState(p: PlayerSnapshot): void {
+  if (awaitingSpawn) {
+    // Ainda em espectador: não teleporta nem reconcilia no mapa.
+    return;
+  }
+
   if (!ownInitialized) {
     ownInitialized = true;
     player.teleport(new Vector3(p.x, p.y, p.z));
@@ -859,7 +1086,7 @@ weapons.onRecoil = (pitchKick, yawKick) => {
 
 let wasReloading = false;
 weapons.onStateChanged = () => {
-  hud.setWeapon(weapons.weaponIndex);
+  hud.setLoadoutWeapons(weapons.loadoutWeapons, weapons.weaponIndex);
   hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, weapons.isReloading);
   viewModel.setReloading(weapons.isReloading);
   if (weapons.isReloading && !wasReloading) audio.reload();
@@ -909,6 +1136,11 @@ function exitAdsImmediate(): void {
 }
 
 function updateAds(dt: number): void {
+  if (awaitingSpawn) {
+    viewModel.setVisible(false);
+    return;
+  }
+
   refreshAds();
   const target = weapons.isAiming ? 1 : 0;
   adsAmount += (target - adsAmount) * Math.min(1, dt * 14);
@@ -961,17 +1193,24 @@ window.addEventListener("keydown", (e) => {
     openChat();
     return;
   }
+  if (loadoutPicking) return;
   if (!player.isPointerLocked) return;
+  if (e.code === "KeyI") {
+    e.preventDefault();
+    if (!playerDead && !endScreenShown && !awaitingSpawn) {
+      openLoadoutModal(true);
+    }
+    return;
+  }
   if (e.code === "KeyR") weapons.startReload();
   if (e.code === "KeyQ") {
     e.preventDefault();
     switchTo(lastWeaponIndex);
   }
+  // 1 principal · 2 secundária · 3 melee
   if (e.code === "Digit1") switchTo(0);
   if (e.code === "Digit2") switchTo(1);
   if (e.code === "Digit3") switchTo(2);
-  if (e.code === "Digit4") switchTo(3);
-  if (e.code === "Digit5") switchTo(4);
   if (e.code === "Tab") {
     e.preventDefault();
     if (room) hud.setScoreboardVisible(true, scoreboardRows(room));
@@ -984,8 +1223,6 @@ window.addEventListener("keyup", (e) => {
 });
 
 /** Última arma antes da troca atual — Q alterna entre as duas. */
-let lastWeaponIndex = 1;
-
 function rememberWeaponSwitch(fromIndex: number): void {
   if (weapons.weaponIndex === fromIndex) return;
   lastWeaponIndex = fromIndex;
@@ -1016,7 +1253,14 @@ restartButton.addEventListener("click", () => audio.resume());
 
 // Clique no jogo (fora do lock) retoma o pointer lock.
 canvas.addEventListener("click", () => {
-  if (inGame && !player.isPointerLocked && settingsModal.classList.contains("hidden")) {
+  if (
+    inGame &&
+    !awaitingSpawn &&
+    !player.isPointerLocked &&
+    settingsModal.classList.contains("hidden") &&
+    !loadoutPicking &&
+    !chatTyping
+  ) {
     player.requestPointerLock();
   }
 });
@@ -1027,7 +1271,7 @@ document.addEventListener("pointerlockchange", () => {
     settingsModal.classList.add("hidden");
   } else if (inGame && !endScreenShown) {
     exitAdsImmediate();
-    if (chatTyping) return;
+    if (chatTyping || loadoutPicking || awaitingSpawn) return;
     // ESC / perda do lock → modal de pausa (configurações + sair).
     openPauseModal();
   }
@@ -1037,11 +1281,35 @@ document.addEventListener("pointerlockchange", () => {
 window.addEventListener(
   "keydown",
   (e) => {
-    if (e.code !== "Escape" || !inGame || endScreenShown) return;
+    if (e.code !== "Escape" || endScreenShown) return;
+
+    // Troca de kit a meio da partida: ESC cancela.
+    if (loadoutPicking && loadoutPickInMatch) {
+      e.preventDefault();
+      cancelLoadoutPick();
+      return;
+    }
+
+    if (!inGame) return;
 
     if (chatTyping) {
       e.preventDefault();
       closeChat(true);
+      return;
+    }
+
+    // Pré-spawn: ESC abre pausa (Sair) por cima da escolha de kit.
+    if (awaitingSpawn) {
+      e.preventDefault();
+      if (
+        !settingsModal.classList.contains("hidden") &&
+        settingsModal.classList.contains("pause-mode")
+      ) {
+        settingsModal.classList.add("hidden");
+        if (!loadoutPicking) openLoadoutModal(false);
+      } else {
+        openPauseModal();
+      }
       return;
     }
 
@@ -1071,8 +1339,8 @@ let footstepAccumulator = 0;
 let minimapAccumulator = 0;
 
 hud.setHealth(CONFIG.playerMaxHealth);
+hud.setLoadoutWeapons(weapons.loadoutWeapons, weapons.weaponIndex);
 hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, false);
-hud.setWeapon(0);
 hud.setKills(0);
 
 engine.runRenderLoop(() => {
