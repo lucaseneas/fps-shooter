@@ -22,7 +22,7 @@ export const CONFIG = {
   /**
    * Atraso estimado da interpolação visual dos remotos (ms).
    * Usado no rewind do hitscan: RTT/2 + este valor.
-   * Calibre com o modo debug (hitbox vermelha vs modelo).
+   * A hitbox vermelha do debug amostra o mesmo instante (lag comp).
    */
   interpDelayMs: 75,
   /** Velocidade da interpolação dos inimigos no cliente (maior = cola mais rápido). */

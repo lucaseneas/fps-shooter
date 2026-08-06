@@ -6,6 +6,7 @@ import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTextur
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 
 import { CONFIG } from "../../shared/config";
+import { HITBOX } from "../../shared/hitboxes";
 import { CROUCH_EYE_HEIGHT, EYE_HEIGHT } from "../../shared/movement";
 
 const STAND_HEIGHT = 1.8;
@@ -18,10 +19,23 @@ const MAX_EXTRAP_SPEED = 10;
 const STAND_BODY_H = 1.3;
 const CROUCH_BODY_H = 0.85;
 
+/** Histórico local para amostrar a mesma janela do rewind do servidor. */
+const HISTORY_MS = 1000;
+/** Teto de extrapolação da hitbox de debug (ms). */
+const DEBUG_EXTRAP_CAP_MS = 250;
+
+interface PosSample {
+  t: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
 /**
  * Representação visual de outro combatente da sala (humano ou bot — o
  * cliente não distingue). Interpolação rápida + extrapolação curta entre
- * patches do servidor para reduzir o gap visual vs hitbox autoritativa.
+ * patches do servidor. A hitbox de debug mostra a pose de lag compensation
+ * (onde o hitscan do servidor realmente testa o tiro).
  */
 export class RemotePlayer {
   readonly id: string;
@@ -53,6 +67,7 @@ export class RemotePlayer {
   private velocityZ = 0;
   private lastPatchTime = 0;
   private hasPatch = false;
+  private readonly history: PosSample[] = [];
 
   constructor(scene: Scene, id: string, name: string) {
     this.id = id;
@@ -90,7 +105,7 @@ export class RemotePlayer {
     this.headMesh.material = headMat;
     this.headMesh.metadata = { hitbox: { id, part: "head" } };
 
-    // Contornos na última posição autoritativa recebida, sem interpolação.
+    // AABB do hitscan autoritativo (lag-compensated), sem yaw — igual ao servidor.
     const debugMat = new StandardMaterial(`${id}_debugHitboxMat`, scene);
     debugMat.diffuseColor = new Color3(1, 0, 0);
     debugMat.emissiveColor = new Color3(1, 0, 0);
@@ -98,14 +113,18 @@ export class RemotePlayer {
     debugMat.alpha = 0.9;
     this.debugBodyHitbox = MeshBuilder.CreateBox(
       `${id}_debugBodyHitbox`,
-      { width: 0.9, height: STAND_BODY_H, depth: 0.6 },
+      {
+        width: HITBOX.bodyHalf.x * 2,
+        height: HITBOX.bodyHalf.y * 2,
+        depth: HITBOX.bodyHalf.z * 2,
+      },
       scene
     );
     this.debugBodyHitbox.material = debugMat;
     this.debugBodyHitbox.isPickable = false;
     this.debugHeadHitbox = MeshBuilder.CreateSphere(
       `${id}_debugHeadHitbox`,
-      { diameter: 0.45, segments: 8 },
+      { diameter: HITBOX.headRadius * 2, segments: 8 },
       scene
     );
     this.debugHeadHitbox.material = debugMat;
@@ -196,18 +215,67 @@ export class RemotePlayer {
     this.headMesh.position.y = eye - h / 2;
     this.gun.position.y = 0.32 - 0.27 * t;
     this.nameplate.position.y = h / 2 + 0.45 - 0.2 * t;
+  }
 
-    this.debugBodyHitbox.scaling.y = bodyH / STAND_BODY_H;
-    this.debugBodyHitbox.position.set(
-      this.feetX,
-      this.feetY + bodyH / 2,
-      this.feetZ
-    );
-    this.debugHeadHitbox.position.set(
-      this.feetX,
-      this.feetY + eye,
-      this.feetZ
-    );
+  /**
+   * Amostra a pose que o servidor usaria no hitscan para o nosso RTT:
+   * rewind = RTT/2 + interpDelayMs. O histórico é stampado no receive time;
+   * targetRecvT = now - interpDelay + RTT/2 alinha com esse rewind.
+   */
+  private sampleLagCompFeet(rttMs: number): PosSample {
+    const now = performance.now();
+    const oneWay = Math.max(0, rttMs) / 2;
+    const targetRecvT = now - CONFIG.interpDelayMs + oneWay;
+
+    if (this.history.length === 0) {
+      return { t: now, x: this.feetX, y: this.feetY, z: this.feetZ };
+    }
+
+    const last = this.history[this.history.length - 1];
+    if (targetRecvT >= last.t) {
+      const aheadMs = Math.min(DEBUG_EXTRAP_CAP_MS, targetRecvT - last.t);
+      const aheadSec = aheadMs / 1000;
+      return {
+        t: targetRecvT,
+        x: last.x + this.velocityX * aheadSec,
+        y: last.y,
+        z: last.z + this.velocityZ * aheadSec,
+      };
+    }
+
+    const first = this.history[0];
+    if (targetRecvT <= first.t) {
+      return { t: first.t, x: first.x, y: first.y, z: first.z };
+    }
+
+    for (let i = this.history.length - 2; i >= 0; i--) {
+      if (this.history[i].t <= targetRecvT) {
+        const a = this.history[i];
+        const b = this.history[i + 1];
+        const f = (targetRecvT - a.t) / Math.max(1, b.t - a.t);
+        return {
+          t: targetRecvT,
+          x: a.x + (b.x - a.x) * f,
+          y: a.y + (b.y - a.y) * f,
+          z: a.z + (b.z - a.z) * f,
+        };
+      }
+    }
+
+    return { t: last.t, x: last.x, y: last.y, z: last.z };
+  }
+
+  /** Posiciona a hitbox vermelha no volume que o servidor testa no tiro. */
+  private updateDebugHitboxes(rttMs: number): void {
+    const feet = this.sampleLagCompFeet(rttMs);
+    const crouched = this.crouching;
+    const bodyCy = crouched ? HITBOX.crouchBodyCenterY : HITBOX.bodyCenterY;
+    const bodyHalfY = crouched ? HITBOX.crouchBodyHalfY : HITBOX.bodyHalf.y;
+    const headCy = crouched ? HITBOX.crouchHeadCenterY : HITBOX.headCenterY;
+
+    this.debugBodyHitbox.scaling.y = bodyHalfY / HITBOX.bodyHalf.y;
+    this.debugBodyHitbox.position.set(feet.x, feet.y + bodyCy, feet.z);
+    this.debugHeadHitbox.position.set(feet.x, feet.y + headCy, feet.z);
   }
 
   /** Recebe o último estado do servidor (pés em y). */
@@ -249,7 +317,15 @@ export class RemotePlayer {
     this.crouching = crouch;
     this.targetPos.set(x, y + this.height() / 2, z);
     this.targetYaw = yaw;
-    this.debugBodyHitbox.rotation.y = yaw;
+
+    this.history.push({ t: now, x, y, z });
+    while (
+      this.history.length > 0 &&
+      now - this.history[0].t > HISTORY_MS
+    ) {
+      this.history.shift();
+    }
+
     this.applyCrouchPose();
     this.setVisible(alive);
   }
@@ -259,8 +335,11 @@ export class RemotePlayer {
     this.debugHeadHitbox.setEnabled(on);
   }
 
-  /** Interpola + extrapola em direção ao estado estimado (chamar a cada frame). */
-  update(dt: number): void {
+  /**
+   * Interpola + extrapola o modelo; atualiza a hitbox de debug na pose
+   * de lag compensation (chamar a cada frame).
+   */
+  update(dt: number, rttMs = 0): void {
     const crouchTarget = this.crouching ? 1 : 0;
     this.crouchT +=
       (crouchTarget - this.crouchT) * Math.min(1, dt * CROUCH_LERP);
@@ -287,6 +366,8 @@ export class RemotePlayer {
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
     this.root.rotation.y += diff * t;
+
+    this.updateDebugHitboxes(rttMs);
   }
 
   snapToTarget(): void {
@@ -317,6 +398,8 @@ export class RemotePlayer {
   }
 
   dispose(): void {
+    this.debugBodyHitbox.dispose();
+    this.debugHeadHitbox.dispose();
     this.root.dispose(false, true);
   }
 }

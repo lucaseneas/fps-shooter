@@ -19,6 +19,7 @@ import {
   CROUCH_EYE_HEIGHT,
 } from "../shared/movement";
 import { raycastMap, rayAabb, raySphere, Vec3 } from "./physics";
+import { HITBOX } from "../shared/hitboxes";
 import { verifyToken, recordMatchStats } from "./auth";
 import { isAuthEnabled } from "./db";
 
@@ -26,14 +27,13 @@ const HISTORY_WINDOW_MS = 1000;
 /** Quantos inputs processar por jogador a cada tick (anti-speedhack). */
 const MAX_INPUTS_PER_TICK = 6;
 
-// Hitboxes server-side (alinhadas com o visual do RemotePlayer no cliente).
-const HEAD_CENTER_Y = 1.7;
-const HEAD_RADIUS = 0.225;
-const BODY_CENTER_Y = 0.75;
-const BODY_HALF = { x: 0.45, y: 0.65, z: 0.45 };
-const CROUCH_HEAD_CENTER_Y = CROUCH_EYE_HEIGHT;
-const CROUCH_BODY_CENTER_Y = 0.5;
-const CROUCH_BODY_HALF_Y = 0.5;
+const HEAD_CENTER_Y = HITBOX.headCenterY;
+const HEAD_RADIUS = HITBOX.headRadius;
+const BODY_CENTER_Y = HITBOX.bodyCenterY;
+const BODY_HALF = HITBOX.bodyHalf;
+const CROUCH_HEAD_CENTER_Y = HITBOX.crouchHeadCenterY;
+const CROUCH_BODY_CENTER_Y = HITBOX.crouchBodyCenterY;
+const CROUCH_BODY_HALF_Y = HITBOX.crouchBodyHalfY;
 
 interface FireMessage {
   weaponId: string;

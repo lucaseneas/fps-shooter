@@ -1449,7 +1449,7 @@ engine.runRenderLoop(() => {
     debugSpreadCircle.style.display = "none";
   }
 
-  for (const rp of remotePlayers.values()) rp.update(dt);
+  for (const rp of remotePlayers.values()) rp.update(dt, pingMs ?? 0);
 
   // Som de passos.
   if (player.isMovingOnGround) {
