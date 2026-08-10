@@ -903,6 +903,18 @@ function setupRoom(r: Room): void {
     audio.hitmarker(e.headshot);
   });
 
+  // Direção do tiro recebido (posição do atacante → marca de sangue na borda).
+  r.onMessage("damaged", (e: { x: number; y: number; z: number }) => {
+    const feet = player.getFeet();
+    const dx = e.x - feet.x;
+    const dz = e.z - feet.z;
+    const worldAngle = Math.atan2(dx, dz);
+    let relative = worldAngle - player.getYaw();
+    while (relative > Math.PI) relative -= Math.PI * 2;
+    while (relative < -Math.PI) relative += Math.PI * 2;
+    hud.showDirectionalDamage(relative);
+  });
+
   r.onMessage("chat", (e: { name: string; text: string }) => {
     addChatMessage(e.name, e.text);
   });

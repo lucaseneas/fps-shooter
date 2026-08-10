@@ -543,6 +543,16 @@ export class DeathmatchRoom extends Room<MatchState> {
     }
     target.health = Math.max(0, target.health - Math.round(amount));
     this.lastDamagedAt.set(targetId, Date.now());
+
+    const victimClient = this.clients.find((c) => c.sessionId === targetId);
+    if (attacker) {
+      victimClient?.send("damaged", {
+        x: attacker.x,
+        y: attacker.y,
+        z: attacker.z,
+      });
+    }
+
     if (target.health > 0) return true;
 
     target.alive = false;
@@ -558,7 +568,6 @@ export class DeathmatchRoom extends Room<MatchState> {
       weaponName,
     });
 
-    const victimClient = this.clients.find((c) => c.sessionId === targetId);
     victimClient?.send("died", { killerName, weaponName });
 
     this.deathPos.set(targetId, { x: target.x, z: target.z });

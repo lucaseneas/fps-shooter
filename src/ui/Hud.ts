@@ -35,6 +35,7 @@ export class Hud {
   private readonly killStars = el<HTMLDivElement>("killStars");
   private readonly killBadgeLabel = el<HTMLSpanElement>("killBadgeLabel");
   private readonly damageVignette = el<HTMLDivElement>("damageVignette");
+  private readonly damageDirection = el<HTMLDivElement>("damageDirection");
 
   private hitmarkerTimeout = 0;
   private vignetteTimeout = 0;
@@ -220,6 +221,27 @@ export class Hud {
       () => this.damageVignette.classList.remove("show"),
       250
     );
+  }
+
+  /**
+   * Marca de sangue na borda da tela na direção do ataque.
+   * relativeYaw: 0 = frente (topo), ±π = costas (baixo), +π/2 = direita.
+   */
+  showDirectionalDamage(relativeYaw: number): void {
+    const ring = document.createElement("div");
+    ring.className = "damage-dir-ring";
+    ring.style.transform = `rotate(${relativeYaw}rad)`;
+
+    const mark = document.createElement("div");
+    mark.className = "damage-dir-mark";
+    ring.appendChild(mark);
+    this.damageDirection.appendChild(ring);
+
+    // Força reflow para reiniciar a animação.
+    void mark.offsetWidth;
+    mark.classList.add("show");
+
+    window.setTimeout(() => ring.remove(), 900);
   }
 
   setScoreboardVisible(on: boolean, rows?: ScoreRow[]): void {
