@@ -129,8 +129,15 @@ function loadSensitivity(): void {
   applySensitivity(value);
 }
 
+/** Sensibilidade base do slider (evita parseFloat no loop do ADS). */
+let baseSensitivity = 1;
+/** Progresso do ADS (0–1); declarado cedo pra applySensitivity aplicar escala com scope aberto. */
+let adsAmount = 0;
+const ADS_SENS_SCALE = 0.38;
+
 function applySensitivity(value: number): void {
-  player.setSensitivity(value);
+  baseSensitivity = value;
+  player.setSensitivity(value * (1 - adsAmount * (1 - ADS_SENS_SCALE)));
   sensValue.textContent = value.toFixed(2);
 }
 
@@ -1188,13 +1195,13 @@ weapons.onStateChanged = () => {
 // --- Scope / ADS (sniper, botão direito = toggle) ---
 const HIP_FOV = 1.15;
 const SCOPE_FOV = 0.42; // zoom um pouco mais forte; overlay largo ainda mostra periferia
-const ADS_SENS_SCALE = 0.38;
 const scopeOverlay = document.getElementById("scopeOverlay")!;
 const crosshairEl = document.getElementById("crosshair")!;
 
 /** Scope por clique. Sai só no 2º RMB ou troca de arma (morte/unlock forçam saída). */
 let adsToggled = false;
-let adsAmount = 0;
+let adsOverlayOn = false;
+let adsCrosshairScoped = false;
 
 function canAds(): boolean {
   return (
@@ -1206,7 +1213,28 @@ function canAds(): boolean {
 
 function refreshAds(): void {
   if (adsToggled && !canAds()) adsToggled = false;
-  weapons.setAiming(adsToggled && canAds());
+  if (weapons.isAiming !== adsToggled) weapons.setAiming(adsToggled);
+}
+
+function setScopeOverlay(on: boolean): void {
+  if (adsOverlayOn === on) return;
+  adsOverlayOn = on;
+  scopeOverlay.classList.toggle("active", on);
+}
+
+function setCrosshairScoped(on: boolean): void {
+  if (adsCrosshairScoped === on) return;
+  adsCrosshairScoped = on;
+  crosshairEl.classList.toggle("scoped", on);
+}
+
+/** Rasteriza a máscara do scope uma vez pra não hitchar no 1º ADS. */
+function prewarmScopeOverlay(): void {
+  scopeOverlay.classList.add("prewarm");
+  void scopeOverlay.offsetWidth;
+  requestAnimationFrame(() => {
+    scopeOverlay.classList.remove("prewarm");
+  });
 }
 
 /** Sai do scope com lerp (RMB / troca de arma). */
@@ -1221,10 +1249,9 @@ function exitAdsImmediate(): void {
   weapons.setAiming(false);
   player.camera.fov = HIP_FOV;
   viewModel.setVisible(true);
-  scopeOverlay.classList.remove("active");
-  crosshairEl.classList.remove("scoped");
-  const baseSens = parseFloat(sensSlider.value);
-  if (Number.isFinite(baseSens)) player.setSensitivity(baseSens);
+  setScopeOverlay(false);
+  setCrosshairScoped(false);
+  player.setSensitivity(baseSensitivity);
 }
 
 function updateAds(dt: number): void {
@@ -1235,20 +1262,22 @@ function updateAds(dt: number): void {
 
   refreshAds();
   const target = weapons.isAiming ? 1 : 0;
+  const prevAmount = adsAmount;
   adsAmount += (target - adsAmount) * Math.min(1, dt * 14);
 
   if (adsAmount < 0.01) adsAmount = 0;
   if (adsAmount > 0.99) adsAmount = 1;
 
+  // Já estabilizado: não suja FOV / DOM / sensibilidade todo frame.
+  if (adsAmount === prevAmount && adsAmount === target) return;
+
   player.camera.fov = HIP_FOV + (SCOPE_FOV - HIP_FOV) * adsAmount;
   viewModel.setVisible(adsAmount < 0.45);
-  scopeOverlay.classList.toggle("active", adsAmount > 0.5);
-  crosshairEl.classList.toggle("scoped", adsAmount > 0.35);
-
-  const baseSens = parseFloat(sensSlider.value);
-  if (Number.isFinite(baseSens)) {
-    player.setSensitivity(baseSens * (1 - adsAmount * (1 - ADS_SENS_SCALE)));
-  }
+  setScopeOverlay(adsAmount > 0.5);
+  setCrosshairScoped(adsAmount > 0.35);
+  player.setSensitivity(
+    baseSensitivity * (1 - adsAmount * (1 - ADS_SENS_SCALE)),
+  );
 }
 
 // --- Input de combate ---
@@ -1519,6 +1548,9 @@ engine.runRenderLoop(() => {
 });
 
 window.addEventListener("resize", () => engine.resize());
+
+// Força a 1ª rasterização do scope fora do combate (evita hitch no 1º RMB).
+requestAnimationFrame(() => prewarmScopeOverlay());
 
 void (async () => {
   await initAuth();

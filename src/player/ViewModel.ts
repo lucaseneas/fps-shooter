@@ -107,6 +107,7 @@ export class ViewModel {
 
   /** Esconde o view model (ex.: enquanto mira com scope). */
   setVisible(on: boolean): void {
+    if (this.root.isEnabled() === on) return;
     this.root.setEnabled(on);
   }
 
