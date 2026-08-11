@@ -61,8 +61,7 @@ export async function migrate(): Promise<void> {
     if (code === "ENETUNREACH" || code === "ENOTFOUND" || code === "ETIMEDOUT") {
       throw new Error(
         "Não foi possível ligar ao Postgres. No Render usa a URI " +
-          "Session pooler do Supabase (*.pooler.supabase.com:5432), não a Direct (db.*.supabase.co).",
-        { cause: err }
+          "Session pooler do Supabase (*.pooler.supabase.com:5432), não a Direct (db.*.supabase.co). Causa: " + String(err)
       );
     }
     throw err;

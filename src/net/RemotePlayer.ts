@@ -335,6 +335,40 @@ export class RemotePlayer {
     this.setVisible(alive);
   }
 
+  setWallhack(enabled: boolean): void {
+    // Group 1 + depth clear em main.ts → desenha por cima do cenário (através das paredes).
+    const groupId = enabled ? 1 : 0;
+    this.root.renderingGroupId = groupId;
+    this.bodyMesh.renderingGroupId = groupId;
+    this.headMesh.renderingGroupId = groupId;
+    this.gun.renderingGroupId = groupId;
+    for (const child of this.gun.getChildMeshes()) {
+      child.renderingGroupId = groupId;
+    }
+    this.nameplate.renderingGroupId = groupId;
+
+    this.bodyMesh.renderOutline = enabled;
+    this.bodyMesh.outlineColor = new Color3(1, 0.15, 0.05);
+    this.bodyMesh.outlineWidth = 0.04;
+
+    this.headMesh.renderOutline = enabled;
+    this.headMesh.outlineColor = new Color3(1, 0.15, 0.05);
+    this.headMesh.outlineWidth = 0.04;
+
+    const bodyMat = this.bodyMesh.material as StandardMaterial | null;
+    const headMat = this.headMesh.material as StandardMaterial | null;
+    if (bodyMat) {
+      bodyMat.emissiveColor = enabled
+        ? new Color3(0.85, 0.12, 0.05)
+        : new Color3(0, 0, 0);
+    }
+    if (headMat) {
+      headMat.emissiveColor = enabled
+        ? new Color3(1, 0.18, 0.08)
+        : new Color3(0, 0, 0);
+    }
+  }
+
   setDebugHitboxes(on: boolean): void {
     this.debugBodyHitbox.setEnabled(on);
     this.debugHeadHitbox.setEnabled(on);

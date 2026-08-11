@@ -18,6 +18,11 @@ export interface PlayerSnapshot {
   vy: number;
   grounded: boolean;
   lastSeq: number;
+
+  // Sistema de Kill Streaks
+  killStreak: number;
+  activeStreak: string;
+  streakTimeLeft: number;
 }
 
 let cachedClient: Client | null = null;

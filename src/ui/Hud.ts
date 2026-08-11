@@ -36,6 +36,12 @@ export class Hud {
   private readonly killBadgeLabel = el<HTMLSpanElement>("killBadgeLabel");
   private readonly damageVignette = el<HTMLDivElement>("damageVignette");
   private readonly damageDirection = el<HTMLDivElement>("damageDirection");
+  private readonly wallhackVignette = el<HTMLDivElement>("wallhackVignette");
+  private readonly streakActivePanel = el<HTMLDivElement>("streakActivePanel");
+  private readonly streakActiveBar = el<HTMLDivElement>("streakActiveBar");
+  private readonly streakTimeText = el<HTMLSpanElement>("streakTimeText");
+  private readonly streakActiveTitle = el<HTMLDivElement>("streakActiveTitle");
+  private readonly streakToastContainer = el<HTMLDivElement>("streakToastContainer");
 
   private hitmarkerTimeout = 0;
   private vignetteTimeout = 0;
@@ -281,5 +287,34 @@ export class Hud {
       : `${winnerName} venceu a partida`;
     this.endScreen.classList.remove("hidden");
     this.setScoreboardVisible(true, rows);
+  }
+
+  updateActiveStreak(streakName: string, timeLeft: number): void {
+    if (streakName) {
+      this.streakActivePanel.classList.remove("hidden");
+      this.streakActiveTitle.textContent = streakName.replace("_", " ").toUpperCase();
+      this.streakTimeText.textContent = `${Math.ceil(timeLeft)}s`;
+      
+      const pct = Math.max(0, Math.min(100, (timeLeft / 15) * 100));
+      this.streakActiveBar.style.width = `${pct}%`;
+
+      if (streakName === "wall_hacker") {
+        this.wallhackVignette.classList.remove("hidden");
+      }
+    } else {
+      this.streakActivePanel.classList.add("hidden");
+      this.wallhackVignette.classList.add("hidden");
+    }
+  }
+
+  showKillstreakToast(message: string): void {
+    const toast = document.createElement("div");
+    toast.className = "streak-toast";
+    toast.textContent = message;
+    this.streakToastContainer.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.remove();
+    }, 4000);
   }
 }

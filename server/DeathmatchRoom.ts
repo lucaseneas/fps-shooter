@@ -240,6 +240,18 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.processRespawns();
     this.processHealthRegen(dt);
     this.processMatchReset();
+    this.processKillStreaks(dt);
+  }
+
+  private processKillStreaks(dt: number): void {
+    for (const [id, p] of this.state.players) {
+      if (p.streakTimeLeft > 0) {
+        p.streakTimeLeft = Math.max(0, p.streakTimeLeft - dt);
+        if (p.streakTimeLeft === 0) {
+          p.activeStreak = "";
+        }
+      }
+    }
   }
 
   /** Aplica os inputs enfileirados de cada humano com a física compartilhada. */
@@ -390,6 +402,9 @@ export class DeathmatchRoom extends Room<MatchState> {
     for (const [id, p] of this.state.players) {
       p.kills = 0;
       p.deaths = 0;
+      p.killStreak = 0;
+      p.activeStreak = "";
+      p.streakTimeLeft = 0;
       // Espectadores que nunca spawnaram continuam fora do mapa.
       if (this.bots.has(id) || this.bodies.has(id) || p.alive || this.respawnAt.has(id)) {
         this.respawnPlayer(id);
@@ -557,7 +572,22 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     target.alive = false;
     target.deaths++;
-    if (attacker && attackerId !== targetId) attacker.kills++;
+    target.killStreak = 0;
+    target.activeStreak = "";
+    target.streakTimeLeft = 0;
+
+    if (attacker && attackerId !== targetId) {
+      attacker.kills++;
+      attacker.killStreak++;
+      if (attacker.killStreak === 4) {
+        attacker.activeStreak = "wall_hacker";
+        attacker.streakTimeLeft = 15;
+        this.broadcast("killstreakEarned", {
+          playerName: attacker.name,
+          streakName: "Wall Hacker",
+        });
+      }
+    }
 
     const killerName = attacker?.name ?? "?";
     this.broadcast("kill", {

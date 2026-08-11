@@ -105,6 +105,10 @@ const engine = new Engine(canvas, true, {
 });
 
 const scene = createScene(engine);
+// Group 1 = wallhack (inimigos através das paredes): limpa depth do cenário.
+// Group 2 = viewmodel: limpa depth de novo para a arma ficar sempre por cima.
+scene.setRenderingAutoClearDepthStencil(1, true, true, false);
+scene.setRenderingAutoClearDepthStencil(2, true, true, false);
 const effects = new EffectsManager(scene);
 const hud = new Hud();
 const audio = new AudioManager();
@@ -904,6 +908,10 @@ function setupRoom(r: Room): void {
     if (isLocal) audio.killConfirm(streak);
   });
 
+  r.onMessage("killstreakEarned", (e: { playerName: string; streakName: string }) => {
+    hud.showKillstreakToast(`${e.playerName} ativou o kill streak [${e.streakName}]!`);
+  });
+
   // O servidor confirma que o dano foi aplicado antes de exibir o hitmarker.
   r.onMessage("hitConfirm", (e: { headshot: boolean }) => {
     hud.showHitmarker(e.headshot);
@@ -1064,6 +1072,8 @@ function shooterHead(shooterId: string): Vector3 | null {
 /** Sincroniza o estado do servidor com as entidades locais. */
 function reconcile(r: Room): void {
   const seen = new Set<string>();
+  const ownSnapshot = getOwnSnapshot(r);
+  const ownHasWallhack = ownSnapshot?.activeStreak === "wall_hacker";
 
   forEachPlayer(r, (p: PlayerSnapshot, id: string) => {
     seen.add(id);
@@ -1083,6 +1093,7 @@ function reconcile(r: Room): void {
     } else {
       rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
     }
+    rp.setWallhack(ownHasWallhack);
   });
 
   for (const [id, rp] of remotePlayers) {
@@ -1139,6 +1150,7 @@ function handleOwnState(p: PlayerSnapshot): void {
     lastKnownHealth = p.health;
   }
   hud.setKills(p.kills);
+  hud.updateActiveStreak(p.activeStreak, p.streakTimeLeft);
 }
 
 function getOwnSnapshot(r: Room): PlayerSnapshot | null {

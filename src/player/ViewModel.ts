@@ -73,9 +73,10 @@ export class ViewModel {
     this.root.position = this.basePos.clone();
 
     // View model não participa de colisão nem de raycast de tiro.
+    // Group 2: depois do cenário (0) e do wallhack (1), sempre por cima.
     for (const m of [this.root, this.barrel, this.flash]) {
       m.isPickable = false;
-      m.renderingGroupId = 1; // renderiza por cima do cenário
+      m.renderingGroupId = 2;
     }
   }
 

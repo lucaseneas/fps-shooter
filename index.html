@@ -26,7 +26,9 @@
         </div>
       </div>
       <div id="damageVignette"></div>
+      <div id="wallhackVignette" class="hidden"></div>
       <div id="damageDirection" aria-hidden="true"></div>
+      <div id="streakToastContainer"></div>
       <div id="debug"></div>
 
       <!-- Chat da sala -->
@@ -49,9 +51,18 @@
       <!-- Kill feed (abaixo do minimapa) -->
       <div id="killFeed"></div>
 
-      <!-- Banner do modo espectador livre -->
       <div id="spectateBanner" class="hidden">
         Espectador · WASD mover · Espaço/Ctrl subir/descer · Shift rápido · I para spawnar
+      </div>
+
+      <!-- Painel de Kill Streak Ativo -->
+      <div id="streakActivePanel" class="hidden">
+        <div class="streak-icon">👁️</div>
+        <div class="streak-details">
+          <div class="streak-title" id="streakActiveTitle">WALL HACKER</div>
+          <div class="streak-bar-bg"><div id="streakActiveBar"></div></div>
+        </div>
+        <div id="streakTimeText">15s</div>
       </div>
 
       <!-- Kills (topo centro) -->

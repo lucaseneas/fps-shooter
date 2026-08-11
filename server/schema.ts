@@ -18,6 +18,11 @@ export class PlayerState extends Schema {
   @type("boolean") grounded = true;
   /** Último input processado pelo servidor (ack para o replay do cliente). */
   @type("number") lastSeq = 0;
+
+  // Sistema de Kill Streaks
+  @type("number") killStreak = 0;
+  @type("string") activeStreak = "";
+  @type("number") streakTimeLeft = 0;
 }
 
 export class MatchState extends Schema {
