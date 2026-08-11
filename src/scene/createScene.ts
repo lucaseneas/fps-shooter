@@ -5,7 +5,6 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import { GridMaterial } from "@babylonjs/materials/grid/gridMaterial";
 
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Collisions/collisionCoordinator";
@@ -53,14 +52,12 @@ function createGround(scene: Scene): void {
     { width: MAP_SIZE, height: MAP_SIZE },
     scene
   );
-  const grid = new GridMaterial("gridMat", scene);
-  grid.majorUnitFrequency = 5;
-  grid.minorUnitVisibility = 0.35;
-  grid.gridRatio = 2;
-  grid.mainColor = new Color3(0.16, 0.18, 0.22);
-  grid.lineColor = new Color3(0.35, 0.4, 0.48);
-  grid.opacity = 0.98;
-  ground.material = grid;
+  // Sólido barato (sem GridMaterial). Mais escuro/quente que as paredes (0.22, 0.25, 0.3).
+  const mat = new StandardMaterial("groundMat", scene);
+  mat.diffuseColor = new Color3(0.12, 0.14, 0.11);
+  mat.specularColor = new Color3(0.02, 0.02, 0.02);
+  mat.freeze();
+  ground.material = mat;
   ground.checkCollisions = true;
   ground.metadata = { staticGeo: true };
 }

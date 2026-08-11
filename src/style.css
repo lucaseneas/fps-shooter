@@ -112,46 +112,47 @@ body {
 }
 
 /* Scope da sniper (botão direito).
-   Camada GPU permanente + máscara dura (sem box-shadow blur) evita hitch no 1º open. */
+   box-shadow sólido (sem mask-image) — máscara CSS recomposta todo frame
+   sobre o canvas WebGL derrubava o FPS com o ADS aberto. */
 #scopeOverlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0;
   z-index: 4;
-  transform: translateZ(0);
-  will-change: opacity;
-  contain: strict;
-  backface-visibility: hidden;
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
 }
 
 #scopeOverlay.active {
+  visibility: visible;
   opacity: 1;
 }
 
-/* Prewarm: rasteriza a máscara uma vez sem aparecer na tela */
+/* HUD informativo acima do scope (z-index 4) e do círculo de spread (5) */
+#debug,
+#minimap,
+#killFeed,
+#killsPanel,
+#ammoPanel,
+#healthPanel,
+#roomChat,
+#hitmarker,
+#scoreboard,
+#spectateBanner,
+#streakActivePanel,
+#deathScreen,
+#endScreen {
+  z-index: 6;
+}
+
+/* Prewarm: força 1ª composição fora do combate */
 #scopeOverlay.prewarm {
+  visibility: visible;
   opacity: 0.001;
 }
 
 #scopeOverlay::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: #000;
-  -webkit-mask-image: radial-gradient(
-    circle closest-side at center,
-    transparent 53%,
-    #000 54%
-  );
-  mask-image: radial-gradient(
-    circle closest-side at center,
-    transparent 53%,
-    #000 54%
-  );
-}
-
-#scopeOverlay::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -161,6 +162,8 @@ body {
   transform: translate(-50%, -50%);
   border-radius: 50%;
   border: 2px solid rgba(20, 20, 20, 0.85);
+  /* Preenche o resto da tela sem mask-image (bem mais barato no compositor) */
+  box-shadow: 0 0 0 100vmax #000;
   background:
     linear-gradient(
       to right,
@@ -188,6 +191,8 @@ body {
   transform: translate(-50%, -50%);
   pointer-events: none;
   box-sizing: border-box;
+  /* Acima do scopeOverlay (z-index 4) para o círculo ficar visível no ADS da sniper */
+  z-index: 5;
 }
 
 #debug {
