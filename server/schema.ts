@@ -23,6 +23,8 @@ export class PlayerState extends Schema {
   @type("number") killStreak = 0;
   @type("string") activeStreak = "";
   @type("number") streakTimeLeft = 0;
+  /** Segundos restantes de invencibilidade (spawn ou streak). */
+  @type("number") invincibleTimeLeft = 0;
 }
 
 export class MatchState extends Schema {

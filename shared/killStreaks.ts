@@ -24,6 +24,13 @@ export const KILL_STREAK_REWARDS: readonly KillStreakReward[] = [
     icon: "🎯",
     duration: 15,
   },
+  {
+    kills: 8,
+    id: "invincibility",
+    name: "Invincibility",
+    icon: "🛡️",
+    duration: 15,
+  },
 ] as const;
 
 /** Próxima recompensa ainda não alcançada, ou null se já pegou todas. */

@@ -6,6 +6,8 @@ export const CONFIG = {
   killsToWin: 20,
   /** Segundos até renascer. */
   respawnDelay: 3,
+  /** Segundos de invencibilidade após respawn. */
+  spawnInvincibilityDuration: 2,
   playerMaxHealth: 100,
   /** Segundos sem dano antes de iniciar a regeneração. */
   healthRegenDelay: 3,

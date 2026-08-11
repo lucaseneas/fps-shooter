@@ -112,6 +112,15 @@ export class ViewModel {
     this.root.setEnabled(on);
   }
 
+  /** Invencibilidade: arma em ~60% de opacidade. */
+  setInvincible(on: boolean): void {
+    const alpha = on ? 0.6 : 1;
+    this.bodyMat.alpha = alpha;
+    this.bodyMat.transparencyMode = on
+      ? StandardMaterial.MATERIAL_ALPHABLEND
+      : StandardMaterial.MATERIAL_OPAQUE;
+  }
+
   triggerKick(strength = 1): void {
     this.kick = Math.min(1, this.kick + 0.55 * strength);
 

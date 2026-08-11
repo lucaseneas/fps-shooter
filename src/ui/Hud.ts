@@ -50,6 +50,7 @@ export class Hud {
   private readonly damageVignette = el<HTMLDivElement>("damageVignette");
   private readonly damageDirection = el<HTMLDivElement>("damageDirection");
   private readonly wallhackVignette = el<HTMLDivElement>("wallhackVignette");
+  private readonly invincibleVignette = el<HTMLDivElement>("invincibleVignette");
   private readonly streakActivePanel = el<HTMLDivElement>("streakActivePanel");
   private readonly streakActiveBar = el<HTMLDivElement>("streakActiveBar");
   private readonly streakTimeText = el<HTMLSpanElement>("streakTimeText");
@@ -397,6 +398,11 @@ export class Hud {
       this.streakActivePanel.classList.add("hidden");
       this.wallhackVignette.classList.add("hidden");
     }
+  }
+
+  /** Blur dourado nas bordas enquanto o jogador local está invencível. */
+  setInvincibleVignette(on: boolean): void {
+    this.invincibleVignette.classList.toggle("hidden", !on);
   }
 
   showKillstreakToast(message: string): void {

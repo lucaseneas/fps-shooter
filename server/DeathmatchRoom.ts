@@ -307,14 +307,22 @@ export class DeathmatchRoom extends Room<MatchState> {
   }
 
   private processKillStreaks(dt: number): void {
-    for (const [id, p] of this.state.players) {
+    for (const [, p] of this.state.players) {
       if (p.streakTimeLeft > 0) {
         p.streakTimeLeft = Math.max(0, p.streakTimeLeft - dt);
         if (p.streakTimeLeft === 0) {
           p.activeStreak = "";
         }
       }
+      if (p.invincibleTimeLeft > 0) {
+        p.invincibleTimeLeft = Math.max(0, p.invincibleTimeLeft - dt);
+      }
     }
+  }
+
+  /** Concede (ou estende) invencibilidade no jogador. */
+  private grantInvincibility(player: PlayerState, seconds: number): void {
+    player.invincibleTimeLeft = Math.max(player.invincibleTimeLeft, seconds);
   }
 
   /** Aplica os inputs enfileirados de cada humano com a física compartilhada. */
@@ -439,6 +447,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     p.health = CONFIG.playerMaxHealth;
     this.lastDamagedAt.delete(id);
     p.alive = true;
+    this.grantInvincibility(p, CONFIG.spawnInvincibilityDuration);
 
     const bot = this.bots.get(id);
     if (bot) {
@@ -468,6 +477,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.killStreak = 0;
       p.activeStreak = "";
       p.streakTimeLeft = 0;
+      p.invincibleTimeLeft = 0;
       // Espectadores que nunca spawnaram continuam fora do mapa.
       if (this.bots.has(id) || this.bodies.has(id) || p.alive || this.respawnAt.has(id)) {
         this.respawnPlayer(id);
@@ -614,6 +624,9 @@ export class DeathmatchRoom extends Room<MatchState> {
     const attacker = this.state.players.get(attackerId);
     if (!target || !target.alive) return false;
 
+    // Spawn protection / killstreak invincibility.
+    if (target.invincibleTimeLeft > 0) return false;
+
     // Vida infinita precisa ser aplicada aqui, no lado autoritativo.
     if (this.debugClients.has(targetId)) {
       target.health = CONFIG.playerMaxHealth;
@@ -638,6 +651,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     target.killStreak = 0;
     target.activeStreak = "";
     target.streakTimeLeft = 0;
+    target.invincibleTimeLeft = 0;
 
     if (attacker && attackerId !== targetId) {
       attacker.kills++;
@@ -646,6 +660,9 @@ export class DeathmatchRoom extends Room<MatchState> {
       if (reward) {
         attacker.activeStreak = reward.id;
         attacker.streakTimeLeft = reward.duration;
+        if (reward.id === "invincibility") {
+          this.grantInvincibility(attacker, reward.duration);
+        }
         this.broadcast("killstreakEarned", {
           playerName: attacker.name,
           streakName: reward.name,

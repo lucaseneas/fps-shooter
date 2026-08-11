@@ -48,6 +48,7 @@ export class RemotePlayer {
   private crouchT = 0;
   /** Crouch atual do servidor (hitscan usa o valor corrente, não o histórico). */
   private crouching = false;
+  private invincible = false;
 
   private velocityX = 0;
   private velocityZ = 0;
@@ -366,6 +367,26 @@ export class RemotePlayer {
       headMat.emissiveColor = enabled
         ? new Color3(1, 0.18, 0.08)
         : new Color3(0, 0, 0);
+    }
+  }
+
+  /** Invencível: ~60% de opacidade no modelo remoto. */
+  setInvincible(on: boolean): void {
+    if (this.invincible === on) return;
+    this.invincible = on;
+    const alpha = on ? 0.6 : 1;
+    for (const mesh of [
+      this.bodyMesh,
+      this.headMesh,
+      this.gun,
+      ...this.gun.getChildMeshes(),
+    ]) {
+      const mat = mesh.material as StandardMaterial | null;
+      if (!mat) continue;
+      mat.alpha = alpha;
+      mat.transparencyMode = on
+        ? StandardMaterial.MATERIAL_ALPHABLEND
+        : StandardMaterial.MATERIAL_OPAQUE;
     }
   }
 

@@ -888,6 +888,8 @@ function resetToMenu(errorMsg?: string): void {
   spectateBanner.classList.add("hidden");
   player.exitSpectatorOverview();
   viewModel.setVisible(true);
+  viewModel.setInvincible(false);
+  hud.setInvincibleVignette(false);
 
   for (const rp of remotePlayers.values()) rp.dispose();
   remotePlayers.clear();
@@ -1231,6 +1233,7 @@ function reconcile(r: Room): void {
       rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
     }
     rp.setWallhack(ownHasWallhack);
+    rp.setInvincible((p.invincibleTimeLeft ?? 0) > 0);
   });
 
   for (const [id, rp] of remotePlayers) {
@@ -1290,6 +1293,9 @@ function handleOwnState(p: PlayerSnapshot): void {
   hud.setKillStreak(p.killStreak);
   hud.updateActiveStreak(p.activeStreak, p.streakTimeLeft);
   weapons.setNoRecoil(p.activeStreak === "no_recoil");
+  const invincible = (p.invincibleTimeLeft ?? 0) > 0;
+  viewModel.setInvincible(invincible);
+  hud.setInvincibleVignette(invincible);
 }
 
 function getOwnSnapshot(r: Room): PlayerSnapshot | null {

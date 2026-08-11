@@ -23,6 +23,7 @@ export interface PlayerSnapshot {
   killStreak: number;
   activeStreak: string;
   streakTimeLeft: number;
+  invincibleTimeLeft: number;
 }
 
 export interface MatchSnapshot {
