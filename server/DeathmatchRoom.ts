@@ -59,14 +59,35 @@ interface HistoryEntry {
  * server-side com lag compensation via rewind do histórico de posições),
  * kills, respawn, vitória e IA dos bots.
  */
+interface RoomCreateOptions {
+  name?: string;
+  token?: string;
+  roomName?: string;
+  bots?: number;
+  maxPlayers?: number;
+}
+
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+function sanitizeRoomName(value: unknown): string {
+  if (typeof value !== "string") return "Sala";
+  const name = value.trim().slice(0, 24);
+  return name.length > 0 ? name : "Sala";
+}
+
 export class DeathmatchRoom extends Room<MatchState> {
-  maxClients = CONFIG.roomSize;
+  maxClients: number = CONFIG.roomSize;
 
   private bots = new Map<string, BotAi>();
   private botCounter = 0;
   private namePool: string[] = [];
-  /** Quantos bots a sala deve manter (configurável pelos jogadores). */
-  private desiredBots = CONFIG.roomSize - 1;
+  /** Capacidade total (humanos + bots) usada no rebalance. */
+  private roomCapacity: number = CONFIG.roomSize;
+  /** Quantos bots a sala deve manter (só o líder altera). */
+  private desiredBots: number = CONFIG.roomSize - 1;
 
   /** Corpo físico server-side de cada humano. */
   private bodies = new Map<string, BodyState>();
@@ -96,12 +117,28 @@ export class DeathmatchRoom extends Room<MatchState> {
   private deathPos = new Map<string, { x: number; z: number }>();
   private matchResetAt = 0;
 
-  onCreate(): void {
+  onCreate(options: RoomCreateOptions = {}): void {
     this.setState(new MatchState());
     this.namePool = pickBotNames(16);
 
+    const maxPlayers = clampInt(options.maxPlayers, 2, CONFIG.roomSize, CONFIG.roomSize);
+    const desiredBots = clampInt(options.bots, 0, maxPlayers - 1, Math.max(0, maxPlayers - 1));
+    const roomName = sanitizeRoomName(options.roomName);
+
+    this.maxClients = maxPlayers;
+    this.roomCapacity = maxPlayers;
+    this.desiredBots = desiredBots;
+    this.state.roomName = roomName;
+    this.state.desiredBots = desiredBots;
+    this.state.maxPlayers = maxPlayers;
+
     // Metadata exibida na lista de salas do lobby.
-    void this.setMetadata({ map: "Praça" });
+    void this.setMetadata({
+      map: "Praça",
+      name: roomName,
+      bots: desiredBots,
+      maxPlayers,
+    });
 
     // Sala nunca fica vazia: bots preenchem os slots (pilar #1 do GDD).
     this.rebalanceBots();
@@ -133,13 +170,21 @@ export class DeathmatchRoom extends Room<MatchState> {
       client.send("cpong", msg);
     });
 
-    // Configuração da sala: quantos bots preenchem os slots vazios.
-    this.onMessage("setBots", (_client, msg: { count: number }) => {
+    // Só o líder altera quantos bots preenchem os slots vazios.
+    this.onMessage("setBots", (client, msg: { count: number }) => {
+      if (client.sessionId !== this.state.hostId) return;
       if (typeof msg?.count !== "number" || !Number.isFinite(msg.count)) return;
       this.desiredBots = Math.max(
         0,
-        Math.min(CONFIG.roomSize - 1, Math.floor(msg.count))
+        Math.min(this.roomCapacity - 1, Math.floor(msg.count))
       );
+      this.state.desiredBots = this.desiredBots;
+      void this.setMetadata({
+        map: "Praça",
+        name: this.state.roomName,
+        bots: this.desiredBots,
+        maxPlayers: this.state.maxPlayers,
+      });
       this.rebalanceBots();
     });
 
@@ -177,7 +222,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     );
   }
 
-  onJoin(client: Client, options: { name?: string; token?: string }): void {
+  onJoin(client: Client, options: RoomCreateOptions): void {
     const account = verifyToken(options?.token);
     if (isAuthEnabled() && !account) {
       throw new Error("login_required");
@@ -198,6 +243,11 @@ export class DeathmatchRoom extends Room<MatchState> {
     p.y = 0;
     p.z = 0;
     this.state.players.set(client.sessionId, p);
+
+    // Criador (primeiro humano) vira líder da sala.
+    if (!this.state.hostId) {
+      this.state.hostId = client.sessionId;
+    }
 
     if (account) {
       this.userIds.set(client.sessionId, account.id);
@@ -228,6 +278,18 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.lastChatAt.delete(id);
     this.respawnAt.delete(id);
     this.deathPos.delete(id);
+
+    if (this.state.hostId === id) {
+      let nextHost = "";
+      for (const pid of this.state.players.keys()) {
+        if (!this.bots.has(pid)) {
+          nextHost = pid;
+          break;
+        }
+      }
+      this.state.hostId = nextHost;
+    }
+
     this.rebalanceBots();
   }
 
@@ -642,7 +704,7 @@ export class DeathmatchRoom extends Room<MatchState> {
    */
   private rebalanceBots(): void {
     const humans = this.state.players.size - this.bots.size;
-    const maxBots = Math.max(0, CONFIG.roomSize - humans);
+    const maxBots = Math.max(0, this.roomCapacity - humans);
     const target = Math.min(this.desiredBots, maxBots);
 
     while (this.bots.size > target) this.removeOneBot();

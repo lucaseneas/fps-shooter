@@ -12,7 +12,12 @@ async function main(): Promise<void> {
   console.log(`[ok] salas antes: ${before.length}`);
 
   // 2. Cria uma sala.
-  const roomA = await client.create("deathmatch", { name: "Criador" });
+  const roomA = await client.create("deathmatch", {
+    name: "Criador",
+    roomName: "Lobby Teste",
+    bots: 3,
+    maxPlayers: 6,
+  });
   console.log("[ok] sala criada:", roomA.roomId);
   roomA.onMessage("sping", (msg) => roomA.send("spong", msg));
   roomA.onMessage("*", () => {});
@@ -29,6 +34,9 @@ async function main(): Promise<void> {
   );
   if ((entry.metadata as any)?.map !== "Praça") {
     throw new Error("FALHA: metadata.map incorreta");
+  }
+  if (!(entry.metadata as any)?.name) {
+    throw new Error("FALHA: metadata.name ausente");
   }
 
   // 4. Segundo cliente entra pelo id.

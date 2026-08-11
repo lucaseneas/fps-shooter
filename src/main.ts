@@ -15,8 +15,10 @@ import {
   createRoom,
   joinRoomById,
   forEachPlayer,
+  getMatchSnapshot,
   PlayerSnapshot,
   RoomListing,
+  CreateRoomOptions,
 } from "./net/NetworkClient";
 import {
   AuthSession,
@@ -73,6 +75,8 @@ const sensSlider = document.getElementById("sensSlider") as HTMLInputElement;
 const sensValue = document.getElementById("sensValue") as HTMLSpanElement;
 const botsSlider = document.getElementById("botsSlider") as HTMLInputElement;
 const botsValue = document.getElementById("botsValue") as HTMLSpanElement;
+const botsSettingRow = document.getElementById("botsSettingRow") as HTMLDivElement;
+const botsHostHint = document.getElementById("botsHostHint") as HTMLParagraphElement;
 const volSlider = document.getElementById("volSlider") as HTMLInputElement;
 const volValue = document.getElementById("volValue") as HTMLSpanElement;
 const reticleSelect = document.getElementById("reticleSelect") as HTMLSelectElement;
@@ -80,6 +84,16 @@ const debugModeToggle = document.getElementById("debugModeToggle") as HTMLInputE
 const roomListEl = document.getElementById("roomList") as HTMLDivElement;
 const refreshRoomsButton = document.getElementById("refreshRoomsButton") as HTMLButtonElement;
 const createRoomButton = document.getElementById("createRoomButton") as HTMLButtonElement;
+const createRoomModal = document.getElementById("createRoomModal") as HTMLDivElement;
+const createRoomForm = document.getElementById("createRoomForm") as HTMLFormElement;
+const createRoomName = document.getElementById("createRoomName") as HTMLInputElement;
+const createMaxPlayers = document.getElementById("createMaxPlayers") as HTMLInputElement;
+const createMaxPlayersValue = document.getElementById(
+  "createMaxPlayersValue"
+) as HTMLSpanElement;
+const createBots = document.getElementById("createBots") as HTMLInputElement;
+const createBotsValue = document.getElementById("createBotsValue") as HTMLSpanElement;
+const createRoomCancel = document.getElementById("createRoomCancel") as HTMLButtonElement;
 const minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement;
 const authTabLogin = document.getElementById("authTabLogin") as HTMLButtonElement;
 const authTabRegister = document.getElementById("authTabRegister") as HTMLButtonElement;
@@ -154,7 +168,7 @@ sensSlider.addEventListener("input", () => {
 
 loadSensitivity();
 
-// --- Configuração: bots na sala ---
+// --- Configuração: bots na sala (só o líder altera in-game) ---
 const BOTS_STORAGE_KEY = "fps.bots";
 
 function loadBotsSetting(): void {
@@ -164,11 +178,42 @@ function loadBotsSetting(): void {
   botsValue.textContent = String(value);
 }
 
+function isLocalHost(): boolean {
+  if (!room) return false;
+  const { hostId } = getMatchSnapshot(room);
+  return hostId === room.sessionId;
+}
+
+function syncRoomSettingsUi(): void {
+  if (!room) {
+    botsSlider.disabled = false;
+    botsSettingRow.classList.remove("is-locked");
+    botsHostHint.textContent = "Define quantos bots preenchem a sala.";
+    return;
+  }
+
+  const snap = getMatchSnapshot(room);
+  const maxBots = Math.max(0, snap.maxPlayers - 1);
+  botsSlider.max = String(maxBots);
+  const bots = Math.min(maxBots, Math.max(0, snap.desiredBots));
+  botsSlider.value = String(bots);
+  botsValue.textContent = String(bots);
+
+  const host = isLocalHost();
+  botsSlider.disabled = !host;
+  botsSettingRow.classList.toggle("is-locked", !host);
+  botsHostHint.textContent = host
+    ? "Você é o líder — só você altera os bots desta sala."
+    : "Apenas o líder da sala pode alterar.";
+}
+
 botsSlider.addEventListener("input", () => {
   const value = parseInt(botsSlider.value, 10);
   botsValue.textContent = String(value);
   localStorage.setItem(BOTS_STORAGE_KEY, String(value));
-  room?.send("setBots", { count: value });
+  if (room && isLocalHost()) {
+    room.send("setBots", { count: value });
+  }
 });
 
 loadBotsSetting();
@@ -457,9 +502,12 @@ function renderRoomList(rooms: RoomListing[]): void {
 
     const info = document.createElement("div");
     info.className = "room-info";
+    const safeName = r.name.replace(/[<>&]/g, (c) =>
+      c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;"
+    );
     info.innerHTML =
-      `<b>Sala ${r.roomId.slice(0, 6)}</b><br />` +
-      `<span class="room-meta">${r.clients}/${r.maxClients} jogadores · Mapa: ${r.map}</span>`;
+      `<b>${safeName}</b><br />` +
+      `<span class="room-meta">${r.clients}/${r.maxClients} jogadores · ${r.bots} bots · Mapa: ${r.map}</span>`;
 
     const joinBtn = document.createElement("button");
     joinBtn.textContent = "Entrar";
@@ -470,7 +518,42 @@ function renderRoomList(rooms: RoomListing[]): void {
   }
 }
 
-/** Entra numa sala existente (roomId) ou cria uma nova (null). */
+/** Opções pendentes ao criar sala (null = entrar em sala existente). */
+let pendingCreateOptions: CreateRoomOptions | null = null;
+
+function syncCreateRoomForm(): void {
+  const maxPlayers = parseInt(createMaxPlayers.value, 10);
+  createMaxPlayersValue.textContent = String(maxPlayers);
+  createBots.max = String(Math.max(0, maxPlayers - 1));
+  const bots = Math.min(parseInt(createBots.value, 10), maxPlayers - 1);
+  createBots.value = String(Math.max(0, bots));
+  createBotsValue.textContent = createBots.value;
+}
+
+function openCreateRoomModal(): void {
+  if (authEnabled && !session) {
+    statusEl.classList.add("error");
+    statusEl.textContent = "Entra na conta para jogar.";
+    navigate("/login");
+    return;
+  }
+  const savedBots = parseInt(localStorage.getItem(BOTS_STORAGE_KEY) ?? "7", 10);
+  createRoomName.value = createRoomName.value.trim() || `Sala de ${playerName()}`;
+  createMaxPlayers.value = "8";
+  createBots.value = String(
+    Number.isFinite(savedBots) ? Math.min(7, Math.max(0, savedBots)) : 7
+  );
+  syncCreateRoomForm();
+  createRoomModal.classList.remove("hidden");
+  createRoomName.focus();
+  createRoomName.select();
+}
+
+function closeCreateRoomModal(): void {
+  createRoomModal.classList.add("hidden");
+}
+
+/** Entra numa sala existente (roomId) ou cria uma nova (null + pendingCreateOptions). */
 async function joinLobbyRoom(roomId: string | null): Promise<void> {
   if (authEnabled && !session) {
     statusEl.classList.add("error");
@@ -485,10 +568,16 @@ async function joinLobbyRoom(roomId: string | null): Promise<void> {
   statusEl.classList.remove("error");
   statusEl.textContent = roomId ? "Entrando na sala…" : "Criando sala…";
 
+  const createOpts = pendingCreateOptions;
+  pendingCreateOptions = null;
+
   try {
     room = roomId
       ? await joinRoomById(roomId, playerName())
-      : await createRoom(playerName());
+      : await createRoom(
+          playerName(),
+          createOpts ?? { roomName: "Sala", bots: 7, maxPlayers: 8 }
+        );
   } catch {
     statusEl.classList.add("error");
     statusEl.textContent = roomId
@@ -518,8 +607,33 @@ function beginJoinFlow(roomId: string | null): void {
   void joinLobbyRoom(roomId);
 }
 
+createMaxPlayers.addEventListener("input", syncCreateRoomForm);
+createBots.addEventListener("input", syncCreateRoomForm);
+
+createRoomForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const roomName = createRoomName.value.trim().slice(0, 24) || "Sala";
+  const maxPlayers = Math.min(
+    CONFIG.roomSize,
+    Math.max(2, parseInt(createMaxPlayers.value, 10) || 8)
+  );
+  const bots = Math.min(
+    maxPlayers - 1,
+    Math.max(0, parseInt(createBots.value, 10) || 0)
+  );
+  localStorage.setItem(BOTS_STORAGE_KEY, String(bots));
+  pendingCreateOptions = { roomName, bots, maxPlayers };
+  closeCreateRoomModal();
+  beginJoinFlow(null);
+});
+
+createRoomCancel.addEventListener("click", () => closeCreateRoomModal());
+createRoomModal.addEventListener("click", (e) => {
+  if (e.target === createRoomModal) closeCreateRoomModal();
+});
+
 refreshRoomsButton.addEventListener("click", () => void refreshRooms());
-createRoomButton.addEventListener("click", () => beginJoinFlow(null));
+createRoomButton.addEventListener("click", () => openCreateRoomModal());
 
 onRouteChange((route) => applyRoute(route));
 
@@ -792,7 +906,9 @@ function resetToMenu(errorMsg?: string): void {
   document.getElementById("endScreen")!.classList.add("hidden");
 
   settingsModal.classList.add("hidden");
+  closeCreateRoomModal();
   player.exitImmersive();
+  syncRoomSettingsUi();
 
   if (errorMsg) {
     statusEl.classList.add("error");
@@ -804,11 +920,13 @@ function resetToMenu(errorMsg?: string): void {
 // --- Modal de configurações / pausa ---
 function openPauseModal(): void {
   weapons.setTrigger(false);
+  syncRoomSettingsUi();
   settingsModal.classList.remove("hidden", "menu-mode");
   settingsModal.classList.add("pause-mode");
 }
 
 function openMenuSettings(): void {
+  syncRoomSettingsUi();
   settingsModal.classList.remove("hidden", "pause-mode");
   settingsModal.classList.add("menu-mode");
 }
@@ -1043,8 +1161,26 @@ function setupRoom(r: Room): void {
   }, 2000);
   r.send("cping", { t: performance.now() });
 
-  // Aplica a configuração de bots salva.
-  r.send("setBots", { count: parseInt(botsSlider.value, 10) });
+  // Sincroniza bots/líder a partir do estado da sala (não sobrescreve no join).
+  syncRoomSettingsUi();
+  let lastHostId = "";
+  let lastDesiredBots = -1;
+  let lastMaxPlayers = -1;
+  r.onStateChange(() => {
+    const snap = getMatchSnapshot(r);
+    if (
+      snap.hostId === lastHostId &&
+      snap.desiredBots === lastDesiredBots &&
+      snap.maxPlayers === lastMaxPlayers
+    ) {
+      return;
+    }
+    lastHostId = snap.hostId;
+    lastDesiredBots = snap.desiredBots;
+    lastMaxPlayers = snap.maxPlayers;
+    syncRoomSettingsUi();
+  });
+
   r.send("setDebug", { enabled: debugMode });
 
   r.onMessage("matchReset", () => {
@@ -1165,6 +1301,7 @@ function getOwnSnapshot(r: Room): PlayerSnapshot | null {
 }
 
 function scoreboardRows(r: Room): ScoreRow[] {
+  const { hostId } = getMatchSnapshot(r);
   const rows: ScoreRow[] = [];
   forEachPlayer(r, (p, id) => {
     rows.push({
@@ -1172,6 +1309,7 @@ function scoreboardRows(r: Room): ScoreRow[] {
       kills: p.kills,
       deaths: p.deaths,
       isPlayer: id === r.sessionId,
+      isHost: id === hostId,
     });
   });
   return rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
@@ -1475,6 +1613,12 @@ window.addEventListener(
   "keydown",
   (e) => {
     if (e.code !== "Escape" || endScreenShown) return;
+
+    if (!inGame && !createRoomModal.classList.contains("hidden")) {
+      e.preventDefault();
+      closeCreateRoomModal();
+      return;
+    }
 
     // Troca de kit a meio da partida, ou kit aberto no freefly: ESC cancela.
     if (loadoutPicking && (loadoutPickInMatch || freeSpectating)) {

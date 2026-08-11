@@ -29,4 +29,9 @@ export class MatchState extends Schema {
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   @type("boolean") matchOver = false;
   @type("string") winnerName = "";
+  /** sessionId do líder da sala (só ele altera bots / configs). */
+  @type("string") hostId = "";
+  @type("string") roomName = "Sala";
+  @type("number") desiredBots = 7;
+  @type("number") maxPlayers = 8;
 }

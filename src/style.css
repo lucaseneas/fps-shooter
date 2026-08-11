@@ -806,6 +806,32 @@ body {
   font-weight: 700;
 }
 
+#scoreboard .score-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+#scoreboard .score-tag.host {
+  color: #1a1206;
+  background: var(--accent);
+}
+
+#scoreboard .score-tag.you {
+  color: #c3ccd6;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#scoreboard tr.host:not(.me) td:first-child {
+  color: #f0d78c;
+}
+
 /* ---------- Tela de morte ---------- */
 #deathScreen {
   position: absolute;
@@ -1598,13 +1624,75 @@ kbd {
 
 #sensValue,
 #botsValue,
-#volValue {
+#volValue,
+#createMaxPlayersValue,
+#createBotsValue {
   font-size: 13px;
   font-weight: 700;
   color: var(--accent);
   min-width: 36px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.setting-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #8b95a3;
+  line-height: 1.35;
+}
+
+.setting-row.is-locked .setting-hint {
+  color: #e0a35a;
+}
+
+.setting-row.is-locked input[type="range"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#createRoomModal {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 14, 0.72);
+}
+
+#createRoomModal.hidden {
+  display: none;
+}
+
+.create-room-card {
+  min-width: 380px;
+  max-width: 92vw;
+}
+
+.create-room-form {
+  margin-top: 18px;
+  text-align: left;
+}
+
+.create-room-form input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: #151b25;
+  color: #e8ecf1;
+  font: inherit;
+}
+
+.create-room-form input[type="text"]:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.create-room-form .modal-actions {
+  margin-top: 18px;
 }
 
 .toggle-control {

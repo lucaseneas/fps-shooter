@@ -11,10 +11,19 @@ export interface ScoreRow {
   kills: number;
   deaths: number;
   isPlayer: boolean;
+  isHost?: boolean;
 }
 
 function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /** Camada DOM do HUD: vida, munição, kill feed, placar, morte, vitória. */
@@ -329,14 +338,20 @@ export class Hud {
 
   renderScoreboard(rows: ScoreRow[]): void {
     this.scoreboardBody.innerHTML = rows
-      .map(
-        (c) => `
-      <tr class="${c.isPlayer ? "me" : ""}">
-        <td>${c.name}${c.isPlayer ? " (você)" : ""}</td>
+      .map((c) => {
+        const tags = [
+          c.isHost ? `<span class="score-tag host">Líder</span>` : "",
+          c.isPlayer ? `<span class="score-tag you">você</span>` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return `
+      <tr class="${c.isPlayer ? "me" : ""}${c.isHost ? " host" : ""}">
+        <td>${escapeHtml(c.name)}${tags ? ` ${tags}` : ""}</td>
         <td>${c.kills}</td>
         <td>${c.deaths}</td>
-      </tr>`
-      )
+      </tr>`;
+      })
       .join("");
   }
 

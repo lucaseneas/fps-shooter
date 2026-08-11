@@ -222,7 +222,7 @@
               </div>
             </div>
             <p class="info-text home-tip">
-              Kits Assault / Recon / Rusher · 1 principal · 2 secundária · 3 melee · I troca kit · Sala até 8 · Primeiro a 20 kills.
+              Kits Assault / Recon / Rusher · 1 principal · 2 secundária · 3 melee · I troca kit · Crie a sala e seja o líder · Primeiro a 20 kills.
             </p>
           </aside>
 
@@ -238,6 +238,58 @@
             <p id="connectionStatus"></p>
           </section>
         </div>
+      </div>
+    </div>
+
+    <!-- Modal criar sala -->
+    <div id="createRoomModal" class="hidden">
+      <div class="modal-card create-room-card">
+        <h2>Criar sala</h2>
+        <form id="createRoomForm" class="create-room-form">
+          <div class="setting-row">
+            <label for="createRoomName">Nome da sala</label>
+            <input
+              id="createRoomName"
+              type="text"
+              maxlength="24"
+              placeholder="Ex: Arena da galera"
+              autocomplete="off"
+              required
+            />
+          </div>
+          <div class="setting-row">
+            <label for="createMaxPlayers">Jogadores (máx.)</label>
+            <div class="setting-control">
+              <input
+                id="createMaxPlayers"
+                type="range"
+                min="2"
+                max="8"
+                step="1"
+                value="8"
+              />
+              <span id="createMaxPlayersValue">8</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label for="createBots">Bots</label>
+            <div class="setting-control">
+              <input
+                id="createBots"
+                type="range"
+                min="0"
+                max="7"
+                step="1"
+                value="7"
+              />
+              <span id="createBotsValue">7</span>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="submit">Criar e entrar</button>
+            <button type="button" id="createRoomCancel" class="secondary">Cancelar</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -276,7 +328,7 @@
               <span id="sensValue">1.00</span>
             </div>
           </div>
-          <div class="setting-row">
+          <div class="setting-row" id="botsSettingRow">
             <label for="botsSlider">Bots na sala</label>
             <div class="setting-control">
               <input
@@ -289,6 +341,7 @@
               />
               <span id="botsValue">7</span>
             </div>
+            <p class="setting-hint" id="botsHostHint">Apenas o líder da sala pode alterar.</p>
           </div>
           <div class="setting-row">
             <label for="volSlider">Volume</label>
