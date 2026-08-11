@@ -15,6 +15,8 @@ const MAX_EXTRAP_SPEED = 10;
 const HISTORY_MS = 1000;
 /** Teto ao prever além do último patch (equivale ao rewind com ping alto). */
 const EXTRAP_CAP_MS = 350;
+/** Salto acima disso = teleporte/respawn: limpa histórico em vez de interpolar. */
+const TELEPORT_SNAP_DIST = 4;
 
 const STAND_BODY_H = 1.3;
 const CROUCH_BODY_H = 0.85;
@@ -57,6 +59,7 @@ export class RemotePlayer {
   private lastPatchTime = 0;
   private lastYaw = 0;
   private hasPatch = false;
+  private wasAlive = true;
   private readonly history: PosSample[] = [];
 
   constructor(scene: Scene, id: string, name: string) {
@@ -296,8 +299,19 @@ export class RemotePlayer {
     crouch = false
   ): void {
     const now = performance.now();
+    const respawned = !this.wasAlive && alive;
+    const died = this.wasAlive && !alive;
+    const jumpDist = this.hasPatch
+      ? Math.hypot(x - this.lastServerX, z - this.lastServerZ)
+      : 0;
+    const teleported = jumpDist > TELEPORT_SNAP_DIST;
 
-    if (this.hasPatch) {
+    // Respawn / teleporte: sem interpolar do ponto antigo até o novo.
+    if (respawned || teleported || died) {
+      this.history.length = 0;
+      this.velocityX = 0;
+      this.velocityZ = 0;
+    } else if (this.hasPatch) {
       const dt = (now - this.lastPatchTime) / 1000;
       if (dt > 0.001 && dt < 0.5) {
         const dx = x - this.lastServerX;
@@ -314,26 +328,34 @@ export class RemotePlayer {
         }
       }
     } else {
-      this.hasPatch = true;
       this.velocityX = 0;
       this.velocityZ = 0;
     }
 
+    this.hasPatch = true;
     this.lastServerX = x;
     this.lastServerZ = z;
     this.lastPatchTime = now;
     this.lastYaw = yaw;
     this.crouching = crouch;
+    this.wasAlive = alive;
 
-    this.history.push({ t: now, x, y, z, yaw });
-    while (
-      this.history.length > 0 &&
-      now - this.history[0].t > HISTORY_MS
-    ) {
-      this.history.shift();
+    // Morto: não alimenta o buffer — evita “deslizar” até o spawn.
+    if (alive) {
+      this.history.push({ t: now, x, y, z, yaw });
+      while (
+        this.history.length > 0 &&
+        now - this.history[0].t > HISTORY_MS
+      ) {
+        this.history.shift();
+      }
     }
 
     this.setVisible(alive);
+
+    if (alive && (respawned || teleported)) {
+      this.snapToTarget();
+    }
   }
 
   setWallhack(enabled: boolean): void {
