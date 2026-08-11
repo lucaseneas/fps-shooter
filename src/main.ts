@@ -1151,7 +1151,9 @@ function handleOwnState(p: PlayerSnapshot): void {
     lastKnownHealth = p.health;
   }
   hud.setKills(p.kills);
+  hud.setKillStreak(p.killStreak);
   hud.updateActiveStreak(p.activeStreak, p.streakTimeLeft);
+  weapons.setNoRecoil(p.activeStreak === "no_recoil");
 }
 
 function getOwnSnapshot(r: Room): PlayerSnapshot | null {

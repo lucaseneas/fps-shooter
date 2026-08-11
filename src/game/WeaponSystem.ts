@@ -66,6 +66,8 @@ export class WeaponSystem {
   private semiAutoLock = false;
   private enabled = true;
   private infiniteAmmo = false;
+  /** Kill streak No Recoil: zera recoil e spread em todas as armas. */
+  private noRecoilActive = false;
   private crouching = false;
   private airborne = false;
   private moving = false;
@@ -114,7 +116,7 @@ export class WeaponSystem {
   }
 
   get currentSpread(): number {
-    if (isMeleeWeapon(this.weapon)) return 0;
+    if (isMeleeWeapon(this.weapon) || this.noRecoilActive) return 0;
     const spreadMultiplier = this.spreadMultiplier();
 
     let maxPatternOffset = 0;
@@ -219,6 +221,11 @@ export class WeaponSystem {
     this.infiniteAmmo = on;
     if (on) this.refillAll();
     else this.onStateChanged?.();
+  }
+
+  /** Kill streak No Recoil: sem recoil visual e sem spread nos tiros. */
+  setNoRecoil(on: boolean): void {
+    this.noRecoilActive = on;
   }
 
   setTrigger(held: boolean): void {
@@ -332,15 +339,17 @@ export class WeaponSystem {
 
     const hits: HitInfo[] = [];
     const dirs: Vector3[] = [];
-    const recoilMultiplier = this.crouching ? 0.5 : 1.0;
+    const noRecoil = this.noRecoilActive;
+    const recoilMultiplier = noRecoil ? 0 : this.crouching ? 0.5 : 1.0;
 
-    const spreadMultiplier = melee ? 0 : this.spreadMultiplier();
+    const spreadMultiplier = melee || noRecoil ? 0 : this.spreadMultiplier();
     const range = weaponMaxRange(this.weapon);
 
     for (let i = 0; i < this.weapon.pellets; i++) {
-      const [yaw, pitch] = this.weapon.pelletPattern[i] ?? [0, 0];
+      // No Recoil: tiros perfeitos no centro (ignora padrão de pellets e spread).
+      const [yaw, pitch] = noRecoil ? [0, 0] : (this.weapon.pelletPattern[i] ?? [0, 0]);
 
-      const baseSpread = this.weapon.baseSpread;
+      const baseSpread = noRecoil ? 0 : this.weapon.baseSpread;
       const maxSpread = baseSpread * spreadMultiplier;
       const angle = Math.random() * Math.PI * 2;
       const randRadius = Math.random() * maxSpread;
@@ -357,8 +366,10 @@ export class WeaponSystem {
     }
 
     this.onFire?.({ origin, dirs, localHits: hits });
-    const recoil = this.nextRecoil();
-    this.onRecoil?.(recoil.pitch * recoilMultiplier, recoil.yaw * recoilMultiplier);
+    if (!noRecoil) {
+      const recoil = this.nextRecoil();
+      this.onRecoil?.(recoil.pitch * recoilMultiplier, recoil.yaw * recoilMultiplier);
+    }
     this.onStateChanged?.();
   }
 

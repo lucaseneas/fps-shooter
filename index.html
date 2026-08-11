@@ -57,9 +57,24 @@
         Espectador · WASD mover · Espaço/Ctrl subir/descer · Shift rápido · I para spawnar
       </div>
 
+      <!-- Timeline de Kill Streaks (lado direito) -->
+      <div id="streakTimeline">
+        <div class="streak-tl-header">
+          <span class="streak-tl-label">STREAK</span>
+          <span id="streakTlCount">0</span>
+        </div>
+        <div class="streak-tl-body">
+          <div class="streak-tl-rail">
+            <div id="streakTlFill" class="streak-tl-fill"></div>
+          </div>
+          <div id="streakTlNodes" class="streak-tl-nodes"></div>
+        </div>
+        <div id="streakTlHint" class="streak-tl-hint">4 kills → Wall Hacker</div>
+      </div>
+
       <!-- Painel de Kill Streak Ativo -->
       <div id="streakActivePanel" class="hidden">
-        <div class="streak-icon">👁️</div>
+        <div class="streak-icon" id="streakActiveIcon">👁️</div>
         <div class="streak-details">
           <div class="streak-title" id="streakActiveTitle">WALL HACKER</div>
           <div class="streak-bar-bg"><div id="streakActiveBar"></div></div>

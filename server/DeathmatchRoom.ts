@@ -3,6 +3,7 @@ import { Room, Client } from "colyseus";
 import { MatchState, PlayerState } from "./schema";
 import { BotAi, BotWorld, ShotEvent } from "./BotAi";
 import { CONFIG } from "../shared/config";
+import { KILL_STREAK_REWARDS } from "../shared/killStreaks";
 import { pickBotNames } from "../shared/names";
 import { pickSpawnFarFrom, randomSpawn } from "../shared/spawnPoints";
 import {
@@ -579,12 +580,13 @@ export class DeathmatchRoom extends Room<MatchState> {
     if (attacker && attackerId !== targetId) {
       attacker.kills++;
       attacker.killStreak++;
-      if (attacker.killStreak === 4) {
-        attacker.activeStreak = "wall_hacker";
-        attacker.streakTimeLeft = 15;
+      const reward = KILL_STREAK_REWARDS.find((r) => r.kills === attacker.killStreak);
+      if (reward) {
+        attacker.activeStreak = reward.id;
+        attacker.streakTimeLeft = reward.duration;
         this.broadcast("killstreakEarned", {
           playerName: attacker.name,
-          streakName: "Wall Hacker",
+          streakName: reward.name,
         });
       }
     }

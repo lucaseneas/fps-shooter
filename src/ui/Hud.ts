@@ -1,5 +1,9 @@
 import { WeaponDef, isMeleeWeapon } from "../../shared/weapons";
 import { CONFIG } from "../../shared/config";
+import {
+  KILL_STREAK_REWARDS,
+  nextKillStreakReward,
+} from "../../shared/killStreaks";
 
 /** Linha do placar (dados vêm do estado do servidor). */
 export interface ScoreRow {
@@ -41,7 +45,12 @@ export class Hud {
   private readonly streakActiveBar = el<HTMLDivElement>("streakActiveBar");
   private readonly streakTimeText = el<HTMLSpanElement>("streakTimeText");
   private readonly streakActiveTitle = el<HTMLDivElement>("streakActiveTitle");
+  private readonly streakActiveIcon = el<HTMLDivElement>("streakActiveIcon");
   private readonly streakToastContainer = el<HTMLDivElement>("streakToastContainer");
+  private readonly streakTlCount = el<HTMLSpanElement>("streakTlCount");
+  private readonly streakTlFill = el<HTMLDivElement>("streakTlFill");
+  private readonly streakTlNodes = el<HTMLDivElement>("streakTlNodes");
+  private readonly streakTlHint = el<HTMLDivElement>("streakTlHint");
 
   private hitmarkerTimeout = 0;
   private vignetteTimeout = 0;
@@ -53,6 +62,7 @@ export class Hud {
   >();
   private activeWeaponIndex = 0;
   private loadoutWeapons: WeaponDef[] = [];
+  private currentKillStreak = 0;
 
   private static readonly KILL_STREAK_WINDOW_MS = 5000;
   private static readonly KILL_BADGE_VISIBLE_MS = 2200;
@@ -63,6 +73,10 @@ export class Hud {
     "QUADRA KILL",
     "MULTI KILL",
   ] as const;
+
+  constructor() {
+    this.renderStreakTimeline(0);
+  }
 
   setHealth(current: number): void {
     const pct = Math.max(0, Math.min(1, current / CONFIG.playerMaxHealth));
@@ -109,6 +123,63 @@ export class Hud {
 
   setKills(kills: number): void {
     this.killCount.textContent = `${kills} / ${CONFIG.killsToWin}`;
+  }
+
+  /** Atualiza a timeline de kill streaks (kills sem morrer). */
+  setKillStreak(count: number): void {
+    const streak = Math.max(0, Math.floor(count));
+    if (streak === this.currentKillStreak) return;
+    this.currentKillStreak = streak;
+    this.renderStreakTimeline(streak);
+  }
+
+  private renderStreakTimeline(streak: number): void {
+    this.streakTlCount.textContent = String(streak);
+
+    const rewards = KILL_STREAK_REWARDS;
+    const maxKills = rewards[rewards.length - 1]?.kills ?? 1;
+    const fillPct = Math.max(0, Math.min(1, streak / maxKills)) * 100;
+    this.streakTlFill.style.height = `${fillPct}%`;
+
+    const next = nextKillStreakReward(streak);
+
+    this.streakTlNodes.innerHTML = rewards
+      .map((reward) => {
+        const earned = streak >= reward.kills;
+        const isNext = next?.id === reward.id;
+        const remain = Math.max(0, reward.kills - streak);
+        const classes = ["streak-tl-node"];
+        if (earned) classes.push("earned");
+        if (isNext) classes.push("next");
+
+        const remainHtml =
+          isNext && remain > 0
+            ? `<div class="streak-tl-remain">faltam ${remain}</div>`
+            : "";
+
+        return (
+          `<div class="${classes.join(" ")}">` +
+          `<div class="streak-tl-dot">${earned ? "✓" : reward.kills}</div>` +
+          `<div class="streak-tl-info">` +
+          `<div class="streak-tl-req">${reward.icon} ${reward.kills} KILLS</div>` +
+          `<div class="streak-tl-name">${reward.name}</div>` +
+          remainHtml +
+          `</div></div>`
+        );
+      })
+      .join("");
+
+    if (next) {
+      const remain = next.kills - streak;
+      this.streakTlHint.textContent =
+        remain === 1
+          ? `1 kill → ${next.name}`
+          : `${remain} kills → ${next.name}`;
+    } else if (rewards.length > 0) {
+      this.streakTlHint.textContent = "Todos os streaks liberados";
+    } else {
+      this.streakTlHint.textContent = "";
+    }
   }
 
   /**
@@ -172,6 +243,7 @@ export class Hud {
   resetKillStreak(): void {
     clearTimeout(this.killBadgeTimeout);
     this.killBadge.classList.remove("show");
+    this.setKillStreak(0);
   }
 
   /** Zera todas as sequências (fim de partida / saída). */
@@ -298,8 +370,13 @@ export class Hud {
       const pct = Math.max(0, Math.min(100, (timeLeft / 15) * 100));
       this.streakActiveBar.style.width = `${pct}%`;
 
+      const reward = KILL_STREAK_REWARDS.find((r) => r.id === streakName);
+      this.streakActiveIcon.textContent = reward?.icon ?? "⚡";
+
       if (streakName === "wall_hacker") {
         this.wallhackVignette.classList.remove("hidden");
+      } else {
+        this.wallhackVignette.classList.add("hidden");
       }
     } else {
       this.streakActivePanel.classList.add("hidden");
