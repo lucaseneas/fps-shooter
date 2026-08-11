@@ -5,10 +5,13 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Collisions/collisionCoordinator";
+import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
+import "@babylonjs/loaders/glTF";
 
 import { MAP_BOXES, MAP_SIZE, BoxDef } from "../../shared/mapData";
 
@@ -97,18 +100,49 @@ function createMapBoxes(scene: Scene): void {
   };
 
   MAP_BOXES.forEach((b, i) => {
-    const mesh = MeshBuilder.CreateBox(
-      `map_${b.kind}_${i}`,
-      { width: b.w, height: b.h, depth: b.d },
-      scene
-    );
-    mesh.position = new Vector3(b.x, b.y, b.z);
-    mesh.material = materials[b.kind];
-    mesh.checkCollisions = false;
-    mesh.metadata = { staticGeo: true };
-    mesh.computeWorldMatrix(true);
-    byKind[b.kind].push(mesh);
+    if (b.kind === "box") {
+      const collider = MeshBuilder.CreateBox(
+        `map_box_collider_${i}`,
+        { width: b.w, height: b.h, depth: b.d },
+        scene
+      );
+      collider.position = new Vector3(b.x, b.y, b.z);
+      collider.isVisible = false;
+      collider.checkCollisions = false;
+      collider.metadata = { staticGeo: true };
+      collider.computeWorldMatrix(true);
+      byKind["box"].push(collider);
+    } else {
+      const mesh = MeshBuilder.CreateBox(
+        `map_${b.kind}_${i}`,
+        { width: b.w, height: b.h, depth: b.d },
+        scene
+      );
+      mesh.position = new Vector3(b.x, b.y, b.z);
+      mesh.material = materials[b.kind];
+      mesh.checkCollisions = false;
+      mesh.metadata = { staticGeo: true };
+      mesh.computeWorldMatrix(true);
+      byKind[b.kind].push(mesh);
+    }
   });
+
+  SceneLoader.LoadAssetContainerAsync("", "/assets/Caixote_Madeira.glb", scene)
+    .then((container) => {
+      container.meshes[0].isVisible = false;
+
+      MAP_BOXES.filter((b) => b.kind === "box").forEach((b) => {
+        const inst = container.instantiateModelsToScene();
+        const modelRoot = inst.rootNodes[0] as Mesh;
+        
+        // A origem (pivô) do modelo 3D está na base.
+        modelRoot.position = new Vector3(b.x, b.y - b.h / 2, b.z);
+        
+        // Retornando para a variação de escala original que acompanha as colisões
+        modelRoot.scaling = new Vector3(b.w, b.h, b.d);
+      });
+    })
+    .catch((err) => console.error("Erro ao carregar o modelo da caixa:", err));
 
   for (const kind of Object.keys(byKind) as BoxDef["kind"][]) {
     const meshes = byKind[kind];
@@ -124,7 +158,11 @@ function createMapBoxes(scene: Scene): void {
     const merged = Mesh.MergeMeshes(meshes, true, true);
     if (!merged) continue;
     merged.name = `map_${kind}`;
-    merged.material = materials[kind];
+    if (kind === "box") {
+      merged.isVisible = false;
+    } else {
+      merged.material = materials[kind];
+    }
     merged.metadata = { staticGeo: true };
     merged.checkCollisions = false;
     merged.isPickable = true;

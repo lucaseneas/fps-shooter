@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@babylonjs/core": "^7.0.0",
+    "@babylonjs/loaders": "^7.54.3",
     "@babylonjs/materials": "^7.54.3",
     "bcryptjs": "^3.0.3",
     "colyseus": "^0.15.57",
