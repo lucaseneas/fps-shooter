@@ -15,8 +15,11 @@ export const CONFIG = {
   healthRegenPerSecond: 20,
   /** Porta do servidor Colyseus. */
   serverPort: 2567,
-  /** Tick da simulação do servidor (ms). */
-  simulationIntervalMs: 50,
+  /**
+   * Tick da simulação do servidor (ms). 33ms ≈ 30Hz: os acks de input
+   * chegam mais rápido ao cliente, encurtando a janela de reconciliação.
+   */
+  simulationIntervalMs: 33,
   /** Segundos após o fim da partida até resetar a sala. */
   matchResetDelay: 8,
 

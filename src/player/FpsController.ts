@@ -19,6 +19,31 @@ import {
 const BASE_SENSITIVITY = 0.0022;
 /** Velocidade de transição da câmera ao agachar/levantar. */
 const CROUCH_CAM_SPEED = 12;
+/**
+ * Erro de predição acima disso (m) é dessincronia real (perda de input,
+ * respawn) e vira snap seco, sem suavização.
+ */
+const RECONCILE_SNAP_DIST = 0.35;
+/** Velocidade com que a correção visual da reconciliação decai até zero. */
+const RECONCILE_SMOOTH_SPEED = 14;
+/** Teto da correção visual acumulada — acima disso, snap seco. */
+const RECONCILE_SMOOTH_CAP = 0.6;
+/**
+ * Delta por evento acima disso é lixo puro (descarte imediato). Inalcançável
+ * por humanos em qualquer hardware: 4000 counts/evento = ~8 m/s de mão
+ * mesmo num mouse de 125Hz a 800 DPI.
+ */
+const MOUSE_SPIKE_ABS = 4000;
+/**
+ * Evento fora desta razão vs. o movimento recente é SUSPEITO (possível
+ * spike de warp do pointer lock): fica segurado por 1 evento até a
+ * continuidade confirmar se era flick legítimo ou lixo. Como a suspeita só
+ * atrasa (nunca descarta), os valores servem para qualquer DPI/polling.
+ */
+const MOUSE_SPIKE_RATIO = 4;
+const MOUSE_SPIKE_FLOOR = 150;
+/** Suspeito sem evento seguinte neste tempo (ms) era legítimo: aplica. */
+const MOUSE_HOLD_MS = 32;
 
 /**
  * Teclas capturadas pelo Keyboard Lock (bloqueia atalhos do Chrome).
@@ -89,6 +114,11 @@ export interface ServerBodyState {
  * aplicado localmente (prediction) e enviado ao servidor. Quando o estado
  * autoritativo chega, os inputs já reconhecidos são descartados e os
  * pendentes são re-simulados a partir dele (reconciliação).
+ *
+ * A câmera renderiza a posição INTERPOLADA entre os dois últimos passos
+ * fixos (suavidade em qualquer refresh rate), e as micro-correções da
+ * reconciliação são aplicadas por um offset visual que decai — a simulação
+ * em si permanece determinística.
  */
 export class FpsController {
   readonly camera: UniversalCamera;
@@ -99,9 +129,17 @@ export class FpsController {
 
   /** Estado físico previsto (posição = pés). */
   private readonly sim: BodyState;
+  /** Estado do passo fixo anterior — base da interpolação de render. */
+  private readonly prevSim: BodyState;
   private readonly pendingInputs: PlayerInput[] = [];
   private inputSeq = 0;
   private accumulator = 0;
+  /** Correção visual da reconciliação — decai no update, nunca toca a sim. */
+  private smoothX = 0;
+  private smoothY = 0;
+  private smoothZ = 0;
+  /** Último seq reconhecido já re-simulado (evita replay redundante). */
+  private lastReconciledSeq = -1;
 
   /** Callback para enviar cada input ao servidor. */
   onInput: ((input: PlayerInput) => void) | null = null;
@@ -121,6 +159,19 @@ export class FpsController {
   private sensitivityMultiplier = 1;
   /** Multiplicador de velocidade da arma equipada (ex.: faca = 1.2). */
   private speedMult = 1;
+  /** Magnitudes recentes de delta APLICADO — base da suspeita de spike. */
+  private readonly recentDeltas: number[] = [];
+  /** Evento suspeito aguardando o próximo para confirmar continuidade. */
+  private heldMouse: { dx: number; dy: number; at: number } | null = null;
+  private spikesHeld = 0;
+  private spikesDropped = 0;
+  private maxSpikeDropped = 0;
+  /** True quando o pointer lock está em raw input (unadjustedMovement). */
+  private rawInput = false;
+  /** Telemetria: taxa de eventos de mouse (janela de 1s). */
+  private mouseEventCount = 0;
+  private mouseHz = 0;
+  private mouseHzWindowStart = 0;
   private readonly maxPitch = Math.PI / 2 - 0.02;
   /** Velocidade de retorno da mira após soltar o gatilho. */
   private readonly recoilRecoverySpeed = 16;
@@ -138,6 +189,7 @@ export class FpsController {
 
     const spawn = options.spawnPosition ?? new Vector3(0, 0, -18);
     this.sim = createBody(spawn.x, spawn.z);
+    this.prevSim = createBody(spawn.x, spawn.z);
 
     this.body = MeshBuilder.CreateBox(
       "playerBody",
@@ -224,13 +276,42 @@ export class FpsController {
     }
 
     if (document.pointerLockElement !== this.canvas) {
-      this.canvas.requestPointerLock();
+      this.requestLockRaw();
     }
 
     try {
       await navigator.keyboard?.lock?.(LOCKED_KEYS);
     } catch {
       /* API indisponível ou sem fullscreen */
+    }
+  }
+
+  /**
+   * Pointer lock com raw input (unadjustedMovement): o browser entrega os
+   * deltas crus do dispositivo — sem aceleração do SO e SEM o warp do cursor
+   * ao centro da janela, que é a origem dos spikes que "teleportavam" a mira.
+   * Browsers sem suporte (Safari) caem no pointer lock padrão, onde o filtro
+   * anti-spike por continuidade continua protegendo.
+   */
+  private requestLockRaw(): void {
+    try {
+      const p = this.canvas.requestPointerLock({ unadjustedMovement: true });
+      this.rawInput = true;
+      p?.catch?.(() => {
+        this.rawInput = false;
+        try {
+          this.canvas.requestPointerLock();
+        } catch {
+          /* gesto inválido */
+        }
+      });
+    } catch {
+      this.rawInput = false;
+      try {
+        this.canvas.requestPointerLock();
+      } catch {
+        /* gesto inválido */
+      }
     }
   }
 
@@ -319,6 +400,10 @@ export class FpsController {
     this.sim.x = x;
     this.sim.y = y;
     this.sim.z = z;
+    copyBody(this.sim, this.prevSim);
+    this.smoothX = 0;
+    this.smoothY = 0;
+    this.smoothZ = 0;
     this.yaw = 0;
     this.basePitch = 0.4;
     this.camera.position.set(x, y, z);
@@ -360,18 +445,30 @@ export class FpsController {
     this.sim.z = feetPosition.z;
     this.sim.vy = 0;
     this.sim.grounded = true;
+    copyBody(this.sim, this.prevSim);
     this.pendingInputs.length = 0;
     this.recoilOffset = 0;
     this.recoilYawOffset = 0;
+    this.smoothX = 0;
+    this.smoothY = 0;
+    this.smoothZ = 0;
+    this.accumulator = 0;
+    this.lastReconciledSeq = -1;
     this.syncVisual();
   }
 
   /**
    * Reconciliação: parte do estado autoritativo do servidor e re-simula os
    * inputs ainda não reconhecidos. Com a física determinística compartilhada,
-   * o resultado normalmente é idêntico ao previsto (correção invisível).
+   * o resultado normalmente é idêntico ao previsto. Divergências pequenas
+   * viram uma correção VISUAL que decai suavemente no update (sem solavanco
+   * na câmera); só divergências grandes (perda de input, respawn) dão snap.
    */
   reconcile(server: ServerBodyState): void {
+    // Nenhum input novo reconhecido desde o último replay — nada mudaria.
+    if (server.lastSeq === this.lastReconciledSeq) return;
+    this.lastReconciledSeq = server.lastSeq;
+
     // Descarta inputs que o servidor já processou.
     while (
       this.pendingInputs.length > 0 &&
@@ -390,8 +487,40 @@ export class FpsController {
     for (const input of this.pendingInputs) {
       stepPlayer(replayed, input);
     }
+
+    const dx = replayed.x - this.sim.x;
+    const dy = replayed.y - this.sim.y;
+    const dz = replayed.z - this.sim.z;
+    const err = Math.hypot(dx, dy, dz);
+
+    if (err > RECONCILE_SNAP_DIST) {
+      // Dessincronia real: snap seco e zera a correção visual.
+      this.smoothX = 0;
+      this.smoothY = 0;
+      this.smoothZ = 0;
+      copyBody(replayed, this.prevSim);
+    } else {
+      // Desloca o passo anterior junto (a interpolação não oscila) e empurra
+      // o erro para a correção visual, que decai nos próximos frames.
+      this.prevSim.x += dx;
+      this.prevSim.y += dy;
+      this.prevSim.z += dz;
+      this.prevSim.vy = replayed.vy;
+      this.prevSim.grounded = replayed.grounded;
+      this.smoothX -= dx;
+      this.smoothY -= dy;
+      this.smoothZ -= dz;
+      if (
+        Math.hypot(this.smoothX, this.smoothY, this.smoothZ) >
+        RECONCILE_SMOOTH_CAP
+      ) {
+        this.smoothX = 0;
+        this.smoothY = 0;
+        this.smoothZ = 0;
+        copyBody(replayed, this.prevSim);
+      }
+    }
     copyBody(replayed, this.sim);
-    this.syncVisual();
   }
 
   /** True quando andando no chão (usado para o som de passos). */
@@ -447,6 +576,9 @@ export class FpsController {
       void navigator.keyboard?.lock?.(LOCKED_KEYS).catch(() => {});
     } else {
       navigator.keyboard?.unlock?.();
+      // Não aplica movimento suspeito de uma sessão de lock anterior.
+      this.heldMouse = null;
+      this.recentDeltas.length = 0;
     }
   };
 
@@ -483,15 +615,100 @@ export class FpsController {
 
   private onMouseMove = (e: MouseEvent): void => {
     if (!this.pointerLocked || !this.lookEnabled) return;
-    const sens = BASE_SENSITIVITY * this.sensitivityMultiplier;
-    this.yaw += e.movementX * sens;
-    this.basePitch += e.movementY * sens;
-    this.basePitch = Scalar.Clamp(this.basePitch, -this.maxPitch, this.maxPitch);
+
+    // Telemetria de taxa de eventos (janela de 1s).
+    const nowMs = performance.now();
+    if (nowMs - this.mouseHzWindowStart >= 1000) {
+      this.mouseHz = this.mouseEventCount;
+      this.mouseEventCount = 0;
+      this.mouseHzWindowStart = nowMs;
+    }
+    this.mouseEventCount++;
+
+    const dx = e.movementX;
+    const dy = e.movementY;
+    const mag = Math.max(Math.abs(dx), Math.abs(dy));
+
+    // Lixo catastrófico: descarte direto, sem nem segurar.
+    if (mag > MOUSE_SPIKE_ABS) {
+      this.spikesDropped++;
+      if (mag > this.maxSpikeDropped) this.maxSpikeDropped = mag;
+      return;
+    }
+
+    // Resolve o suspeito anterior à luz do novo evento.
+    this.resolveHeldMouse(dx, dy);
+
+    let recentMax = 0;
+    for (const m of this.recentDeltas) if (m > recentMax) recentMax = m;
+    const limit = Math.max(MOUSE_SPIKE_FLOOR, recentMax * MOUSE_SPIKE_RATIO);
+
+    if (mag > limit) {
+      // Suspeito (possível spike de warp): segura até o próximo evento
+      // decidir. Flick legítimo só perde 1 evento de latência — nunca movimento.
+      this.heldMouse = { dx, dy, at: nowMs };
+      this.spikesHeld++;
+      return;
+    }
+
+    this.applyMouseDelta(dx, dy);
   };
+
+  /**
+   * Decide o evento segurado quando o próximo chega: continuidade (mesma
+   * direção, magnitude na faixa 0.25–5× — cobre a desaceleração natural da
+   * mão) significa flick legítimo → aplica; movimento que voltou ao patamar
+   * anterior ou inverteu (par ida+volta do warp) significa spike → descarta.
+   */
+  private resolveHeldMouse(dx: number, dy: number): void {
+    if (!this.heldMouse) return;
+    const h = this.heldMouse;
+    const hMag = Math.max(Math.abs(h.dx), Math.abs(h.dy));
+    const eMag = Math.max(Math.abs(dx), Math.abs(dy));
+    const sameDir = h.dx * dx + h.dy * dy > 0;
+    const continuous = sameDir && eMag >= hMag * 0.25 && eMag <= hMag * 5;
+    if (continuous) {
+      this.applyHeldMouse();
+    } else {
+      this.spikesDropped++;
+      if (hMag > this.maxSpikeDropped) this.maxSpikeDropped = hMag;
+      this.heldMouse = null;
+    }
+  }
+
+  /** Aplica o evento segurado (confirmado como legítimo ou expirado). */
+  private applyHeldMouse(): void {
+    if (!this.heldMouse) return;
+    const { dx, dy } = this.heldMouse;
+    this.heldMouse = null;
+    this.applyMouseDelta(dx, dy);
+  }
+
+  private applyMouseDelta(dx: number, dy: number): void {
+    this.pushRecentDelta(Math.max(Math.abs(dx), Math.abs(dy)));
+    const sens = BASE_SENSITIVITY * this.sensitivityMultiplier;
+    this.yaw += dx * sens;
+    this.basePitch += dy * sens;
+    this.basePitch = Scalar.Clamp(this.basePitch, -this.maxPitch, this.maxPitch);
+  }
+
+  private pushRecentDelta(mag: number): void {
+    this.recentDeltas.push(mag);
+    if (this.recentDeltas.length > 16) this.recentDeltas.shift();
+  }
 
   /** Deve ser chamado a cada frame do render loop. */
   update(deltaSeconds: number): void {
     const dt = Math.min(deltaSeconds, 0.1);
+
+    // Suspeito que ficou sem evento seguinte era legítimo (fim de swipe):
+    // aplica com atraso máximo de MOUSE_HOLD_MS.
+    if (
+      this.heldMouse &&
+      performance.now() - this.heldMouse.at > MOUSE_HOLD_MS
+    ) {
+      this.applyHeldMouse();
+    }
 
     if (this.cameraMode === "overview") return;
 
@@ -504,14 +721,21 @@ export class FpsController {
       this.accumulator += dt;
       while (this.accumulator >= FIXED_DT) {
         this.accumulator -= FIXED_DT;
+        copyBody(this.sim, this.prevSim);
         this.stepOnce();
       }
     }
 
+    // Correção visual da reconciliação decai sem afetar a simulação.
+    const smoothDecay = Math.min(1, dt * RECONCILE_SMOOTH_SPEED);
+    this.smoothX = Scalar.Lerp(this.smoothX, 0, smoothDecay);
+    this.smoothY = Scalar.Lerp(this.smoothY, 0, smoothDecay);
+    this.smoothZ = Scalar.Lerp(this.smoothZ, 0, smoothDecay);
+
     const targetEye = this.isCrouching ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
     this.eyeY += (targetEye - this.eyeY) * Math.min(1, dt * CROUCH_CAM_SPEED);
 
-    this.syncVisual();
+    this.syncVisual(this.movementEnabled ? this.accumulator / FIXED_DT : 1);
   }
 
   /** Voo livre relativo à mira (sem gravidade / colisão). */
@@ -594,9 +818,22 @@ export class FpsController {
     this.onInput?.(input);
   }
 
-  private syncVisual(): void {
-    this.body.position.set(this.sim.x, this.sim.y, this.sim.z);
-    this.camera.position.set(this.sim.x, this.sim.y + this.eyeY, this.sim.z);
+  /**
+   * Câmera/corpo seguem a simulação INTERPOLADA entre o passo anterior e o
+   * atual (alpha = fração já decorrida do próximo passo). Sem isso a posição
+   * anda em degraus de 60Hz enquanto o render roda solto — judder visível
+   * ao andar e virar a câmera ao mesmo tempo. A rotação continua crua
+   * (mouse aplicado no mesmo frame) para não adicionar latência à mira.
+   */
+  private syncVisual(alpha = 1): void {
+    const x =
+      this.prevSim.x + (this.sim.x - this.prevSim.x) * alpha + this.smoothX;
+    const y =
+      this.prevSim.y + (this.sim.y - this.prevSim.y) * alpha + this.smoothY;
+    const z =
+      this.prevSim.z + (this.sim.z - this.prevSim.z) * alpha + this.smoothZ;
+    this.body.position.set(x, y, z);
+    this.camera.position.set(x, y + this.eyeY, z);
     this.camera.rotation.set(
       Scalar.Clamp(this.basePitch + this.recoilOffset, -this.maxPitch, this.maxPitch),
       this.yaw + this.recoilYawOffset,
@@ -610,6 +847,8 @@ export class FpsController {
       `pos  x:${this.sim.x.toFixed(1)} y:${this.sim.y.toFixed(1)} z:${this.sim.z.toFixed(1)}`,
       `grounded: ${this.sim.grounded}  vVel: ${this.sim.vy.toFixed(2)}`,
       `pending inputs: ${this.pendingInputs.length}`,
+      `correção visual: ${Math.hypot(this.smoothX, this.smoothY, this.smoothZ).toFixed(3)}m`,
+      `mouse: ${this.mouseHz} Hz ${this.rawInput ? "raw" : "std"} · spikes segurados:${this.spikesHeld} descartados:${this.spikesDropped} (máx ${this.maxSpikeDropped})`,
     ].join("\n");
   }
 }

@@ -1685,6 +1685,10 @@ window.addEventListener(
 let debugAccumulator = 0;
 let footstepAccumulator = 0;
 let minimapAccumulator = 0;
+/** Pior frame (ms) da janela de 1s — diagnóstico de hitches de main-thread. */
+let frameMaxMs = 0;
+let frameMaxShownMs = 0;
+let frameMaxWindowStart = 0;
 
 hud.setHealth(CONFIG.playerMaxHealth);
 hud.setLoadoutWeapons(weapons.loadoutWeapons, weapons.weaponIndex);
@@ -1696,6 +1700,14 @@ engine.runRenderLoop(() => {
   if (!inGame) return;
 
   const dt = engine.getDeltaTime() / 1000;
+
+  const nowMs = performance.now();
+  if (nowMs - frameMaxWindowStart >= 1000) {
+    frameMaxShownMs = frameMaxMs;
+    frameMaxMs = 0;
+    frameMaxWindowStart = nowMs;
+  }
+  if (dt * 1000 > frameMaxMs) frameMaxMs = dt * 1000;
 
   player.update(dt);
   player.updateRecoil(dt, weapons.isShooting);
@@ -1761,7 +1773,7 @@ engine.runRenderLoop(() => {
     const conn = room
       ? `ping ${pingMs !== null ? `${pingMs}ms` : "--"}`
       : "offline";
-    debugEl.textContent = `${engine.getFps().toFixed(0)} fps · ${conn}\n${player.getDebugInfo()}`;
+    debugEl.textContent = `${engine.getFps().toFixed(0)} fps · frame máx ${frameMaxShownMs.toFixed(0)}ms · ${conn}\n${player.getDebugInfo()}`;
   }
 });
 

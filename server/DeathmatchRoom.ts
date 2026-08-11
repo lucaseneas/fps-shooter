@@ -119,6 +119,9 @@ export class DeathmatchRoom extends Room<MatchState> {
 
   onCreate(options: RoomCreateOptions = {}): void {
     this.setState(new MatchState());
+    // Estado (inclui os acks de input) flui a ~30Hz, casado com o tick —
+    // encurta a janela de inputs pendentes na reconciliação do cliente.
+    this.setPatchRate(CONFIG.simulationIntervalMs);
     this.namePool = pickBotNames(16);
 
     const maxPlayers = clampInt(options.maxPlayers, 2, CONFIG.roomSize, CONFIG.roomSize);
