@@ -4,6 +4,7 @@ import { Vector3, Color3, Color4 } from "@babylonjs/core/Maths/math";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 
 import "@babylonjs/core/Materials/standardMaterial";
@@ -58,10 +59,16 @@ function createGround(scene: Scene): void {
   mat.specularColor = new Color3(0.02, 0.02, 0.02);
   mat.freeze();
   ground.material = mat;
-  ground.checkCollisions = true;
+  ground.checkCollisions = false;
   ground.metadata = { staticGeo: true };
+  ground.freezeWorldMatrix();
 }
 
+/**
+ * Uma caixa por peça no mapData, depois MergeMeshes por `kind`.
+ * ~35 draw calls → ~5; matrizes congeladas (mapa estático).
+ * Colisão do jogador usa MAP_BOXES no sim compartilhado, não checkCollisions.
+ */
 function createMapBoxes(scene: Scene): void {
   const materials: Record<BoxDef["kind"], StandardMaterial> = {
     wall: new StandardMaterial("wallMat", scene),
@@ -71,12 +78,23 @@ function createMapBoxes(scene: Scene): void {
     pillar: new StandardMaterial("pillarMat", scene),
   };
   materials.wall.diffuseColor = new Color3(0.22, 0.25, 0.3);
-  materials.wall.specularColor = new Color3(0.05, 0.05, 0.05);
   materials.building.diffuseColor = new Color3(0.55, 0.48, 0.42);
-  materials.building.specularColor = new Color3(0.05, 0.05, 0.05);
   materials.box.diffuseColor = new Color3(0.75, 0.42, 0.2);
   materials.platform.diffuseColor = new Color3(0.35, 0.55, 0.4);
   materials.pillar.diffuseColor = new Color3(0.6, 0.62, 0.68);
+
+  for (const mat of Object.values(materials)) {
+    mat.specularColor = new Color3(0.05, 0.05, 0.05);
+    mat.freeze();
+  }
+
+  const byKind: Record<BoxDef["kind"], Mesh[]> = {
+    wall: [],
+    building: [],
+    box: [],
+    platform: [],
+    pillar: [],
+  };
 
   MAP_BOXES.forEach((b, i) => {
     const mesh = MeshBuilder.CreateBox(
@@ -86,7 +104,30 @@ function createMapBoxes(scene: Scene): void {
     );
     mesh.position = new Vector3(b.x, b.y, b.z);
     mesh.material = materials[b.kind];
-    mesh.checkCollisions = true;
+    mesh.checkCollisions = false;
     mesh.metadata = { staticGeo: true };
+    mesh.computeWorldMatrix(true);
+    byKind[b.kind].push(mesh);
   });
+
+  for (const kind of Object.keys(byKind) as BoxDef["kind"][]) {
+    const meshes = byKind[kind];
+    if (meshes.length === 0) continue;
+
+    if (meshes.length === 1) {
+      const only = meshes[0];
+      only.name = `map_${kind}`;
+      only.freezeWorldMatrix();
+      continue;
+    }
+
+    const merged = Mesh.MergeMeshes(meshes, true, true);
+    if (!merged) continue;
+    merged.name = `map_${kind}`;
+    merged.material = materials[kind];
+    merged.metadata = { staticGeo: true };
+    merged.checkCollisions = false;
+    merged.isPickable = true;
+    merged.freezeWorldMatrix();
+  }
 }

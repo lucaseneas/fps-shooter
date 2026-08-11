@@ -99,7 +99,8 @@ const statKd = document.getElementById("statKd") as HTMLElement;
 const statWinRate = document.getElementById("statWinRate") as HTMLElement;
 
 const engine = new Engine(canvas, true, {
-  preserveDrawingBuffer: true,
+  // false: evita cópia extra do framebuffer (só precisaria p/ screenshot)
+  preserveDrawingBuffer: false,
   stencil: true,
   antialias: true,
 });
@@ -1208,12 +1209,16 @@ weapons.onStateChanged = () => {
 const HIP_FOV = 1.15;
 const SCOPE_FOV = 0.42; // zoom um pouco mais forte; overlay largo ainda mostra periferia
 const scopeOverlay = document.getElementById("scopeOverlay")!;
+const scopeOverlayCanvas = document.getElementById(
+  "scopeOverlayCanvas",
+) as HTMLCanvasElement;
 const crosshairEl = document.getElementById("crosshair")!;
 
 /** Scope por clique. Sai só no 2º RMB ou troca de arma (morte/unlock forçam saída). */
 let adsToggled = false;
 let adsOverlayOn = false;
 let adsCrosshairScoped = false;
+let lastAdsFov = HIP_FOV;
 
 function canAds(): boolean {
   return (
@@ -1240,13 +1245,51 @@ function setCrosshairScoped(on: boolean): void {
   crosshairEl.classList.toggle("scoped", on);
 }
 
-/** Rasteriza a máscara do scope uma vez pra não hitchar no 1º ADS. */
-function prewarmScopeOverlay(): void {
-  scopeOverlay.classList.add("prewarm");
-  void scopeOverlay.offsetWidth;
-  requestAnimationFrame(() => {
-    scopeOverlay.classList.remove("prewarm");
-  });
+/** Pinta o scope uma vez (e no resize). Bitmap simples = compositing barato. */
+function paintScopeOverlay(): void {
+  const cssW = Math.max(1, window.innerWidth);
+  const cssH = Math.max(1, window.innerHeight);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.round(cssW * dpr);
+  const h = Math.round(cssH * dpr);
+  if (scopeOverlayCanvas.width !== w || scopeOverlayCanvas.height !== h) {
+    scopeOverlayCanvas.width = w;
+    scopeOverlayCanvas.height = h;
+  }
+
+  const ctx = scopeOverlayCanvas.getContext("2d");
+  if (!ctx) return;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, w, h);
+
+  const lensCss = Math.min(Math.min(cssW, cssH) * 0.92, 780);
+  const r = (lensCss * 0.5) * dpr;
+  const cx = w * 0.5;
+  const cy = h * 0.5;
+
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = "source-over";
+
+  ctx.strokeStyle = "rgba(20, 20, 20, 0.85)";
+  ctx.lineWidth = 2 * dpr;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+  ctx.lineWidth = 2 * dpr;
+  ctx.beginPath();
+  ctx.moveTo(cx - r, cy);
+  ctx.lineTo(cx + r, cy);
+  ctx.moveTo(cx, cy - r);
+  ctx.lineTo(cx, cy + r);
+  ctx.stroke();
 }
 
 /** Sai do scope com lerp (RMB / troca de arma). */
@@ -1259,6 +1302,7 @@ function exitAdsImmediate(): void {
   adsToggled = false;
   adsAmount = 0;
   weapons.setAiming(false);
+  lastAdsFov = HIP_FOV;
   player.camera.fov = HIP_FOV;
   viewModel.setVisible(true);
   setScopeOverlay(false);
@@ -1273,17 +1317,27 @@ function updateAds(dt: number): void {
   }
 
   refreshAds();
-  const target = weapons.isAiming ? 1 : 0;
+  const aiming = weapons.isAiming;
+  const target = aiming ? 1 : 0;
   const prevAmount = adsAmount;
-  adsAmount += (target - adsAmount) * Math.min(1, dt * 14);
+  // Overlay/sensibilidade animam; FOV vai de uma vez (evita N frames
+  // reavaliando meshes no zoom estreito).
+  const step = Math.min(1, dt * 8.5);
+  if (target > adsAmount) adsAmount = Math.min(target, adsAmount + step);
+  else if (target < adsAmount) adsAmount = Math.max(target, adsAmount - step);
 
-  if (adsAmount < 0.01) adsAmount = 0;
-  if (adsAmount > 0.99) adsAmount = 1;
+  if (adsAmount < 0.001) adsAmount = 0;
+  if (adsAmount > 0.999) adsAmount = 1;
 
-  // Já estabilizado: não suja FOV / DOM / sensibilidade todo frame.
+  const fov = aiming || adsAmount > 0.5 ? SCOPE_FOV : HIP_FOV;
+  if (fov !== lastAdsFov) {
+    lastAdsFov = fov;
+    player.camera.fov = fov;
+  }
+
+  // Já estabilizado: não suja DOM / sensibilidade todo frame.
   if (adsAmount === prevAmount && adsAmount === target) return;
 
-  player.camera.fov = HIP_FOV + (SCOPE_FOV - HIP_FOV) * adsAmount;
   viewModel.setVisible(adsAmount < 0.45);
   setScopeOverlay(adsAmount > 0.5);
   setCrosshairScoped(adsAmount > 0.35);
@@ -1559,10 +1613,14 @@ engine.runRenderLoop(() => {
   }
 });
 
-window.addEventListener("resize", () => engine.resize());
+window.addEventListener("resize", () => {
+  engine.resize();
+  paintScopeOverlay();
+});
 
-// Força a 1ª rasterização do scope fora do combate (evita hitch no 1º RMB).
-requestAnimationFrame(() => prewarmScopeOverlay());
+// Pinta o scope fora do combate (evita hitch no 1º RMB).
+paintScopeOverlay();
+requestAnimationFrame(() => paintScopeOverlay());
 
 void (async () => {
   await initAuth();
