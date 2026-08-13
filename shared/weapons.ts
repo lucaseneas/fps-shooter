@@ -1,23 +1,28 @@
 export type WeaponId = "pistol" | "rifle" | "shotgun" | "sniper" | "knife";
 
-/** Slot de equipamento no kit (teclas 1 / 2 / 3). */
+/** Slot de equipamento no loadout (teclas 1 / 2 / 3). */
 export type WeaponCategory = "primary" | "secondary" | "melee";
 
-export type LoadoutId = "assault" | "recon" | "rusher";
-
-export interface LoadoutDef {
-  id: LoadoutId;
-  name: string;
-  /** Resumo mostrado na UI (ex.: "Rifle · Pistola · Faca"). */
-  blurb: string;
+/** Loadout personalizado: uma arma escolhida por slot. */
+export interface LoadoutSlots {
   primary: WeaponId;
   secondary: WeaponId;
   melee: WeaponId;
 }
 
+export const DEFAULT_LOADOUT: LoadoutSlots = {
+  primary: "rifle",
+  secondary: "pistol",
+  melee: "knife",
+};
+
 export interface WeaponDef {
   id: WeaponId;
   name: string;
+  /** Descrição curta mostrada na seleção de loadout. */
+  desc: string;
+  /** Caminho da imagem da arma (ex.: "/weapons/rifle.png"). Opcional — a UI usa um placeholder se ausente. */
+  image?: string;
   /** Se segura o botão continua atirando. */
   auto: boolean;
   /** Intervalo entre tiros (segundos). */
@@ -61,51 +66,17 @@ export function weaponCategory(id: WeaponId): WeaponCategory {
   return "primary";
 }
 
-/**
- * Kits disponíveis no início da partida (e via tecla I).
- * 1 = principal · 2 = secundária · 3 = melee.
- */
-export const LOADOUTS: LoadoutDef[] = [
-  {
-    id: "assault",
-    name: "Assault",
-    blurb: "Rifle · Pistola · Faca",
-    primary: "rifle",
-    secondary: "pistol",
-    melee: "knife",
-  },
-  {
-    id: "recon",
-    name: "Recon",
-    blurb: "Sniper · Pistola · Faca",
-    primary: "sniper",
-    secondary: "pistol",
-    melee: "knife",
-  },
-  {
-    id: "rusher",
-    name: "Rusher",
-    blurb: "Escopeta · Pistola · Faca",
-    primary: "shotgun",
-    secondary: "pistol",
-    melee: "knife",
-  },
-];
-
-export function getLoadout(id: string): LoadoutDef | undefined {
-  return LOADOUTS.find((l) => l.id === id);
+/** Armas disponíveis para um slot do loadout (dropdowns da seleção). */
+export function weaponsForCategory(category: WeaponCategory): WeaponDef[] {
+  return WEAPONS.filter((w) => weaponCategory(w.id) === category);
 }
 
-/** Ordem dos slots: principal, secundária, melee. */
-export function loadoutWeaponIds(loadout: LoadoutDef): [WeaponId, WeaponId, WeaponId] {
-  return [loadout.primary, loadout.secondary, loadout.melee];
-}
-
-/** Catálogo de armas (defs). O inventário do jogador vem do kit. */
+/** Catálogo de armas (defs). O inventário do jogador vem do loadout. */
 export const WEAPONS: WeaponDef[] = [
   {
     id: "pistol",
     name: "Pistola",
+    desc: "Secundária fiável, saque rápido.",
     auto: false,
     fireInterval: 0.28,
     damageBody: 20,
@@ -126,6 +97,7 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: "rifle",
     name: "Rifle",
+    desc: "Automático equilibrado para qualquer distância.",
     auto: true,
     fireInterval: 0.1,
     damageBody: 25,
@@ -146,6 +118,7 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: "shotgun",
     name: "Escopeta",
+    desc: "Devastadora de perto — 9 projéteis por disparo.",
     auto: false,
     fireInterval: 0.9,
     damageBody: 16, // por pellet (9 pellets = até 144 de perto)
@@ -166,6 +139,7 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: "sniper",
     name: "Sniper",
+    desc: "Um tiro, uma kill. Mira telescópica precisa.",
     auto: false,
     fireInterval: 1.45,
     damageBody: 75,
@@ -186,6 +160,7 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: "knife",
     name: "Faca",
+    desc: "Golpe rápido e silencioso. Corres mais rápido com ela.",
     auto: false,
     fireInterval: 0.55,
     damageBody: 55,

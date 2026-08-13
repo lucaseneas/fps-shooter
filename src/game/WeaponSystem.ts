@@ -5,16 +5,14 @@ import { Ray } from "@babylonjs/core/Culling/ray";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 
 import {
+  DEFAULT_LOADOUT,
+  LoadoutSlots,
   WEAPONS,
   WeaponDef,
   WeaponId,
-  LoadoutDef,
-  LoadoutId,
   damageFalloff,
-  getLoadout,
   getWeapon,
   isMeleeWeapon,
-  loadoutWeaponIds,
   weaponMaxRange,
 } from "../../shared/weapons";
 import { EffectsManager } from "./effects";
@@ -44,7 +42,7 @@ const SLOT_COUNT = 3;
 
 /**
  * Sistema de armas do player local.
- * Inventário = 3 slots do kit (principal / secundária / melee).
+ * Inventário = 3 slots do loadout (principal / secundária / melee).
  * Hitscan por raycast a partir do centro da câmera, com spread em cone.
  * Melee (faca) usa o mesmo hitscan com alcance curto e sem munição.
  */
@@ -56,7 +54,6 @@ export class WeaponSystem {
   /** Slot ativo: 0 principal, 1 secundária, 2 melee. */
   private currentSlot = 0;
   private slotIds: [WeaponId, WeaponId, WeaponId] = ["rifle", "pistol", "knife"];
-  private loadoutId: LoadoutId = "assault";
   private readonly ammo = new Map<string, AmmoState>();
 
   private triggerHeld = false;
@@ -98,12 +95,16 @@ export class WeaponSystem {
       this.ammo.set(w.id, { mag: w.magSize, reserve: w.reserveAmmo });
     }
 
-    const initial = getLoadout("assault")!;
-    this.applyLoadout(initial, false);
+    this.applyLoadout(DEFAULT_LOADOUT, false);
   }
 
-  get loadout(): LoadoutId {
-    return this.loadoutId;
+  /** Loadout atual (uma arma por slot). */
+  get loadout(): LoadoutSlots {
+    return {
+      primary: this.slotIds[0],
+      secondary: this.slotIds[1],
+      melee: this.slotIds[2],
+    };
   }
 
   /** Armas dos 3 slots na ordem das teclas 1–3. */
@@ -191,23 +192,15 @@ export class WeaponSystem {
     return this.ammo.get(this.weapon.id)!.mag > 0;
   }
 
-  /** Aplica um kit; por padrão equipa a arma principal e recarrega munição. */
-  applyLoadout(loadout: LoadoutDef, refill = true): void {
-    this.loadoutId = loadout.id;
-    this.slotIds = loadoutWeaponIds(loadout);
+  /** Aplica um loadout; por padrão equipa a arma principal e recarrega munição. */
+  applyLoadout(slots: LoadoutSlots, refill = true): void {
+    this.slotIds = [slots.primary, slots.secondary, slots.melee];
     this.currentSlot = 0;
     this.reloadRemaining = 0;
     this.semiAutoLock = false;
     this.cooldown = Math.max(this.cooldown, this.weapon.drawTime);
     if (refill) this.refillAll();
     else this.onStateChanged?.();
-  }
-
-  setLoadoutById(id: LoadoutId, refill = true): boolean {
-    const loadout = getLoadout(id);
-    if (!loadout) return false;
-    this.applyLoadout(loadout, refill);
-    return true;
   }
 
   /** Habilita/desabilita o disparo (morte, fim de partida, overlay). */

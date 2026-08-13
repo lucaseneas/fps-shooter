@@ -33,11 +33,15 @@ import {
 import { Minimap } from "./ui/Minimap";
 import { CONFIG } from "../shared/config";
 import {
-  LOADOUTS,
-  LoadoutId,
-  getLoadout,
+  DEFAULT_LOADOUT,
+  LoadoutSlots,
+  WeaponCategory,
+  WeaponDef,
+  WeaponId,
   getWeapon,
+  isMeleeWeapon,
   weaponMoveSpeedMult,
+  weaponsForCategory,
 } from "../shared/weapons";
 import { AppRoute, navigate, onRouteChange } from "./app/router";
 
@@ -281,7 +285,7 @@ let playerDead = false;
 let deathCountdown = 0;
 let endScreenShown = false;
 let chatTyping = false;
-/** Overlay de seleção de kit aberto (pré-spawn ou tecla I). */
+/** Overlay de seleção de loadout aberto (pré-spawn ou tecla I). */
 let loadoutPicking = false;
 /** true = troca a meio da partida (pode cancelar). */
 let loadoutPickInMatch = false;
@@ -289,7 +293,7 @@ let loadoutPickInMatch = false;
 let awaitingSpawn = false;
 /** Em câmera livre no mapa (invisível, sem arma). */
 let freeSpectating = false;
-/** Kit já escolhido nesta sessão de pré-spawn (habilita o botão Spawn). */
+/** Loadout válido nesta sessão de pré-spawn (habilita o botão Spawn). */
 let preSpawnKitReady = false;
 /** Última arma antes da troca atual — Q alterna entre as duas. */
 let lastWeaponIndex = 1;
@@ -637,41 +641,184 @@ createRoomButton.addEventListener("click", () => openCreateRoomModal());
 
 onRouteChange((route) => applyRoute(route));
 
-// --- Kit de armamento (Assault / Recon / Rusher) ---
+// --- Loadout personalizado (1 arma por slot) ---
 const LOADOUT_STORAGE_KEY = "fps.loadout";
-const SLOT_LABELS = ["1 Principal", "2 Secundária", "3 Melee"] as const;
+const SLOT_DEFS: ReadonlyArray<{
+  slot: keyof LoadoutSlots;
+  label: string;
+  category: WeaponCategory;
+}> = [
+  { slot: "primary", label: "1 · Principal", category: "primary" },
+  { slot: "secondary", label: "2 · Secundária", category: "secondary" },
+  { slot: "melee", label: "3 · Melee", category: "melee" },
+];
 
-function savedLoadoutId(): LoadoutId {
+function savedLoadout(): LoadoutSlots {
   const saved = localStorage.getItem(LOADOUT_STORAGE_KEY);
-  return getLoadout(saved ?? "")?.id ?? "assault";
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved) as Partial<LoadoutSlots>;
+      const slots: LoadoutSlots = {
+        primary: parsed.primary ?? DEFAULT_LOADOUT.primary,
+        secondary: parsed.secondary ?? DEFAULT_LOADOUT.secondary,
+        melee: parsed.melee ?? DEFAULT_LOADOUT.melee,
+      };
+      if (
+        getWeapon(slots.primary) &&
+        getWeapon(slots.secondary) &&
+        getWeapon(slots.melee)
+      ) {
+        return slots;
+      }
+    } catch {
+      // Save antigo (id de kit pré-fixado) — migra para o equivalente.
+      const legacy: Record<string, LoadoutSlots["primary"]> = {
+        recon: "sniper",
+        rusher: "shotgun",
+      };
+      return {
+        primary: legacy[saved] ?? DEFAULT_LOADOUT.primary,
+        secondary: DEFAULT_LOADOUT.secondary,
+        melee: DEFAULT_LOADOUT.melee,
+      };
+    }
+  }
+  return { ...DEFAULT_LOADOUT };
+}
+
+/** Miniatura da arma: imagem se existir, senão placeholder com a cor do view model. */
+function weaponThumbHtml(w: WeaponDef): string {
+  if (w.image) {
+    return `<span class="weapon-thumb"><img src="${w.image}" alt="${w.name}"/></span>`;
+  }
+  const [r, g, b] = w.viewColor.map((c) => Math.round(c * 255));
+  return `<span class="weapon-thumb placeholder" style="--wc: rgb(${r}, ${g}, ${b})">${w.name
+    .slice(0, 1)
+    .toUpperCase()}</span>`;
+}
+
+/** Linha de stats resumidos (dano · cadência · pente). */
+function weaponStatsLine(w: WeaponDef): string {
+  if (isMeleeWeapon(w)) {
+    const speedBonus = Math.round(((w.moveSpeedMult ?? 1) - 1) * 100);
+    const speed = speedBonus > 0 ? ` · +${speedBonus}% velocidade` : "";
+    return `Dano ${w.damageBody} · Alcance ${w.meleeRange}m${speed}`;
+  }
+  const rpm = Math.round(60 / w.fireInterval);
+  const dmg = w.pellets > 1 ? `${w.damageBody}×${w.pellets}` : `${w.damageBody}`;
+  return `Dano ${dmg} · Cadência ${rpm} · Pente ${w.magSize}`;
+}
+
+function weaponCurrentHtml(w: WeaponDef): string {
+  return `
+    ${weaponThumbHtml(w)}
+    <span class="weapon-info">
+      <span class="weapon-info-name">${w.name}</span>
+      <span class="weapon-info-stats">${weaponStatsLine(w)}</span>
+    </span>
+    <span class="weapon-select-chevron">▾</span>
+  `;
+}
+
+function weaponOptionHtml(w: WeaponDef, selected: boolean): string {
+  return `
+    ${weaponThumbHtml(w)}
+    <span class="weapon-info">
+      <span class="weapon-info-name">${w.name}</span>
+      <span class="weapon-info-desc">${w.desc}</span>
+      <span class="weapon-info-stats">${weaponStatsLine(w)}</span>
+    </span>
+    ${selected ? '<span class="weapon-option-check">✓</span>' : ""}
+  `;
 }
 
 function renderLoadoutOptions(): void {
   const selected = weapons.loadout;
   loadoutOptions.innerHTML = "";
-  for (const kit of LOADOUTS) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = `loadout-option${kit.id === selected ? " selected" : ""}`;
-    const slots = [kit.primary, kit.secondary, kit.melee]
-      .map((id, i) => {
-        const name = getWeapon(id)?.name ?? id;
-        return `<span>${SLOT_LABELS[i]} — ${name}</span>`;
-      })
-      .join("");
-    btn.innerHTML = `
-      <span class="loadout-option-name">${kit.name}</span>
-      <span class="loadout-option-blurb">${kit.blurb}</span>
-      <span class="loadout-option-slots">${slots}</span>
-    `;
-    btn.addEventListener("click", () => confirmLoadout(kit.id));
-    loadoutOptions.appendChild(btn);
+
+  for (const def of SLOT_DEFS) {
+    const current = getWeapon(selected[def.slot])!;
+    const container = document.createElement("div");
+    container.className = "weapon-select";
+
+    const label = document.createElement("span");
+    label.className = "weapon-select-label";
+    label.textContent = def.label;
+
+    const currentBtn = document.createElement("button");
+    currentBtn.type = "button";
+    currentBtn.className = "weapon-select-current";
+    currentBtn.innerHTML = weaponCurrentHtml(current);
+
+    const panel = document.createElement("div");
+    panel.className = "weapon-select-panel hidden";
+
+    for (const w of weaponsForCategory(def.category)) {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = `weapon-option${w.id === current.id ? " selected" : ""}`;
+      option.innerHTML = weaponOptionHtml(w, w.id === current.id);
+      option.addEventListener("click", () => {
+        selectSlotWeapon(container, def.slot, w.id);
+      });
+      panel.appendChild(option);
+    }
+
+    currentBtn.addEventListener("click", () => {
+      const willOpen = panel.classList.contains("hidden");
+      closeWeaponSelectPanels();
+      if (willOpen) {
+        panel.classList.remove("hidden");
+        container.classList.add("open");
+      }
+    });
+
+    container.appendChild(label);
+    container.appendChild(currentBtn);
+    container.appendChild(panel);
+    loadoutOptions.appendChild(container);
   }
 }
 
-function applySelectedLoadout(id: LoadoutId): void {
-  weapons.setLoadoutById(id, true);
-  localStorage.setItem(LOADOUT_STORAGE_KEY, id);
+function closeWeaponSelectPanels(): void {
+  loadoutOptions
+    .querySelectorAll(".weapon-select-panel")
+    .forEach((el) => el.classList.add("hidden"));
+  loadoutOptions
+    .querySelectorAll(".weapon-select.open")
+    .forEach((el) => el.classList.remove("open"));
+}
+
+/** Aplica a escolha de um slot e atualiza só esse dropdown. */
+function selectSlotWeapon(
+  container: HTMLElement,
+  slot: keyof LoadoutSlots,
+  id: WeaponId
+): void {
+  applySelectedLoadout({ ...weapons.loadout, [slot]: id });
+  exitAds();
+
+  const w = getWeapon(id)!;
+  const currentBtn = container.querySelector(".weapon-select-current");
+  if (currentBtn) currentBtn.innerHTML = weaponCurrentHtml(w);
+  container.querySelectorAll(".weapon-option").forEach((el) => {
+    const isSel = el.querySelector(".weapon-info-name")?.textContent === w.name;
+    el.classList.toggle("selected", isSel);
+    el.querySelector(".weapon-option-check")?.remove();
+    if (isSel) {
+      el.insertAdjacentHTML(
+        "beforeend",
+        '<span class="weapon-option-check">✓</span>'
+      );
+    }
+  });
+  container.querySelector(".weapon-select-panel")?.classList.add("hidden");
+  container.classList.remove("open");
+}
+
+function applySelectedLoadout(slots: LoadoutSlots): void {
+  weapons.applyLoadout(slots, true);
+  localStorage.setItem(LOADOUT_STORAGE_KEY, JSON.stringify(slots));
   lastWeaponIndex = 1;
   hud.setLoadoutWeapons(weapons.loadoutWeapons, weapons.weaponIndex);
   hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, weapons.isReloading);
@@ -679,11 +826,11 @@ function applySelectedLoadout(id: LoadoutId): void {
   player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
 }
 
-/** Entra na sala em espectador (topo) até escolher kit e clicar Spawn. */
+/** Entra na sala em espectador (topo) até confirmar o loadout e clicar Spawn. */
 function enterPreSpawn(): void {
   awaitingSpawn = true;
-  // Já há um kit guardado — basta confirmar com Spawn (pode trocar antes).
-  applySelectedLoadout(savedLoadoutId());
+  // Já há um loadout guardado — basta confirmar com Spawn (pode trocar antes).
+  applySelectedLoadout(savedLoadout());
   preSpawnKitReady = true;
   ownInitialized = false;
   playerDead = false;
@@ -723,15 +870,17 @@ function openLoadoutModal(inMatch: boolean): void {
     player.setLookEnabled(false);
     if (player.isPointerLocked) player.releasePointerLock();
     loadoutHint.textContent =
-      "Troca o kit agora. 1 Principal · 2 Secundária · 3 Melee. ESC cancela.";
+      "Troca as armas nos slots — aplica na hora. ESC ou Confirmar para voltar.";
+    loadoutCancelButton.textContent = "Confirmar";
     loadoutCancelButton.classList.remove("hidden");
     spawnButton.classList.add("hidden");
     spectateButton.classList.add("hidden");
     loadoutModal.classList.remove("prespawn");
   } else {
     loadoutHint.textContent = freeSpectating
-      ? "Escolhe o kit e Spawn para jogar · ou ESC para continuar a voar."
-      : "Escolhe um kit e Spawn, ou entra só a observar. Na partida, I troca o kit.";
+      ? "Escolhe as armas e Spawn para jogar · ou ESC para continuar a voar."
+      : "Escolhe uma arma por slot e Spawn, ou entra só a observar. Na partida, I troca as armas.";
+    loadoutCancelButton.textContent = "Cancelar";
     loadoutCancelButton.classList.toggle("hidden", !freeSpectating);
     loadoutModal.classList.add("prespawn");
     spawnButton.classList.toggle("hidden", !preSpawnKitReady);
@@ -779,24 +928,6 @@ function closeLoadoutModal(relock: boolean): void {
   }
 }
 
-function confirmLoadout(id: LoadoutId): void {
-  applySelectedLoadout(id);
-  exitAds();
-  renderLoadoutOptions();
-
-  // Pré-spawn / freefly: só marca o kit; precisa clicar em Spawn.
-  if (awaitingSpawn && !loadoutPickInMatch) {
-    preSpawnKitReady = true;
-    spawnButton.classList.remove("hidden");
-    spawnButton.disabled = false;
-    if (!freeSpectating) spectateButton.classList.remove("hidden");
-    return;
-  }
-
-  // Troca a meio da partida (tecla I).
-  closeLoadoutModal(true);
-}
-
 function cancelLoadoutPick(): void {
   if (!loadoutPicking) return;
   if (loadoutPickInMatch || freeSpectating) {
@@ -837,8 +968,16 @@ loadoutCancelButton.addEventListener("click", () => cancelLoadoutPick());
 spawnButton.addEventListener("click", () => requestPlayerSpawn());
 spectateButton.addEventListener("click", () => enterFreeSpectate());
 
-// Aplica o último kit guardado (ou Assault) ao arrancar.
-applySelectedLoadout(savedLoadoutId());
+// Clique fora de um dropdown fecha os painéis abertos.
+document.addEventListener("click", (e) => {
+  if (loadoutModal.classList.contains("hidden")) return;
+  if (!(e.target as HTMLElement).closest(".weapon-select")) {
+    closeWeaponSelectPanels();
+  }
+});
+
+// Aplica o último loadout guardado (ou o padrão) ao arrancar.
+applySelectedLoadout(savedLoadout());
 
 // --- Entrar / sair do jogo 3D ---
 function startGame(r: Room): void {
@@ -1531,7 +1670,7 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyI") {
     e.preventDefault();
     if (awaitingSpawn) {
-      // Em freefly: abre kit para spawnar. Em overview o modal já está aberto.
+      // Em freefly: abre o loadout para spawnar. Em overview o modal já está aberto.
       if (freeSpectating && !loadoutPicking) openLoadoutModal(false);
       return;
     }
@@ -1626,7 +1765,7 @@ window.addEventListener(
       return;
     }
 
-    // Troca de kit a meio da partida, ou kit aberto no freefly: ESC cancela.
+    // Troca de armas a meio da partida, ou loadout aberto no freefly: ESC fecha.
     if (loadoutPicking && (loadoutPickInMatch || freeSpectating)) {
       e.preventDefault();
       cancelLoadoutPick();
@@ -1641,7 +1780,7 @@ window.addEventListener(
       return;
     }
 
-    // Pré-spawn overview: ESC abre pausa (Sair) por cima da escolha de kit.
+    // Pré-spawn overview: ESC abre pausa (Sair) por cima da escolha de loadout.
     if (awaitingSpawn && !freeSpectating) {
       e.preventDefault();
       if (

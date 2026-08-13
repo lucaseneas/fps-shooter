@@ -48,11 +48,16 @@ export class RemotePlayer {
   private readonly gun: Mesh;
   private readonly debugBodyHitbox: Mesh;
   private readonly debugHeadHitbox: Mesh;
+  /** Esqueleto wireframe exibido através das paredes durante o wallhack. */
+  private readonly skeletonBody: Mesh;
+  private readonly skeletonHead: Mesh;
 
   private crouchT = 0;
   /** Crouch atual do servidor (hitscan usa o valor corrente, não o histórico). */
   private crouching = false;
   private invincible = false;
+  private wallhack = false;
+  private aliveVisible = true;
 
   private velocityX = 0;
   private velocityZ = 0;
@@ -125,6 +130,36 @@ export class RemotePlayer {
     this.debugHeadHitbox.material = debugMat;
     this.debugHeadHitbox.isPickable = false;
     this.setDebugHitboxes(false);
+
+    // Esqueleto do wallhack: wireframe no grupo 1 (limpa depth) — única
+    // parte do inimigo que atravessa paredes. O modelo sólido fica no grupo 0.
+    const skelMat = new StandardMaterial(`${id}_skelMat`, scene);
+    skelMat.emissiveColor = new Color3(1, 0.2, 0.08);
+    skelMat.disableLighting = true;
+    skelMat.wireframe = true;
+
+    this.skeletonBody = MeshBuilder.CreateBox(
+      `${id}_skelBody`,
+      { width: 0.9, height: STAND_BODY_H, depth: 0.6 },
+      scene
+    );
+    this.skeletonBody.parent = this.root;
+    this.skeletonBody.position.y = -0.15;
+    this.skeletonBody.material = skelMat;
+    this.skeletonBody.isPickable = false;
+    this.skeletonBody.renderingGroupId = 1;
+
+    this.skeletonHead = MeshBuilder.CreateSphere(
+      `${id}_skelHead`,
+      { diameter: 0.45, segments: 8 },
+      scene
+    );
+    this.skeletonHead.parent = this.root;
+    this.skeletonHead.position.y = STAND_HEIGHT / 2 - 0.1;
+    this.skeletonHead.material = skelMat;
+    this.skeletonHead.isPickable = false;
+    this.skeletonHead.renderingGroupId = 1;
+    this.refreshSkeletonVisibility();
 
     const gunMat = new StandardMaterial(`${id}_gunMat`, scene);
     gunMat.diffuseColor = new Color3(0.15, 0.15, 0.17);
@@ -237,6 +272,11 @@ export class RemotePlayer {
     this.headMesh.position.y = eye - h / 2;
     this.gun.position.y = 0.32 - 0.27 * t;
     this.nameplate.position.y = h / 2 + 0.45 - 0.2 * t;
+
+    // Esqueleto espelha a pose do modelo (crouch).
+    this.skeletonBody.scaling.y = this.bodyMesh.scaling.y;
+    this.skeletonBody.position.y = this.bodyMesh.position.y;
+    this.skeletonHead.position.y = this.headMesh.position.y;
   }
 
   /**
@@ -387,38 +427,20 @@ export class RemotePlayer {
     }
   }
 
+  /**
+   * Wallhack: só o esqueleto wireframe atravessa as paredes (grupo 1).
+   * O modelo sólido fica sempre no grupo 0 — visível só em linha de visão.
+   */
   setWallhack(enabled: boolean): void {
-    // Group 1 + depth clear em main.ts → desenha por cima do cenário (através das paredes).
-    const groupId = enabled ? 1 : 0;
-    this.root.renderingGroupId = groupId;
-    this.bodyMesh.renderingGroupId = groupId;
-    this.headMesh.renderingGroupId = groupId;
-    this.gun.renderingGroupId = groupId;
-    for (const child of this.gun.getChildMeshes()) {
-      child.renderingGroupId = groupId;
-    }
-    this.nameplate.renderingGroupId = groupId;
+    if (this.wallhack === enabled) return;
+    this.wallhack = enabled;
+    this.refreshSkeletonVisibility();
+  }
 
-    this.bodyMesh.renderOutline = enabled;
-    this.bodyMesh.outlineColor = new Color3(1, 0.15, 0.05);
-    this.bodyMesh.outlineWidth = 0.04;
-
-    this.headMesh.renderOutline = enabled;
-    this.headMesh.outlineColor = new Color3(1, 0.15, 0.05);
-    this.headMesh.outlineWidth = 0.04;
-
-    const bodyMat = this.bodyMesh.material as StandardMaterial | null;
-    const headMat = this.headMesh.material as StandardMaterial | null;
-    if (bodyMat) {
-      bodyMat.emissiveColor = enabled
-        ? new Color3(0.85, 0.12, 0.05)
-        : new Color3(0, 0, 0);
-    }
-    if (headMat) {
-      headMat.emissiveColor = enabled
-        ? new Color3(1, 0.18, 0.08)
-        : new Color3(0, 0, 0);
-    }
+  private refreshSkeletonVisibility(): void {
+    const show = this.wallhack && this.aliveVisible;
+    this.skeletonBody.setEnabled(show);
+    this.skeletonHead.setEnabled(show);
   }
 
   /** Invencível: ~60% de opacidade no modelo remoto. */
@@ -467,6 +489,7 @@ export class RemotePlayer {
   }
 
   private setVisible(on: boolean): void {
+    this.aliveVisible = on;
     this.bodyMesh.setEnabled(on);
     this.headMesh.setEnabled(on);
     this.nameplate.setEnabled(on);
@@ -474,6 +497,7 @@ export class RemotePlayer {
     this.root.checkCollisions = on;
     this.debugBodyHitbox.isVisible = on;
     this.debugHeadHitbox.isVisible = on;
+    this.refreshSkeletonVisibility();
   }
 
   dispose(): void {
