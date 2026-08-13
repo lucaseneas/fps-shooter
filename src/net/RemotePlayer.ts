@@ -1,10 +1,11 @@
 import { Scene } from "@babylonjs/core/scene";
-import { Vector3, Color3, Matrix, Quaternion } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3, Quaternion } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 
 import { CONFIG } from "../../shared/config";
 import { HITBOX } from "../../shared/hitboxes";

@@ -1,6 +1,6 @@
 import { Scene } from "@babylonjs/core/scene";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
-import { Vector3, Color3, Matrix, Quaternion } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3, Quaternion } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -24,7 +24,6 @@ export class ViewModel {
   private readonly flash: Mesh;
   private flashTimeout = 0;
   private melee = false;
-  private currentWeaponId = "";
 
   private kick = 0;
   private reloadDip = 0;
@@ -111,7 +110,6 @@ export class ViewModel {
   }
 
   setWeapon(weapon: WeaponDef): void {
-    this.currentWeaponId = weapon.id;
     const [r, g, b] = weapon.viewColor;
     this.bodyMat.diffuseColor = new Color3(r, g, b);
     this.melee = weapon.id === "knife";
