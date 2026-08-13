@@ -91,9 +91,18 @@ export class AudioManager {
         this.noise(0.1, 0.4, "bandpass", 1000);
         this.tone(170, 0.08, 0.3, "square", 70);
         break;
+      case "magnum":
+        this.noise(0.16, 0.55, "lowpass", 800);
+        this.tone(120, 0.12, 0.4, "square", 55);
+        this.tone(60, 0.16, 0.22, "sawtooth", 40, 0.03);
+        break;
       case "rifle":
         this.noise(0.07, 0.35, "bandpass", 1500);
         this.tone(220, 0.06, 0.25, "square", 100);
+        break;
+      case "ak47":
+        this.noise(0.09, 0.45, "bandpass", 1100);
+        this.tone(175, 0.08, 0.32, "square", 80);
         break;
       case "shotgun":
         this.noise(0.24, 0.6, "lowpass", 600);

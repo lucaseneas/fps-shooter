@@ -137,7 +137,7 @@ export class WeaponSystem {
    */
   private spreadMultiplier(): number {
     const id = this.weapon.id;
-    const isRifle = id === "rifle";
+    const isRifle = id === "rifle" || id === "ak47";
     const isSniper = id === "sniper";
 
     if (isSniper && this.aiming) {

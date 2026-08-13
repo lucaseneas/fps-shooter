@@ -1,4 +1,11 @@
-export type WeaponId = "pistol" | "rifle" | "shotgun" | "sniper" | "knife";
+export type WeaponId =
+  | "pistol"
+  | "magnum"
+  | "rifle"
+  | "ak47"
+  | "shotgun"
+  | "sniper"
+  | "knife";
 
 /** Slot de equipamento no loadout (teclas 1 / 2 / 3). */
 export type WeaponCategory = "primary" | "secondary" | "melee";
@@ -59,10 +66,10 @@ export interface WeaponDef {
 /** Teto do multiplicador de velocidade (faca) — servidor/cliente limitam aqui. */
 export const MAX_MOVE_SPEED_MULT = 1.2;
 
-/** Categoria da arma no inventário do kit. */
+/** Categoria da arma no inventário do loadout. */
 export function weaponCategory(id: WeaponId): WeaponCategory {
   if (id === "knife") return "melee";
-  if (id === "pistol") return "secondary";
+  if (id === "pistol" || id === "magnum") return "secondary";
   return "primary";
 }
 
@@ -95,8 +102,29 @@ export const WEAPONS: WeaponDef[] = [
     drawTime: 0.7,
   },
   {
+    id: "magnum",
+    name: "Magnum .357",
+    desc: "Revólver pesado: headshot letal a qualquer distância. Recuo brutal.",
+    auto: false,
+    fireInterval: 0.8,
+    damageBody: 35,
+    damageHead: 100,
+    pellets: 1,
+    pelletPattern: [[0, 0]],
+    magSize: 7,
+    reserveAmmo: 21,
+    reloadTime: 2.4,
+    recoilPattern: [[0.35, 2.0], [-0.3, 2.2], [0.25, 2.4]],
+    falloffStart: 25,
+    falloffEnd: 55,
+    falloffMin: 1, // sem perda de dano — headshot é sempre 100 (letal)
+    viewColor: [0.42, 0.42, 0.46],
+    baseSpread: 0.5,
+    drawTime: 0.8,
+  },
+  {
     id: "rifle",
-    name: "Rifle",
+    name: "M4A1",
     desc: "Automático equilibrado para qualquer distância.",
     auto: true,
     fireInterval: 0.1,
@@ -114,6 +142,27 @@ export const WEAPONS: WeaponDef[] = [
     viewColor: [0.3, 0.35, 0.28],
     baseSpread: 0.4,
     drawTime: 0.7,
+  },
+  {
+    id: "ak47",
+    name: "AK-47",
+    desc: "Dano pesado e recoil bruto — recompensa quem controla o spray.",
+    auto: true,
+    fireInterval: 0.105,
+    damageBody: 30,
+    damageHead: 80,
+    pellets: 1,
+    pelletPattern: [[0, 0]],
+    magSize: 30,
+    reserveAmmo: 90,
+    reloadTime: 2.5,
+    recoilPattern: [[0.24, 0.52], [-0.32, 0.66], [0.4, 0.78], [-0.48, 0.9], [0.38, 1.0], [-0.3, 1.08], [0.22, 1.14], [-0.38, 1.18], [0.44, 1.22], [-0.22, 1.25]],
+    falloffStart: 22,
+    falloffEnd: 55,
+    falloffMin: 0.65,
+    viewColor: [0.45, 0.3, 0.16],
+    baseSpread: 0.45,
+    drawTime: 0.75,
   },
   {
     id: "shotgun",

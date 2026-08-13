@@ -114,7 +114,8 @@ export class ViewModel {
     this.bodyMat.diffuseColor = new Color3(r, g, b);
     this.melee = weapon.id === "knife";
 
-    if (weapon.id === "rifle") {
+    // AK-47 reutiliza o modelo do rifle até ter um GLB próprio.
+    if (weapon.id === "rifle" || weapon.id === "ak47") {
       this.fallbackRoot.setEnabled(false);
       this.rifleRoot.setEnabled(true);
     } else {
@@ -127,7 +128,13 @@ export class ViewModel {
         this.fallbackRoot.scaling.set(1, 1, 1);
         this.barrel.setEnabled(true);
         this.barrel.scaling.y =
-          weapon.id === "pistol" ? 0.6 : weapon.id === "sniper" ? 1.85 : 1.2;
+          weapon.id === "pistol"
+            ? 0.6
+            : weapon.id === "magnum"
+              ? 0.85
+              : weapon.id === "sniper"
+                ? 1.85
+                : 1.2;
       }
     }
 
