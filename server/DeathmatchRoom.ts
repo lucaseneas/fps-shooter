@@ -196,6 +196,21 @@ export class DeathmatchRoom extends Room<MatchState> {
       else this.debugClients.delete(client.sessionId);
     });
 
+    this.onMessage("change_skin", (client, skinId: string) => {
+      if (typeof skinId !== "string") return;
+      const p = this.state.players.get(client.sessionId);
+      if (p) {
+        p.skinId = skinId.slice(0, 32);
+        // Se for o líder, atualiza a skin de todos os bots
+        if (client.sessionId === this.state.hostId) {
+          for (const botId of this.bots.keys()) {
+            const botPlayer = this.state.players.get(botId);
+            if (botPlayer) botPlayer.skinId = p.skinId;
+          }
+        }
+      }
+    });
+
     this.onMessage("chat", (client, msg: { text?: unknown }) => {
       const player = this.state.players.get(client.sessionId);
       if (!player || typeof msg?.text !== "string") return;
@@ -739,6 +754,11 @@ export class DeathmatchRoom extends Room<MatchState> {
     const p = new PlayerState();
     p.name = name;
     p.health = CONFIG.playerMaxHealth;
+    
+    // O bot clona a skin do líder, se não achar usa a default
+    const host = this.state.hostId ? this.state.players.get(this.state.hostId) : null;
+    p.skinId = host ? host.skinId : "skin_default";
+    
     const spawn = randomSpawn();
     p.x = spawn.x;
     p.z = spawn.z;

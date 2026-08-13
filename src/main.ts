@@ -10,6 +10,7 @@ import { EffectsManager } from "./game/effects";
 import { Hud, ScoreRow } from "./ui/Hud";
 import { AudioManager } from "./game/audio";
 import { RemotePlayer } from "./net/RemotePlayer";
+import { SkinPreview } from "./ui/SkinPreview";
 import {
   listRooms,
   createRoom,
@@ -115,17 +116,15 @@ const statWins = document.getElementById("statWins") as HTMLElement;
 const statMatches = document.getElementById("statMatches") as HTMLElement;
 const statKd = document.getElementById("statKd") as HTMLElement;
 const statWinRate = document.getElementById("statWinRate") as HTMLElement;
+const skinPreviewCanvas = document.getElementById("skinPreviewCanvas") as HTMLCanvasElement;
 
 const engine = new Engine(canvas, true, {
-  // false: evita cópia extra do framebuffer (só precisaria p/ screenshot)
   preserveDrawingBuffer: false,
   stencil: true,
   antialias: true,
 });
 
 const scene = createScene(engine);
-// Group 1 = wallhack (inimigos através das paredes): limpa depth do cenário.
-// Group 2 = viewmodel: limpa depth de novo para a arma ficar sempre por cima.
 scene.setRenderingAutoClearDepthStencil(1, true, true, false);
 scene.setRenderingAutoClearDepthStencil(2, true, true, false);
 const effects = new EffectsManager(scene);
@@ -142,7 +141,6 @@ const viewModel = new ViewModel(scene, player.camera);
 const weapons = new WeaponSystem(scene, player.camera, effects, "self");
 viewModel.setWeapon(weapons.weapon);
 
-// --- Configurações (sensibilidade persistida) ---
 const SENS_STORAGE_KEY = "fps.sensitivity";
 
 function loadSensitivity(): void {
@@ -152,9 +150,7 @@ function loadSensitivity(): void {
   applySensitivity(value);
 }
 
-/** Sensibilidade base do slider (evita parseFloat no loop do ADS). */
 let baseSensitivity = 1;
-/** Progresso do ADS (0–1); declarado cedo pra applySensitivity aplicar escala com scope aberto. */
 let adsAmount = 0;
 const ADS_SENS_SCALE = 0.38;
 
@@ -172,7 +168,6 @@ sensSlider.addEventListener("input", () => {
 
 loadSensitivity();
 
-// --- Configuração: bots na sala (só o líder altera in-game) ---
 const BOTS_STORAGE_KEY = "fps.bots";
 
 function loadBotsSetting(): void {
@@ -222,7 +217,6 @@ botsSlider.addEventListener("input", () => {
 
 loadBotsSetting();
 
-// --- Configuração: volume ---
 const VOL_STORAGE_KEY = "fps.volume";
 
 function applyVolume(value: number): void {
@@ -240,7 +234,6 @@ volSlider.addEventListener("input", () => {
 const savedVol = parseFloat(localStorage.getItem(VOL_STORAGE_KEY) ?? "0.5");
 applyVolume(Number.isFinite(savedVol) ? Math.min(1, Math.max(0, savedVol)) : 0.5);
 
-// --- Retícula ---
 const RETICLE_STORAGE_KEY = "fps.reticle";
 const RETICLE_TYPES = new Set(["cross", "dot", "ring", "chevron"]);
 
@@ -256,7 +249,6 @@ reticleSelect.addEventListener("change", () => {
   localStorage.setItem(RETICLE_STORAGE_KEY, reticleSelect.value);
 });
 
-// --- Modo debug (a vida continua sendo aplicada pelo servidor) ---
 const DEBUG_STORAGE_KEY = "fps.debugMode";
 let debugMode = localStorage.getItem(DEBUG_STORAGE_KEY) === "true";
 debugModeToggle.checked = debugMode;
@@ -274,9 +266,7 @@ debugModeToggle.addEventListener("change", () => {
   localStorage.setItem(DEBUG_STORAGE_KEY, String(debugModeToggle.checked));
 });
 
-// --- Estado da sessão ---
 let room: Room | null = null;
-/** True do momento em que entra numa sala até voltar ao menu. */
 let inGame = false;
 const remotePlayers = new Map<string, RemotePlayer>();
 let ownInitialized = false;
@@ -285,24 +275,16 @@ let playerDead = false;
 let deathCountdown = 0;
 let endScreenShown = false;
 let chatTyping = false;
-/** Overlay de seleção de loadout aberto (pré-spawn ou tecla I). */
 let loadoutPicking = false;
-/** true = troca a meio da partida (pode cancelar). */
 let loadoutPickInMatch = false;
-/** Na sala, ainda não pediu spawn (espectador top-down ou freefly). */
 let awaitingSpawn = false;
-/** Em câmera livre no mapa (invisível, sem arma). */
 let freeSpectating = false;
-/** Loadout válido nesta sessão de pré-spawn (habilita o botão Spawn). */
 let preSpawnKitReady = false;
-/** Última arma antes da troca atual — Q alterna entre as duas. */
 let lastWeaponIndex = 1;
-/** Ping medido pelo cliente (ms), para o indicador no HUD. */
 let pingMs: number | null = null;
-/** RTT autoritativo do servidor (rewind / pose dos remotos). */
 let serverRttMs = 0;
+let skinPreview: SkinPreview | null = null;
 
-// --- Auth / páginas ---
 let authEnabled = false;
 let authMode: "login" | "register" = "login";
 let session: AuthSession | null = null;
@@ -375,7 +357,6 @@ function applyRoute(route: AppRoute): void {
     return;
   }
 
-  // /login
   if (inGame) {
     void room?.leave();
     return;
@@ -522,7 +503,6 @@ function renderRoomList(rooms: RoomListing[]): void {
   }
 }
 
-/** Opções pendentes ao criar sala (null = entrar em sala existente). */
 let pendingCreateOptions: CreateRoomOptions | null = null;
 
 function syncCreateRoomForm(): void {
@@ -557,7 +537,6 @@ function closeCreateRoomModal(): void {
   createRoomModal.classList.add("hidden");
 }
 
-/** Entra numa sala existente (roomId) ou cria uma nova (null + pendingCreateOptions). */
 async function joinLobbyRoom(roomId: string | null): Promise<void> {
   if (authEnabled && !session) {
     statusEl.classList.add("error");
@@ -600,7 +579,6 @@ async function joinLobbyRoom(roomId: string | null): Promise<void> {
   startGame(room);
 }
 
-/** Abre a escolha de kit e só depois entra/cria a sala. */
 function beginJoinFlow(roomId: string | null): void {
   if (authEnabled && !session) {
     statusEl.classList.add("error");
@@ -641,7 +619,6 @@ createRoomButton.addEventListener("click", () => openCreateRoomModal());
 
 onRouteChange((route) => applyRoute(route));
 
-// --- Loadout personalizado (1 arma por slot) ---
 const LOADOUT_STORAGE_KEY = "fps.loadout";
 const SLOT_DEFS: ReadonlyArray<{
   slot: keyof LoadoutSlots;
@@ -671,7 +648,6 @@ function savedLoadout(): LoadoutSlots {
         return slots;
       }
     } catch {
-      // Save antigo (id de kit pré-fixado) — migra para o equivalente.
       const legacy: Record<string, LoadoutSlots["primary"]> = {
         recon: "sniper",
         rusher: "shotgun",
@@ -686,7 +662,6 @@ function savedLoadout(): LoadoutSlots {
   return { ...DEFAULT_LOADOUT };
 }
 
-/** Miniatura da arma: imagem se existir, senão placeholder com a cor do view model. */
 function weaponThumbHtml(w: WeaponDef): string {
   if (w.image) {
     return `<span class="weapon-thumb"><img src="${w.image}" alt="${w.name}"/></span>`;
@@ -697,7 +672,6 @@ function weaponThumbHtml(w: WeaponDef): string {
     .toUpperCase()}</span>`;
 }
 
-/** Linha de stats resumidos (dano · cadência · pente). */
 function weaponStatsLine(w: WeaponDef): string {
   if (isMeleeWeapon(w)) {
     const speedBonus = Math.round(((w.moveSpeedMult ?? 1) - 1) * 100);
@@ -789,7 +763,6 @@ function closeWeaponSelectPanels(): void {
     .forEach((el) => el.classList.remove("open"));
 }
 
-/** Aplica a escolha de um slot e atualiza só esse dropdown. */
 function selectSlotWeapon(
   container: HTMLElement,
   slot: keyof LoadoutSlots,
@@ -826,10 +799,8 @@ function applySelectedLoadout(slots: LoadoutSlots): void {
   player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
 }
 
-/** Entra na sala em espectador (topo) até confirmar o loadout e clicar Spawn. */
 function enterPreSpawn(): void {
   awaitingSpawn = true;
-  // Já há um loadout guardado — basta confirmar com Spawn (pode trocar antes).
   applySelectedLoadout(savedLoadout());
   preSpawnKitReady = true;
   ownInitialized = false;
@@ -891,6 +862,8 @@ function openLoadoutModal(inMatch: boolean): void {
     }
   }
 
+  if (skinPreview) skinPreview.start();
+
   renderLoadoutOptions();
   loadoutModal.classList.remove("hidden");
 }
@@ -905,6 +878,8 @@ function closeLoadoutModal(relock: boolean): void {
   spawnButton.classList.add("hidden");
   spectateButton.classList.add("hidden");
 
+  if (skinPreview) skinPreview.stop();
+
   if (freeSpectating) {
     player.setLookEnabled(true);
     player.setMovementEnabled(false);
@@ -915,7 +890,6 @@ function closeLoadoutModal(relock: boolean): void {
   }
 
   if (awaitingSpawn) {
-    // Pré-spawn overview: mantém câmera de cima até Spawn / Espectador.
     player.setLookEnabled(false);
     player.setMovementEnabled(false);
     return;
@@ -941,7 +915,6 @@ function requestPlayerSpawn(): void {
   room.send("requestSpawn");
 }
 
-/** Entra no mapa invisível, sem arma, câmera livre. */
 function enterFreeSpectate(): void {
   if (!awaitingSpawn) return;
   freeSpectating = true;
@@ -960,6 +933,8 @@ function enterFreeSpectate(): void {
   weapons.setEnabled(false);
   settingsModal.classList.add("hidden");
 
+  if (skinPreview) skinPreview.stop();
+
   player.enterFreeFlySpectator();
   player.requestPointerLock();
 }
@@ -968,7 +943,19 @@ loadoutCancelButton.addEventListener("click", () => cancelLoadoutPick());
 spawnButton.addEventListener("click", () => requestPlayerSpawn());
 spectateButton.addEventListener("click", () => enterFreeSpectate());
 
-// Clique fora de um dropdown fecha os painéis abertos.
+const skinButtons = document.querySelectorAll<HTMLButtonElement>(".skin-btn");
+skinButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    skinButtons.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    const skinId = btn.dataset.skin;
+    if (skinId) {
+      if (room) room.send("change_skin", skinId);
+      if (skinPreview) skinPreview.setSkin(skinId);
+    }
+  });
+});
+
 document.addEventListener("click", (e) => {
   if (loadoutModal.classList.contains("hidden")) return;
   if (!(e.target as HTMLElement).closest(".weapon-select")) {
@@ -976,10 +963,8 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// Aplica o último loadout guardado (ou o padrão) ao arrancar.
 applySelectedLoadout(savedLoadout());
 
-// --- Entrar / sair do jogo 3D ---
 function startGame(r: Room): void {
   inGame = true;
   pageLogin.classList.add("hidden");
@@ -987,7 +972,6 @@ function startGame(r: Room): void {
   settingsModal.classList.add("hidden");
   navigate("/play");
 
-  // Prediction: cada passo fixo local vira um input enviado ao servidor.
   player.onInput = (input) => {
     if (ownInitialized && !awaitingSpawn) room?.send("input", input);
   };
@@ -999,7 +983,6 @@ function startGame(r: Room): void {
   enterPreSpawn();
 }
 
-/** Volta ao /home, limpando todo o estado da partida. */
 function resetToMenu(errorMsg?: string): void {
   inGame = false;
   room = null;
@@ -1058,7 +1041,6 @@ function resetToMenu(errorMsg?: string): void {
   navigate("/home");
 }
 
-// --- Modal de configurações / pausa ---
 function openPauseModal(): void {
   weapons.setTrigger(false);
   syncRoomSettingsUi();
@@ -1128,7 +1110,6 @@ resumeButton.addEventListener("click", () => {
   player.requestPointerLock();
 });
 quitButton.addEventListener("click", () => {
-  // O onLeave da sala chama resetToMenu().
   void room?.leave();
 });
 
@@ -1172,13 +1153,11 @@ function setupRoom(r: Room): void {
     hud.showKillstreakToast(`${e.playerName} ativou o kill streak [${e.streakName}]!`);
   });
 
-  // O servidor confirma que o dano foi aplicado antes de exibir o hitmarker.
   r.onMessage("hitConfirm", (e: { headshot: boolean }) => {
     hud.showHitmarker(e.headshot);
     audio.hitmarker(e.headshot);
   });
 
-  // Direção do tiro recebido (posição do atacante → marca de sangue na borda).
   r.onMessage("damaged", (e: { x: number; y: number; z: number }) => {
     const feet = player.getFeet();
     const dx = e.x - feet.x;
@@ -1233,7 +1212,6 @@ function setupRoom(r: Room): void {
     }
   });
 
-  // Tiros dos bots (server-side).
   r.onMessage("shot", (e: {
     shooterId: string;
     targetId: string;
@@ -1250,7 +1228,6 @@ function setupRoom(r: Room): void {
     audio.remoteShot(Vector3.Distance(from, player.getHead()));
   });
 
-  // Tiros de outros humanos (retransmitidos pelo servidor).
   r.onMessage("remoteShots", (e: {
     shooterId: string;
     ends: Array<{ x: number; y: number; z: number }>;
@@ -1275,12 +1252,10 @@ function setupRoom(r: Room): void {
   });
 
   r.onMessage("matchEnd", () => {
-    // Tratado via estado no reconcile (matchOver), aqui só trava input.
     player.setMovementEnabled(false);
     weapons.setEnabled(false);
   });
 
-  // Medição de RTT do servidor (usada no rewind da lag compensation).
   r.onMessage("sping", (msg: { t: number }) => {
     r.send("spong", msg);
   });
@@ -1291,7 +1266,6 @@ function setupRoom(r: Room): void {
     }
   });
 
-  // Ping do cliente (fallback no HUD até o primeiro srtt).
   r.onMessage("cpong", (msg: { t: number }) => {
     if (serverRttMs <= 0) {
       pingMs = Math.max(0, Math.round(performance.now() - msg.t));
@@ -1302,7 +1276,6 @@ function setupRoom(r: Room): void {
   }, 2000);
   r.send("cping", { t: performance.now() });
 
-  // Sincroniza bots/líder a partir do estado da sala (não sobrescreve no join).
   syncRoomSettingsUi();
   let lastHostId = "";
   let lastDesiredBots = -1;
@@ -1334,20 +1307,17 @@ function setupRoom(r: Room): void {
 
   r.onLeave((code) => {
     window.clearInterval(pingInterval);
-    // 1000 = saída consentida (botão "Sair para o menu"); acima disso é queda.
     resetToMenu(code > 1000 ? "Desconectado do servidor." : undefined);
   });
 }
 
-/** Origem dos tracers de tiros remotos: cabeça do atirador. */
 function shooterHead(shooterId: string): Vector3 | null {
   const rp = remotePlayers.get(shooterId);
   if (rp) return rp.getHead();
-  if (room && shooterId === room.sessionId) return null; // meus tiros já têm tracer
+  if (room && shooterId === room.sessionId) return null;
   return null;
 }
 
-/** Sincroniza o estado do servidor com as entidades locais. */
 function reconcile(r: Room): void {
   const seen = new Set<string>();
   const ownSnapshot = getOwnSnapshot(r);
@@ -1371,6 +1341,7 @@ function reconcile(r: Room): void {
     } else {
       rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
     }
+    rp.setSkin(p.skinId || "skin_default");
     rp.setWallhack(ownHasWallhack);
     rp.setInvincible((p.invincibleTimeLeft ?? 0) > 0);
   });
@@ -1399,7 +1370,6 @@ function reconcile(r: Room): void {
 
 function handleOwnState(p: PlayerSnapshot): void {
   if (awaitingSpawn) {
-    // Ainda em espectador: não teleporta nem reconcilia no mapa.
     return;
   }
 
@@ -1408,7 +1378,6 @@ function handleOwnState(p: PlayerSnapshot): void {
     player.teleport(new Vector3(p.x, p.y, p.z));
   }
 
-  // Reconciliação: replay dos inputs pendentes sobre o estado autoritativo.
   if (!playerDead) {
     player.reconcile({
       x: p.x,
@@ -1460,9 +1429,6 @@ function scoreboardRows(r: Room): ScoreRow[] {
   return rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
 }
 
-// --- Wiring: armas ---
-// O cliente envia origem + direções; o SERVIDOR decide o acerto e o dano
-// (hitscan com lag compensation), incluindo a confirmação do hitmarker.
 weapons.onFire = (data) => {
   if (!room) return;
   room.send("fire", {
@@ -1490,16 +1456,14 @@ weapons.onStateChanged = () => {
   wasReloading = weapons.isReloading;
 };
 
-// --- Scope / ADS (sniper, botão direito = toggle) ---
 const HIP_FOV = 1.15;
-const SCOPE_FOV = 0.42; // zoom um pouco mais forte; overlay largo ainda mostra periferia
+const SCOPE_FOV = 0.42;
 const scopeOverlay = document.getElementById("scopeOverlay")!;
 const scopeOverlayCanvas = document.getElementById(
   "scopeOverlayCanvas",
 ) as HTMLCanvasElement;
 const crosshairEl = document.getElementById("crosshair")!;
 
-/** Scope por clique. Sai só no 2º RMB ou troca de arma (morte/unlock forçam saída). */
 let adsToggled = false;
 let adsOverlayOn = false;
 let adsCrosshairScoped = false;
@@ -1530,7 +1494,6 @@ function setCrosshairScoped(on: boolean): void {
   crosshairEl.classList.toggle("scoped", on);
 }
 
-/** Pinta o scope uma vez (e no resize). Bitmap simples = compositing barato. */
 function paintScopeOverlay(): void {
   const cssW = Math.max(1, window.innerWidth);
   const cssH = Math.max(1, window.innerHeight);
@@ -1577,7 +1540,6 @@ function paintScopeOverlay(): void {
   ctx.stroke();
 }
 
-/** Sai do scope com lerp (RMB / troca de arma). */
 function exitAds(): void {
   adsToggled = false;
   weapons.setAiming(false);
@@ -1605,8 +1567,6 @@ function updateAds(dt: number): void {
   const aiming = weapons.isAiming;
   const target = aiming ? 1 : 0;
   const prevAmount = adsAmount;
-  // Overlay/sensibilidade animam; FOV vai de uma vez (evita N frames
-  // reavaliando meshes no zoom estreito).
   const step = Math.min(1, dt * 8.5);
   if (target > adsAmount) adsAmount = Math.min(target, adsAmount + step);
   else if (target < adsAmount) adsAmount = Math.max(target, adsAmount - step);
@@ -1620,7 +1580,6 @@ function updateAds(dt: number): void {
     player.camera.fov = fov;
   }
 
-  // Já estabilizado: não suja DOM / sensibilidade todo frame.
   if (adsAmount === prevAmount && adsAmount === target) return;
 
   viewModel.setVisible(adsAmount < 0.45);
@@ -1631,13 +1590,11 @@ function updateAds(dt: number): void {
   );
 }
 
-// --- Input de combate ---
 canvas.addEventListener("mousedown", (e) => {
   if (!player.isPointerLocked) return;
   if (e.button === 0) weapons.setTrigger(true);
   if (e.button === 2) {
     e.preventDefault();
-    // Sempre permite fechar; só abre se ainda puder usar ADS.
     if (adsToggled) {
       exitAds();
       return;
@@ -1670,7 +1627,6 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyI") {
     e.preventDefault();
     if (awaitingSpawn) {
-      // Em freefly: abre o loadout para spawnar. Em overview o modal já está aberto.
       if (freeSpectating && !loadoutPicking) openLoadoutModal(false);
       return;
     }
@@ -1682,7 +1638,6 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     switchTo(lastWeaponIndex);
   }
-  // 1 principal · 2 secundária · 3 melee
   if (e.code === "Digit1") switchTo(0);
   if (e.code === "Digit2") switchTo(1);
   if (e.code === "Digit3") switchTo(2);
@@ -1697,7 +1652,6 @@ window.addEventListener("keyup", (e) => {
   }
 });
 
-/** Última arma antes da troca atual — Q alterna entre as duas. */
 function rememberWeaponSwitch(fromIndex: number): void {
   if (weapons.weaponIndex === fromIndex) return;
   lastWeaponIndex = fromIndex;
@@ -1712,7 +1666,6 @@ function switchTo(index: number): void {
   rememberWeaponSwitch(from);
 }
 
-// --- Overlay / Pointer Lock ---
 restartButton.addEventListener("click", () => {
   document.getElementById("endScreen")!.classList.add("hidden");
   hud.setScoreboardVisible(false);
@@ -1723,10 +1676,8 @@ menuButton.addEventListener("click", () => {
   void room?.leave();
 });
 
-// WebAudio precisa de um gesto do usuário para tocar.
 restartButton.addEventListener("click", () => audio.resume());
 
-// Clique no jogo (fora do lock) retoma o pointer lock.
 canvas.addEventListener("click", () => {
   if (
     inGame &&
@@ -1747,13 +1698,11 @@ document.addEventListener("pointerlockchange", () => {
   } else if (inGame && !endScreenShown) {
     exitAdsImmediate();
     if (chatTyping || loadoutPicking) return;
-    // Overview pré-spawn: sem pointer lock; não abre pausa por isso.
     if (awaitingSpawn && !freeSpectating) return;
     openPauseModal();
   }
 });
 
-// ESC: destrava o mouse e abre configurações (necessário com Keyboard Lock).
 window.addEventListener(
   "keydown",
   (e) => {
@@ -1765,7 +1714,6 @@ window.addEventListener(
       return;
     }
 
-    // Troca de armas a meio da partida, ou loadout aberto no freefly: ESC fecha.
     if (loadoutPicking && (loadoutPickInMatch || freeSpectating)) {
       e.preventDefault();
       cancelLoadoutPick();
@@ -1780,7 +1728,6 @@ window.addEventListener(
       return;
     }
 
-    // Pré-spawn overview: ESC abre pausa (Sair) por cima da escolha de loadout.
     if (awaitingSpawn && !freeSpectating) {
       e.preventDefault();
       if (
@@ -1795,7 +1742,6 @@ window.addEventListener(
       return;
     }
 
-    // Freefly / jogando: ESC solta o mouse e abre pausa.
     if (player.isPointerLocked) {
       e.preventDefault();
       player.releasePointerLock();
@@ -1803,7 +1749,6 @@ window.addEventListener(
       return;
     }
 
-    // Já na pausa: ESC fecha e retoma.
     if (
       !settingsModal.classList.contains("hidden") &&
       settingsModal.classList.contains("pause-mode")
@@ -1820,11 +1765,10 @@ window.addEventListener(
   },
   true
 );
-// --- Render loop ---
+
 let debugAccumulator = 0;
 let footstepAccumulator = 0;
 let minimapAccumulator = 0;
-/** Pior frame (ms) da janela de 1s — diagnóstico de hitches de main-thread. */
 let frameMaxMs = 0;
 let frameMaxShownMs = 0;
 let frameMaxWindowStart = 0;
@@ -1834,8 +1778,11 @@ hud.setLoadoutWeapons(weapons.loadoutWeapons, weapons.weaponIndex);
 hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, false);
 hud.setKills(0);
 
+if (skinPreviewCanvas) {
+  skinPreview = new SkinPreview(skinPreviewCanvas);
+}
+
 engine.runRenderLoop(() => {
-  // No menu inicial nada é simulado nem renderizado.
   if (!inGame) return;
 
   const dt = engine.getDeltaTime() / 1000;

@@ -12,6 +12,8 @@ export class PlayerState extends Schema {
   @type("boolean") alive = true;
   /** Agachado — sincronizado para visual remoto e hitboxes. */
   @type("boolean") crouch = false;
+  /** Skin do jogador */
+  @type("string") skinId = "skin_default";
   // Reconciliação do movimento (apenas humanos):
   /** Velocidade vertical da simulação server-side. */
   @type("number") vy = 0;

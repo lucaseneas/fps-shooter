@@ -24,6 +24,7 @@ export interface PlayerSnapshot {
   activeStreak: string;
   streakTimeLeft: number;
   invincibleTimeLeft: number;
+  skinId: string;
 }
 
 export interface MatchSnapshot {
