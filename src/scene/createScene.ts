@@ -1,12 +1,13 @@
 import { Scene } from "@babylonjs/core/scene";
 import { Engine } from "@babylonjs/core/Engines/engine";
-import { Vector3, Color3, Color4 } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3, Color4, Vector4 } from "@babylonjs/core/Maths/math";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Collisions/collisionCoordinator";
@@ -58,7 +59,10 @@ function createGround(scene: Scene): void {
   );
   // Sólido barato (sem GridMaterial). Mais escuro/quente que as paredes (0.22, 0.25, 0.3).
   const mat = new StandardMaterial("groundMat", scene);
-  mat.diffuseColor = new Color3(0.12, 0.14, 0.11);
+  const floorTex = new Texture("/assets/texture_floor.png", scene);
+  floorTex.uScale = MAP_SIZE / 4;
+  floorTex.vScale = MAP_SIZE / 4;
+  mat.diffuseTexture = floorTex;
   mat.specularColor = new Color3(0.02, 0.02, 0.02);
   mat.freeze();
   ground.material = mat;
@@ -81,11 +85,19 @@ function createMapBoxes(scene: Scene): void {
     platform: new StandardMaterial("rampMat", scene),
     pillar: new StandardMaterial("pillarMat", scene),
   };
-  materials.border.diffuseColor = new Color3(0.22, 0.25, 0.3);
-  materials.wall.diffuseColor = new Color3(0.22, 0.25, 0.3);
+  const wallTex = new Texture("/assets/texture_wall.png", scene);
+  const platformTex = new Texture("/assets/texture_floor.png", scene);
+  const bgWallTex = new Texture("/assets/texture_bg_wall.png", scene);
+  const postTex = new Texture("/assets/texture_post.png", scene);
+  const boxTex = new Texture("/assets/texture_crate.png", scene);
+  
+  materials.border.diffuseTexture = bgWallTex;
+  materials.wall.diffuseTexture = wallTex;
   materials.building.diffuseColor = new Color3(0.55, 0.48, 0.42);
-  materials.box.diffuseColor = new Color3(0.75, 0.42, 0.2);
+  materials.box.diffuseTexture = boxTex;
+  materials.platform.diffuseTexture = platformTex;
   materials.platform.diffuseColor = new Color3(0.35, 0.55, 0.4);
+  materials.pillar.diffuseTexture = postTex;
   materials.pillar.diffuseColor = new Color3(0.6, 0.62, 0.68);
 
   for (const mat of Object.values(materials)) {
@@ -103,45 +115,37 @@ function createMapBoxes(scene: Scene): void {
   };
 
   MAP_BOXES.forEach((b, i) => {
-    if (b.kind === "box") {
-      const collider = MeshBuilder.CreateBox(
-        `map_${b.kind}_collider_${i}`,
-        { width: b.w, height: b.h, depth: b.d },
-        scene
-      );
-      collider.position = new Vector3(b.x, b.y, b.z);
-      collider.isVisible = false;
-      collider.checkCollisions = false;
-      collider.metadata = { staticGeo: true };
-      collider.computeWorldMatrix(true);
-      byKind[b.kind].push(collider);
-    } else {
-      const mesh = MeshBuilder.CreateBox(
-        `map_${b.kind}_${i}`,
-        { width: b.w, height: b.h, depth: b.d },
-        scene
-      );
-      mesh.position = new Vector3(b.x, b.y, b.z);
-      mesh.material = materials[b.kind];
-      mesh.checkCollisions = false;
-      mesh.metadata = { staticGeo: true };
-      mesh.computeWorldMatrix(true);
-      byKind[b.kind].push(mesh);
+    let wUV = 1, hUV = 1, dUV = 1;
+    if (b.kind !== "box") {
+      const tileScale = 4;
+      wUV = b.w / tileScale;
+      hUV = b.h / tileScale;
+      dUV = b.d / tileScale;
     }
+    
+    const faceUV = [
+      new Vector4(0, 0, wUV, hUV), // back
+      new Vector4(0, 0, wUV, hUV), // front
+      new Vector4(0, 0, dUV, hUV), // right
+      new Vector4(0, 0, dUV, hUV), // left
+      new Vector4(0, 0, wUV, dUV), // top
+      new Vector4(0, 0, wUV, dUV)  // bottom
+    ];
+
+    const mesh = MeshBuilder.CreateBox(
+      `map_${b.kind}_${i}`,
+      { width: b.w, height: b.h, depth: b.d, faceUV: faceUV, wrap: true },
+      scene
+    );
+    mesh.position = new Vector3(b.x, b.y, b.z);
+    mesh.material = materials[b.kind];
+    mesh.checkCollisions = false;
+    mesh.metadata = { staticGeo: true };
+    mesh.computeWorldMatrix(true);
+    byKind[b.kind].push(mesh);
   });
 
-  SceneLoader.LoadAssetContainerAsync("", "/assets/Caixote_Madeira.glb", scene)
-    .then((boxContainer) => {
-      boxContainer.meshes[0].isVisible = false;
 
-      MAP_BOXES.filter((b) => b.kind === "box").forEach((b) => {
-        const inst = boxContainer.instantiateModelsToScene();
-        const modelRoot = inst.rootNodes[0] as Mesh;
-        modelRoot.position = new Vector3(b.x, b.y - b.h / 2, b.z);
-        modelRoot.scaling = new Vector3(b.w, b.h, b.d);
-      });
-    })
-    .catch((err) => console.error("Erro ao carregar modelos:", err));
 
   for (const kind of Object.keys(byKind) as BoxDef["kind"][]) {
     const meshes = byKind[kind];
@@ -157,11 +161,7 @@ function createMapBoxes(scene: Scene): void {
     const merged = Mesh.MergeMeshes(meshes, true, true);
     if (!merged) continue;
     merged.name = `map_${kind}`;
-    if (kind === "box") {
-      merged.isVisible = false;
-    } else {
-      merged.material = materials[kind];
-    }
+    merged.material = materials[kind];
     merged.metadata = { staticGeo: true };
     merged.checkCollisions = false;
     merged.isPickable = true;

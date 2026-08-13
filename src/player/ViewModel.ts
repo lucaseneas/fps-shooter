@@ -1,6 +1,6 @@
 import { Scene } from "@babylonjs/core/scene";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
-import { Vector3, Color3 } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3, Matrix, Quaternion } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -48,16 +48,21 @@ export class ViewModel {
     this.rifleRoot.setEnabled(false);
 
     // Carregar o modelo do rifle assincronamente
-    SceneLoader.LoadAssetContainerAsync("", "/assets/rifle.glb", scene).then((container) => {
+    SceneLoader.LoadAssetContainerAsync("", "/assets/rifle_v2.glb", scene).then((container) => {
       const inst = container.instantiateModelsToScene();
       const gunOffset = new TransformNode("gunOffset", scene);
       gunOffset.parent = this.rifleRoot;
-      // Se estava de cabeça para baixo depois de deitar, rodamos 180 no Z
-      gunOffset.rotation = new Vector3(Math.PI / 2, 0, Math.PI);
+      // Traz a arma mais para perto da câmera (-Z) e um pouco mais centralizada (-X) e pra cima (+Y)
+      gunOffset.position = new Vector3(-0.1, 0.05, -0.35);
 
+      gunOffset.rotationQuaternion = Quaternion.FromEulerAngles(
+        Math.PI / -2,
+        0,
+        0
+      );
       const model = inst.rootNodes[0] as Mesh;
       model.parent = gunOffset;
-      
+
       for (const m of model.getChildMeshes()) {
         m.isPickable = false;
         m.renderingGroupId = 2; // Garantir que renderiza por cima de tudo na UI
@@ -148,7 +153,7 @@ export class ViewModel {
     this.bodyMat.transparencyMode = on
       ? StandardMaterial.MATERIAL_ALPHABLEND
       : StandardMaterial.MATERIAL_OPAQUE;
-      
+
     // Aplicar também ao modelo do rifle
     this.rifleRoot.getChildMeshes().forEach(m => {
       if (m.material) {

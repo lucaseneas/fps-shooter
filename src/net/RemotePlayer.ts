@@ -1,5 +1,5 @@
 import { Scene } from "@babylonjs/core/scene";
-import { Vector3, Color3 } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3, Matrix, Quaternion } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
@@ -155,12 +155,16 @@ export class RemotePlayer {
     gunBarrel.isPickable = false;
 
     // Carregar o modelo do rifle
-    SceneLoader.LoadAssetContainerAsync("", "/assets/rifle.glb", scene).then((container) => {
+    SceneLoader.LoadAssetContainerAsync("", "/assets/rifle_v2.glb", scene).then((container) => {
       const inst = container.instantiateModelsToScene();
       const gunOffset = new TransformNode(`${this.id}_gunOffset`, scene);
       gunOffset.parent = this.gun;
-      // Se estava de cabeça para baixo depois de deitar, rodamos 180 no Z
-      gunOffset.rotation = new Vector3(Math.PI / 2, 0, Math.PI);
+      
+      gunOffset.rotationQuaternion = Quaternion.FromEulerAngles(
+        Math.PI / -2,
+        0,
+        0
+      );
 
       const model = inst.rootNodes[0] as Mesh;
       model.parent = gunOffset;
