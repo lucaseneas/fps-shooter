@@ -166,7 +166,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: "shotgun",
-    name: "Escopeta",
+    name: "Calibre .12",
     desc: "Devastadora de perto — 9 projéteis por disparo.",
     auto: false,
     fireInterval: 0.9,
@@ -187,7 +187,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: "sniper",
-    name: "Sniper",
+    name: "AWP",
     desc: "Um tiro, uma kill. Mira telescópica precisa.",
     auto: false,
     fireInterval: 1.45,

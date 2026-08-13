@@ -223,7 +223,18 @@ export class WeaponSystem {
 
   setTrigger(held: boolean): void {
     this.triggerHeld = held;
-    if (!held) this.semiAutoLock = false;
+    if (!held) {
+      this.semiAutoLock = false;
+      return;
+    }
+    // Clique com o pente vazio: recarrega na hora, sem esperar pelo cooldown.
+    if (
+      this.enabled &&
+      !isMeleeWeapon(this.weapon) &&
+      this.ammo.get(this.weapon.id)!.mag <= 0
+    ) {
+      this.startReload();
+    }
   }
 
   setCrouching(on: boolean): void {
