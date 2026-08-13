@@ -5,13 +5,13 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Collisions/collisionCoordinator";
-import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
+
 import "@babylonjs/loaders/glTF";
 
 import { MAP_BOXES, MAP_SIZE, BoxDef } from "../../shared/mapData";
