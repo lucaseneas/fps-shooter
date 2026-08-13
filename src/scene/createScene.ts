@@ -74,12 +74,14 @@ function createGround(scene: Scene): void {
  */
 function createMapBoxes(scene: Scene): void {
   const materials: Record<BoxDef["kind"], StandardMaterial> = {
+    border: new StandardMaterial("borderMat", scene),
     wall: new StandardMaterial("wallMat", scene),
     building: new StandardMaterial("buildingMat", scene),
     box: new StandardMaterial("boxMat", scene),
     platform: new StandardMaterial("rampMat", scene),
     pillar: new StandardMaterial("pillarMat", scene),
   };
+  materials.border.diffuseColor = new Color3(0.22, 0.25, 0.3);
   materials.wall.diffuseColor = new Color3(0.22, 0.25, 0.3);
   materials.building.diffuseColor = new Color3(0.55, 0.48, 0.42);
   materials.box.diffuseColor = new Color3(0.75, 0.42, 0.2);
@@ -92,6 +94,7 @@ function createMapBoxes(scene: Scene): void {
   }
 
   const byKind: Record<BoxDef["kind"], Mesh[]> = {
+    border: [],
     wall: [],
     building: [],
     box: [],
@@ -102,7 +105,7 @@ function createMapBoxes(scene: Scene): void {
   MAP_BOXES.forEach((b, i) => {
     if (b.kind === "box") {
       const collider = MeshBuilder.CreateBox(
-        `map_box_collider_${i}`,
+        `map_${b.kind}_collider_${i}`,
         { width: b.w, height: b.h, depth: b.d },
         scene
       );
@@ -111,7 +114,7 @@ function createMapBoxes(scene: Scene): void {
       collider.checkCollisions = false;
       collider.metadata = { staticGeo: true };
       collider.computeWorldMatrix(true);
-      byKind["box"].push(collider);
+      byKind[b.kind].push(collider);
     } else {
       const mesh = MeshBuilder.CreateBox(
         `map_${b.kind}_${i}`,
@@ -128,21 +131,17 @@ function createMapBoxes(scene: Scene): void {
   });
 
   SceneLoader.LoadAssetContainerAsync("", "/assets/Caixote_Madeira.glb", scene)
-    .then((container) => {
-      container.meshes[0].isVisible = false;
+    .then((boxContainer) => {
+      boxContainer.meshes[0].isVisible = false;
 
       MAP_BOXES.filter((b) => b.kind === "box").forEach((b) => {
-        const inst = container.instantiateModelsToScene();
+        const inst = boxContainer.instantiateModelsToScene();
         const modelRoot = inst.rootNodes[0] as Mesh;
-        
-        // A origem (pivô) do modelo 3D está na base.
         modelRoot.position = new Vector3(b.x, b.y - b.h / 2, b.z);
-        
-        // Retornando para a variação de escala original que acompanha as colisões
         modelRoot.scaling = new Vector3(b.w, b.h, b.d);
       });
     })
-    .catch((err) => console.error("Erro ao carregar o modelo da caixa:", err));
+    .catch((err) => console.error("Erro ao carregar modelos:", err));
 
   for (const kind of Object.keys(byKind) as BoxDef["kind"][]) {
     const meshes = byKind[kind];

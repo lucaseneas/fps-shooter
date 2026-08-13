@@ -3,6 +3,7 @@ import { Vector3, Color3 } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 
 import { CONFIG } from "../../shared/config";
@@ -128,26 +129,49 @@ export class RemotePlayer {
     gunMat.diffuseColor = new Color3(0.15, 0.15, 0.17);
     gunMat.specularColor = new Color3(0.05, 0.05, 0.05);
 
-    this.gun = MeshBuilder.CreateBox(
-      `${id}_gun`,
+    this.gun = MeshBuilder.CreateBox(`${id}_gunRoot`, { size: 0.1 }, scene) as any;
+    this.gun.isVisible = false;
+    this.gun.parent = this.root;
+    this.gun.position = new Vector3(0.32, 0.32, 0.3);
+
+    const fallbackGun = MeshBuilder.CreateBox(
+      `${id}_fallbackGun`,
       { width: 0.09, height: 0.12, depth: 0.55 },
       scene
     );
-    this.gun.parent = this.root;
-    this.gun.position = new Vector3(0.32, 0.32, 0.3);
-    this.gun.material = gunMat;
-    this.gun.isPickable = false;
+    fallbackGun.parent = this.gun;
+    fallbackGun.material = gunMat;
+    fallbackGun.isPickable = false;
 
     const gunBarrel = MeshBuilder.CreateCylinder(
       `${id}_gunBarrel`,
       { height: 0.25, diameter: 0.05 },
       scene
     );
-    gunBarrel.parent = this.gun;
+    gunBarrel.parent = fallbackGun;
     gunBarrel.rotation.x = Math.PI / 2;
     gunBarrel.position = new Vector3(0, 0.02, 0.38);
     gunBarrel.material = gunMat;
     gunBarrel.isPickable = false;
+
+    // Carregar o modelo do rifle
+    SceneLoader.LoadAssetContainerAsync("", "/assets/rifle.glb", scene).then((container) => {
+      const inst = container.instantiateModelsToScene();
+      const gunOffset = new TransformNode(`${this.id}_gunOffset`, scene);
+      gunOffset.parent = this.gun;
+      // Se estava de cabeça para baixo depois de deitar, rodamos 180 no Z
+      gunOffset.rotation = new Vector3(Math.PI / 2, 0, Math.PI);
+
+      const model = inst.rootNodes[0] as Mesh;
+      model.parent = gunOffset;
+      
+      fallbackGun.setEnabled(false);
+      
+      model.getChildMeshes(false).forEach(m => {
+        m.isPickable = false;
+        // Ajuste no material pode ser necessário se quisermos wallhack/invincibility perfeitos
+      });
+    }).catch(console.error);
 
     this.nameplate = this.createNameplate(scene, name);
   }

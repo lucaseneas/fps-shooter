@@ -3,6 +3,8 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { Vector3, Color3 } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 
 import { WeaponDef } from "../../shared/weapons";
@@ -12,38 +14,66 @@ function easeOutCubic(t: number): number {
   return 1 - u * u * u;
 }
 
-/**
- * "Arma na mão" em primeira pessoa: geometria simples (corpo + cano)
- * parentada à câmera, com kick ao atirar, reload e animação de sacar.
- */
 export class ViewModel {
-  private readonly root: Mesh;
+  private readonly root: TransformNode;
+  private readonly fallbackRoot: TransformNode;
+  private readonly rifleRoot: TransformNode;
   private readonly bodyMat: StandardMaterial;
+  private readonly bodyMesh: Mesh;
   private readonly barrel: Mesh;
   private readonly flash: Mesh;
   private flashTimeout = 0;
   private melee = false;
+  private currentWeaponId = "";
 
   private kick = 0;
   private reloadDip = 0;
   private reloading = false;
 
-  /** 0 = no coldre (baixo), 1 = pronta para atirar. */
   private drawProgress = 1;
   private drawDuration = 0.7;
 
   private readonly basePos = new Vector3(0.28, -0.24, 0.65);
 
   constructor(scene: Scene, camera: UniversalCamera) {
+    this.root = new TransformNode("vmRoot", scene);
+    this.root.parent = camera;
+    this.root.position = this.basePos.clone();
+
+    this.fallbackRoot = new TransformNode("vmFallback", scene);
+    this.fallbackRoot.parent = this.root;
+
+    this.rifleRoot = new TransformNode("vmRifleRoot", scene);
+    this.rifleRoot.parent = this.root;
+    this.rifleRoot.setEnabled(false);
+
+    // Carregar o modelo do rifle assincronamente
+    SceneLoader.LoadAssetContainerAsync("", "/assets/rifle.glb", scene).then((container) => {
+      const inst = container.instantiateModelsToScene();
+      const gunOffset = new TransformNode("gunOffset", scene);
+      gunOffset.parent = this.rifleRoot;
+      // Se estava de cabeça para baixo depois de deitar, rodamos 180 no Z
+      gunOffset.rotation = new Vector3(Math.PI / 2, 0, Math.PI);
+
+      const model = inst.rootNodes[0] as Mesh;
+      model.parent = gunOffset;
+      
+      for (const m of model.getChildMeshes()) {
+        m.isPickable = false;
+        m.renderingGroupId = 2; // Garantir que renderiza por cima de tudo na UI
+      }
+    });
+
     this.bodyMat = new StandardMaterial("vmMat", scene);
     this.bodyMat.specularColor = new Color3(0.08, 0.08, 0.08);
 
-    this.root = MeshBuilder.CreateBox(
+    this.bodyMesh = MeshBuilder.CreateBox(
       "vmBody",
       { width: 0.09, height: 0.14, depth: 0.42 },
       scene
     );
-    this.root.material = this.bodyMat;
+    this.bodyMesh.material = this.bodyMat;
+    this.bodyMesh.parent = this.fallbackRoot;
 
     this.barrel = MeshBuilder.CreateCylinder(
       "vmBarrel",
@@ -53,9 +83,8 @@ export class ViewModel {
     this.barrel.rotation.x = Math.PI / 2;
     this.barrel.position = new Vector3(0, 0.03, 0.3);
     this.barrel.material = this.bodyMat;
-    this.barrel.parent = this.root;
+    this.barrel.parent = this.fallbackRoot;
 
-    // Muzzle flash na ponta do cano (aparece por ~45ms ao atirar).
     const flashMat = new StandardMaterial("vmFlashMat", scene);
     flashMat.emissiveColor = new Color3(1, 0.8, 0.35);
     flashMat.disableLighting = true;
@@ -65,60 +94,69 @@ export class ViewModel {
       scene
     );
     this.flash.material = flashMat;
-    this.flash.position = new Vector3(0, 0.2, 0);
-    this.flash.parent = this.barrel;
+    // O flash fica na root agora para servir tanto pro modelo antigo quanto pro novo
+    this.flash.position = new Vector3(0, 0.05, 0.6);
+    this.flash.parent = this.root;
     this.flash.setEnabled(false);
 
-    this.root.parent = camera;
-    this.root.position = this.basePos.clone();
-
-    // View model não participa de colisão nem de raycast de tiro.
-    // Group 2: depois do cenário (0) e do wallhack (1), sempre por cima.
-    for (const m of [this.root, this.barrel, this.flash]) {
+    for (const m of [this.bodyMesh, this.barrel, this.flash]) {
       m.isPickable = false;
       m.renderingGroupId = 2;
     }
   }
 
   setWeapon(weapon: WeaponDef): void {
+    this.currentWeaponId = weapon.id;
     const [r, g, b] = weapon.viewColor;
     this.bodyMat.diffuseColor = new Color3(r, g, b);
     this.melee = weapon.id === "knife";
 
-    if (this.melee) {
-      // Lâmina curta na mão — sem cano.
-      this.root.scaling.set(0.45, 1.35, 0.55);
-      this.barrel.setEnabled(false);
+    if (weapon.id === "rifle") {
+      this.fallbackRoot.setEnabled(false);
+      this.rifleRoot.setEnabled(true);
     } else {
-      this.root.scaling.set(1, 1, 1);
-      this.barrel.setEnabled(true);
-      this.barrel.scaling.y =
-        weapon.id === "pistol" ? 0.6 : weapon.id === "sniper" ? 1.85 : 1.2;
+      this.fallbackRoot.setEnabled(true);
+      this.rifleRoot.setEnabled(false);
+      if (this.melee) {
+        this.fallbackRoot.scaling.set(0.45, 1.35, 0.55);
+        this.barrel.setEnabled(false);
+      } else {
+        this.fallbackRoot.scaling.set(1, 1, 1);
+        this.barrel.setEnabled(true);
+        this.barrel.scaling.y =
+          weapon.id === "pistol" ? 0.6 : weapon.id === "sniper" ? 1.85 : 1.2;
+      }
     }
 
     this.startDraw(weapon.drawTime);
   }
 
-  /** Começa a animação de sacar do coldre (baixo → frente). */
   startDraw(duration: number): void {
     this.drawDuration = Math.max(0.05, duration);
     this.drawProgress = 0;
     this.kick = 0;
   }
 
-  /** Esconde o view model (ex.: enquanto mira com scope). */
   setVisible(on: boolean): void {
     if (this.root.isEnabled() === on) return;
     this.root.setEnabled(on);
   }
 
-  /** Invencibilidade: arma em ~60% de opacidade. */
   setInvincible(on: boolean): void {
     const alpha = on ? 0.6 : 1;
     this.bodyMat.alpha = alpha;
     this.bodyMat.transparencyMode = on
       ? StandardMaterial.MATERIAL_ALPHABLEND
       : StandardMaterial.MATERIAL_OPAQUE;
+      
+    // Aplicar também ao modelo do rifle
+    this.rifleRoot.getChildMeshes().forEach(m => {
+      if (m.material) {
+        m.material.alpha = alpha;
+        // Se for PBRMaterial ou StandardMaterial, a propriedade de transparência pode variar, 
+        // mas para view model invencível a gente só seta alpha por enquanto.
+      }
+    });
   }
 
   triggerKick(strength = 1): void {
@@ -144,7 +182,6 @@ export class ViewModel {
     if (this.drawProgress < 1) {
       this.drawProgress = Math.min(1, this.drawProgress + dt / this.drawDuration);
     }
-    // 1 - ease: começa no coldre e sobe mirando para frente.
     const holster = 1 - easeOutCubic(this.drawProgress);
 
     this.root.position.set(
@@ -153,7 +190,6 @@ export class ViewModel {
       this.basePos.z - this.kick * 0.07 - holster * 0.22
     );
 
-    // Faca: corte lateral; armas: kick de recuo; draw: ponta baixa → frente.
     this.root.rotation.set(
       -this.kick * 0.12 + this.reloadDip * 0.5 + holster * 1.15,
       (this.melee ? this.kick * 0.9 : 0) + holster * 0.25,
@@ -161,3 +197,4 @@ export class ViewModel {
     );
   }
 }
+
