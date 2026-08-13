@@ -6,6 +6,7 @@ import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTextur
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 
 import { CONFIG } from "../../shared/config";
 import { HITBOX } from "../../shared/hitboxes";
@@ -57,6 +58,9 @@ export class RemotePlayer {
   private crouching = false;
   private invincible = false;
   private wallhack = false;
+  private dummyMesh: TransformNode | null = null;
+  private skinMat: PBRMaterial | StandardMaterial | null = null;
+  private currentSkinId = "skin_default";
   private aliveVisible = true;
 
   private velocityX = 0;
@@ -94,6 +98,7 @@ export class RemotePlayer {
     this.bodyMesh.position.y = -0.15;
     this.bodyMesh.material = bodyMat;
     this.bodyMesh.metadata = { hitbox: { id, part: "body" } };
+    this.bodyMesh.isVisible = false; // Substituído pelo Voxel
 
     this.headMesh = MeshBuilder.CreateSphere(
       `${id}_head`,
@@ -104,6 +109,24 @@ export class RemotePlayer {
     this.headMesh.position.y = STAND_HEIGHT / 2 - 0.1;
     this.headMesh.material = headMat;
     this.headMesh.metadata = { hitbox: { id, part: "head" } };
+    this.headMesh.isVisible = false; // Substituído pelo Voxel
+
+    // Carregar o modelo voxel
+    SceneLoader.LoadAssetContainerAsync("", "/assets/player_dummy.glb", scene).then((container) => {
+      const inst = container.instantiateModelsToScene();
+      this.dummyMesh = inst.rootNodes[0] as TransformNode;
+      this.dummyMesh.parent = this.root;
+      this.dummyMesh.position.y = -0.9; // Base no chão do root
+      
+      this.dummyMesh.getChildMeshes().forEach(m => {
+        m.isPickable = false; // Hitbox é que recebe o raycast
+        if (m.material) {
+          this.skinMat = m.material as PBRMaterial | StandardMaterial;
+        }
+      });
+      
+      this.setSkin(this.currentSkinId);
+    }).catch(console.error);
 
     // AABB idêntico ao hitscan do servidor (sem yaw — o server usa AABB).
     const debugMat = new StandardMaterial(`${id}_debugHitboxMat`, scene);
@@ -253,6 +276,23 @@ export class RemotePlayer {
     return plane;
   }
 
+  setSkin(skinId: string): void {
+    if (!skinId) return;
+    this.currentSkinId = skinId;
+    if (!this.skinMat) return;
+
+    const scene = this.root.getScene();
+    const tex = new Texture(`/assets/${skinId}.png`, scene, true, false, Texture.NEAREST_SAMPLINGMODE);
+    tex.hasAlpha = true;
+    
+    const mat = this.skinMat as any;
+    if (mat.albedoTexture !== undefined) {
+      mat.albedoTexture = tex;
+    } else if (mat.diffuseTexture !== undefined) {
+      mat.diffuseTexture = tex;
+    }
+  }
+
   private height(): number {
     return STAND_HEIGHT + (CROUCH_HEIGHT - STAND_HEIGHT) * this.crouchT;
   }
@@ -277,6 +317,12 @@ export class RemotePlayer {
     this.skeletonBody.scaling.y = this.bodyMesh.scaling.y;
     this.skeletonBody.position.y = this.bodyMesh.position.y;
     this.skeletonHead.position.y = this.headMesh.position.y;
+
+    if (this.dummyMesh) {
+      this.dummyMesh.scaling.y = this.bodyMesh.scaling.y;
+      // Quando agacha, o root do dummy desce (ele tá ancorado embaixo)
+      this.dummyMesh.position.y = -0.9 + (0.9 * (1 - this.bodyMesh.scaling.y) / 2);
+    }
   }
 
   /**

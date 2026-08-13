@@ -302,6 +302,17 @@
           Escolhe uma arma por slot — na partida, aperte <kbd>I</kbd> para trocar.
         </p>
         <div id="loadoutOptions" class="loadout-options"></div>
+
+        <div class="skin-selector">
+          <h3>Sua Skin</h3>
+          <div class="skin-selector-content">
+            <canvas id="skinPreviewCanvas" width="160" height="220"></canvas>
+            <div class="skin-options">
+              <button class="skin-btn active" data-skin="skin_default">Padrão</button>
+              <button class="skin-btn" data-skin="skinvip1">VIP (Ouro)</button>
+            </div>
+          </div>
+        </div>
         <div class="modal-actions loadout-actions">
           <button id="spawnButton" class="spawn-btn hidden" type="button">Spawn</button>
           <button id="spectateButton" class="spectate-btn hidden" type="button">Espectador</button>
