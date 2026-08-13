@@ -3,6 +3,8 @@ import { Vector3, Color3, Quaternion } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Material } from "@babylonjs/core/Materials/material";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -21,8 +23,14 @@ const EXTRAP_CAP_MS = 350;
 /** Salto acima disso = teleporte/respawn: limpa histórico em vez de interpolar. */
 const TELEPORT_SNAP_DIST = 4;
 
-const STAND_BODY_H = 1.3;
-const CROUCH_BODY_H = 0.85;
+// Alturas/posições visuais derivadas do HITBOX (modelo player_dummy.glb: 1.0×2.0×0.5).
+const STAND_BODY_H = HITBOX.bodyHalf.y * 2;
+const CROUCH_BODY_H = HITBOX.crouchBodyHalfY * 2;
+/** Y relativo ao centro do root (root fica a height/2 acima dos pés). */
+const STAND_BODY_Y = HITBOX.bodyCenterY - STAND_HEIGHT / 2;
+const CROUCH_BODY_Y = HITBOX.crouchBodyCenterY - CROUCH_HEIGHT / 2;
+const STAND_HEAD_Y = HITBOX.headCenterY - STAND_HEIGHT / 2;
+const CROUCH_HEAD_Y = HITBOX.crouchHeadCenterY - CROUCH_HEIGHT / 2;
 
 interface PosSample {
   t: number;
@@ -60,6 +68,8 @@ export class RemotePlayer {
   private wallhack = false;
   private dummyMesh: TransformNode | null = null;
   private skinMat: PBRMaterial | StandardMaterial | null = null;
+  private skinTexture: Texture | null = null;
+  private appliedSkinId: string | null = null;
   private currentSkinId = "skin_default";
   private aliveVisible = true;
 
@@ -91,22 +101,26 @@ export class RemotePlayer {
 
     this.bodyMesh = MeshBuilder.CreateBox(
       `${id}_body`,
-      { width: 0.9, height: STAND_BODY_H, depth: 0.6 },
+      {
+        width: HITBOX.bodyHalf.x * 2,
+        height: STAND_BODY_H,
+        depth: HITBOX.bodyHalf.z * 2,
+      },
       scene
     );
     this.bodyMesh.parent = this.root;
-    this.bodyMesh.position.y = -0.15;
+    this.bodyMesh.position.y = STAND_BODY_Y;
     this.bodyMesh.material = bodyMat;
     this.bodyMesh.metadata = { hitbox: { id, part: "body" } };
     this.bodyMesh.isVisible = false; // Substituído pelo Voxel
 
     this.headMesh = MeshBuilder.CreateSphere(
       `${id}_head`,
-      { diameter: 0.45, segments: 8 },
+      { diameter: HITBOX.headRadius * 2, segments: 8 },
       scene
     );
     this.headMesh.parent = this.root;
-    this.headMesh.position.y = STAND_HEIGHT / 2 - 0.1;
+    this.headMesh.position.y = STAND_HEAD_Y;
     this.headMesh.material = headMat;
     this.headMesh.metadata = { hitbox: { id, part: "head" } };
     this.headMesh.isVisible = false; // Substituído pelo Voxel
@@ -117,15 +131,18 @@ export class RemotePlayer {
       this.dummyMesh = inst.rootNodes[0] as TransformNode;
       this.dummyMesh.parent = this.root;
       this.dummyMesh.position.y = -0.9; // Base no chão do root
-      
+      // Pode ter morrido enquanto o GLB baixava — respeita o estado atual.
+      this.dummyMesh.setEnabled(this.aliveVisible);
+
       this.dummyMesh.getChildMeshes().forEach(m => {
         m.isPickable = false; // Hitbox é que recebe o raycast
         if (m.material) {
           this.skinMat = m.material as PBRMaterial | StandardMaterial;
         }
       });
-      
+
       this.setSkin(this.currentSkinId);
+      this.applyInvincibilityAlpha();
     }).catch(console.error);
 
     // AABB idêntico ao hitscan do servidor (sem yaw — o server usa AABB).
@@ -163,22 +180,26 @@ export class RemotePlayer {
 
     this.skeletonBody = MeshBuilder.CreateBox(
       `${id}_skelBody`,
-      { width: 0.9, height: STAND_BODY_H, depth: 0.6 },
+      {
+        width: HITBOX.bodyHalf.x * 2,
+        height: STAND_BODY_H,
+        depth: HITBOX.bodyHalf.z * 2,
+      },
       scene
     );
     this.skeletonBody.parent = this.root;
-    this.skeletonBody.position.y = -0.15;
+    this.skeletonBody.position.y = STAND_BODY_Y;
     this.skeletonBody.material = skelMat;
     this.skeletonBody.isPickable = false;
     this.skeletonBody.renderingGroupId = 1;
 
     this.skeletonHead = MeshBuilder.CreateSphere(
       `${id}_skelHead`,
-      { diameter: 0.45, segments: 8 },
+      { diameter: HITBOX.headRadius * 2, segments: 8 },
       scene
     );
     this.skeletonHead.parent = this.root;
-    this.skeletonHead.position.y = STAND_HEIGHT / 2 - 0.1;
+    this.skeletonHead.position.y = STAND_HEAD_Y;
     this.skeletonHead.material = skelMat;
     this.skeletonHead.isPickable = false;
     this.skeletonHead.renderingGroupId = 1;
@@ -279,18 +300,23 @@ export class RemotePlayer {
   setSkin(skinId: string): void {
     if (!skinId) return;
     this.currentSkinId = skinId;
-    if (!this.skinMat) return;
+    // Sem material (GLB ainda não carregou) ou skin já aplicada: não recria textura.
+    if (!this.skinMat || this.appliedSkinId === skinId) return;
+    this.appliedSkinId = skinId;
 
     const scene = this.root.getScene();
     const tex = new Texture(`/assets/${skinId}.png`, scene, true, false, Texture.NEAREST_SAMPLINGMODE);
     tex.hasAlpha = true;
-    
+
     const mat = this.skinMat as any;
     if (mat.albedoTexture !== undefined) {
       mat.albedoTexture = tex;
     } else if (mat.diffuseTexture !== undefined) {
       mat.diffuseTexture = tex;
     }
+
+    this.skinTexture?.dispose();
+    this.skinTexture = tex;
   }
 
   private height(): number {
@@ -304,12 +330,11 @@ export class RemotePlayer {
   private applyCrouchPose(): void {
     const t = this.crouchT;
     const h = this.height();
-    const eye = this.eyeHeight();
     const bodyH = STAND_BODY_H + (CROUCH_BODY_H - STAND_BODY_H) * t;
 
     this.bodyMesh.scaling.y = bodyH / STAND_BODY_H;
-    this.bodyMesh.position.y = -0.15 - 0.05 * t;
-    this.headMesh.position.y = eye - h / 2;
+    this.bodyMesh.position.y = STAND_BODY_Y + (CROUCH_BODY_Y - STAND_BODY_Y) * t;
+    this.headMesh.position.y = STAND_HEAD_Y + (CROUCH_HEAD_Y - STAND_HEAD_Y) * t;
     this.gun.position.y = 0.32 - 0.27 * t;
     this.nameplate.position.y = h / 2 + 0.45 - 0.2 * t;
 
@@ -320,8 +345,9 @@ export class RemotePlayer {
 
     if (this.dummyMesh) {
       this.dummyMesh.scaling.y = this.bodyMesh.scaling.y;
-      // Quando agacha, o root do dummy desce (ele tá ancorado embaixo)
-      this.dummyMesh.position.y = -0.9 + (0.9 * (1 - this.bodyMesh.scaling.y) / 2);
+      // O GLB tem a base na origem do nó: -height/2 mantém os pés no chão
+      // em pé ou agachado (a fórmula antiga afundava o modelo ao agachar).
+      this.dummyMesh.position.y = -h / 2;
     }
   }
 
@@ -489,11 +515,18 @@ export class RemotePlayer {
     this.skeletonHead.setEnabled(show);
   }
 
-  /** Invencível: ~60% de opacidade no modelo remoto. */
+  /** Invencível: ~60% de opacidade no modelo remoto (GLB incluso). */
   setInvincible(on: boolean): void {
     if (this.invincible === on) return;
     this.invincible = on;
-    const alpha = on ? 0.6 : 1;
+    this.applyInvincibilityAlpha();
+  }
+
+  private applyInvincibilityAlpha(): void {
+    const alpha = this.invincible ? 0.6 : 1;
+    const mode = this.invincible
+      ? Material.MATERIAL_ALPHABLEND
+      : Material.MATERIAL_OPAQUE;
     for (const mesh of [
       this.bodyMesh,
       this.headMesh,
@@ -503,9 +536,13 @@ export class RemotePlayer {
       const mat = mesh.material as StandardMaterial | null;
       if (!mat) continue;
       mat.alpha = alpha;
-      mat.transparencyMode = on
-        ? StandardMaterial.MATERIAL_ALPHABLEND
-        : StandardMaterial.MATERIAL_OPAQUE;
+      mat.transparencyMode = mode;
+    }
+    // O modelo GLB é o que aparece em tela — sem isso a invencibilidade
+    // não tinha feedback visual nenhum.
+    if (this.skinMat) {
+      this.skinMat.alpha = alpha;
+      this.skinMat.transparencyMode = mode;
     }
   }
 
@@ -540,6 +577,7 @@ export class RemotePlayer {
     this.headMesh.setEnabled(on);
     this.nameplate.setEnabled(on);
     this.gun.setEnabled(on);
+    this.dummyMesh?.setEnabled(on); // Sem isso o cadáver ficava visível até o respawn
     this.root.checkCollisions = on;
     this.debugBodyHitbox.isVisible = on;
     this.debugHeadHitbox.isVisible = on;
