@@ -15,7 +15,7 @@ export interface BoxDef {
   w: number;
   h: number;
   d: number;
-  kind: "wall" | "building" | "box" | "platform" | "pillar";
+  kind: "border" | "wall" | "building" | "box" | "platform" | "pillar";
 }
 
 export const MAP_SIZE = 80;
@@ -25,10 +25,10 @@ const T = 1; // espessura de parede
 
 // --- Paredes de borda ---
 const borders: BoxDef[] = [
-  { x: 0, y: WALL_HEIGHT / 2, z: HALF, w: MAP_SIZE, h: WALL_HEIGHT, d: T, kind: "wall" },
-  { x: 0, y: WALL_HEIGHT / 2, z: -HALF, w: MAP_SIZE, h: WALL_HEIGHT, d: T, kind: "wall" },
-  { x: HALF, y: WALL_HEIGHT / 2, z: 0, w: T, h: WALL_HEIGHT, d: MAP_SIZE, kind: "wall" },
-  { x: -HALF, y: WALL_HEIGHT / 2, z: 0, w: T, h: WALL_HEIGHT, d: MAP_SIZE, kind: "wall" },
+  { x: 0, y: WALL_HEIGHT / 2, z: HALF, w: MAP_SIZE, h: WALL_HEIGHT, d: T, kind: "border" },
+  { x: 0, y: WALL_HEIGHT / 2, z: -HALF, w: MAP_SIZE, h: WALL_HEIGHT, d: T, kind: "border" },
+  { x: HALF, y: WALL_HEIGHT / 2, z: 0, w: T, h: WALL_HEIGHT, d: MAP_SIZE, kind: "border" },
+  { x: -HALF, y: WALL_HEIGHT / 2, z: 0, w: T, h: WALL_HEIGHT, d: MAP_SIZE, kind: "border" },
 ];
 
 // --- Centro: praça elevada com escadas ao norte e ao sul ---
@@ -40,27 +40,27 @@ const plaza: BoxDef[] = [
   { x: -3, y: 1.75, z: 3, w: 1.5, h: 1.5, d: 1.5, kind: "box" },
   { x: 3, y: 1.75, z: -3, w: 1.5, h: 1.5, d: 1.5, kind: "box" },
   // Muros laterais que fecham a visão leste-oeste pelo meio.
-  { x: -14, y: 1.75, z: 0, w: 1, h: 3.5, d: 10, kind: "building" },
-  { x: 14, y: 1.75, z: 0, w: 1, h: 3.5, d: 10, kind: "building" },
+  { x: -14, y: 1.75, z: 0, w: 1, h: 3.5, d: 10, kind: "wall" },
+  { x: 14, y: 1.75, z: 0, w: 1, h: 3.5, d: 10, kind: "wall" },
 ];
 
 // --- Noroeste: armazém (paredes sem teto, entradas ao sul e leste) ---
 const warehouse: BoxDef[] = [
-  { x: -24, y: 1.75, z: 30, w: 16, h: 3.5, d: 1, kind: "building" },
-  { x: -32, y: 1.75, z: 24, w: 1, h: 3.5, d: 13, kind: "building" },
-  { x: -27, y: 1.75, z: 17, w: 9, h: 3.5, d: 1, kind: "building" },
-  { x: -16, y: 1.75, z: 26, w: 1, h: 3.5, d: 9, kind: "building" },
-  { x: -27, y: 1, z: 25, w: 2, h: 2, d: 2, kind: "box" },
+  { x: -24, y: 1.75, z: 30, w: 16, h: 3.5, d: 1, kind: "wall" },
+  { x: -32, y: 1.75, z: 24, w: 1, h: 3.5, d: 13, kind: "wall" },
+  { x: -27, y: 1.75, z: 17, w: 9, h: 3.5, d: 1, kind: "wall" },
+  { x: -16, y: 1.75, z: 26, w: 1, h: 3.5, d: 9, kind: "wall" },
+  { x: -27, y: 0.75, z: 25, w: 1.5, h: 1.5, d: 1.5, kind: "box" },
   { x: -20, y: 0.75, z: 21, w: 1.5, h: 1.5, d: 1.5, kind: "box" },
 ];
 
 // --- Nordeste: corredor fechado (zona de escopeta) + caixas de apoio ---
 const corridor: BoxDef[] = [
-  { x: 24, y: 1.75, z: 28, w: 20, h: 3.5, d: 1, kind: "building" },
-  { x: 24, y: 1.75, z: 21, w: 20, h: 3.5, d: 1, kind: "building" },
+  { x: 24, y: 1.75, z: 28, w: 20, h: 3.5, d: 1, kind: "wall" },
+  { x: 24, y: 1.75, z: 21, w: 20, h: 3.5, d: 1, kind: "wall" },
   { x: 24, y: 0.6, z: 24.5, w: 1.2, h: 1.2, d: 1.2, kind: "box" },
-  { x: 18, y: 1.25, z: 12, w: 2.5, h: 2.5, d: 2.5, kind: "box" },
-  { x: 28, y: 1, z: 10, w: 2, h: 2, d: 2, kind: "box" },
+  { x: 18, y: 0.9, z: 12, w: 1.8, h: 1.8, d: 1.8, kind: "box" },
+  { x: 28, y: 0.8, z: 10, w: 1.6, h: 1.6, d: 1.6, kind: "box" },
 ];
 
 // --- Sudoeste: campo aberto com pilares (zona de rifle) ---
@@ -73,17 +73,17 @@ const field: BoxDef[] = [
 
 // --- Sudeste: composto em L ---
 const compound: BoxDef[] = [
-  { x: 22, y: 1.75, z: -20, w: 12, h: 3.5, d: 1, kind: "building" },
-  { x: 28, y: 1.75, z: -26, w: 1, h: 3.5, d: 13, kind: "building" },
-  { x: 20, y: 1, z: -26, w: 2, h: 2, d: 2, kind: "box" },
+  { x: 22, y: 1.75, z: -20, w: 12, h: 3.5, d: 1, kind: "wall" },
+  { x: 28, y: 1.75, z: -26, w: 1, h: 3.5, d: 13, kind: "wall" },
+  { x: 20, y: 0.75, z: -26, w: 1.5, h: 1.5, d: 1.5, kind: "box" },
   { x: 24.5, y: 0.75, z: -23, w: 1.5, h: 1.5, d: 1.5, kind: "box" },
   { x: 12, y: 2, z: -14, w: 2, h: 4, d: 2, kind: "pillar" },
 ];
 
 // --- Coberturas soltas nas rotas norte/sul e diagonais ---
 const scatter: BoxDef[] = [
-  { x: 0, y: 1, z: 20, w: 2, h: 2, d: 2, kind: "box" },
-  { x: 0, y: 1, z: -20, w: 2, h: 2, d: 2, kind: "box" },
+  { x: 0, y: 0.8, z: 20, w: 1.6, h: 1.6, d: 1.6, kind: "box" },
+  { x: 0, y: 0.8, z: -20, w: 1.6, h: 1.6, d: 1.6, kind: "box" },
   { x: -10, y: 0.9, z: 8, w: 1.8, h: 1.8, d: 1.8, kind: "box" },
   { x: 10, y: 0.9, z: -8, w: 1.8, h: 1.8, d: 1.8, kind: "box" },
 ];
