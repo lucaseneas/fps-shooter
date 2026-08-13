@@ -14,6 +14,14 @@ function easeOutCubic(t: number): number {
   return 1 - u * u * u;
 }
 
+/** Subida da arma ao iniciar a corrida (s) — mais rápida que a descida. */
+const SPRINT_RAISE_DURATION = 0.22;
+/**
+ * Descida da arma ao parar de correr (s).
+ * Exportada porque o WeaponSystem bloqueia o tiro durante esse mesmo tempo.
+ */
+export const SPRINT_LOWER_DURATION = 0.3;
+
 export class ViewModel {
   private readonly root: TransformNode;
   private readonly fallbackRoot: TransformNode;
@@ -31,6 +39,10 @@ export class ViewModel {
 
   private drawProgress = 1;
   private drawDuration = 0.7;
+
+  /** Pose de corrida: 0 = arma normal, 1 = arma apontada para cima. */
+  private sprinting = false;
+  private sprintBlend = 0;
 
   private readonly basePos = new Vector3(0.28, -0.24, 0.65);
 
@@ -184,10 +196,22 @@ export class ViewModel {
     this.reloading = on;
   }
 
+  /** Corrida levanta a arma; ao parar ela desce em SPRINT_LOWER_DURATION s. */
+  setSprinting(on: boolean): void {
+    this.sprinting = on;
+  }
+
   update(dt: number): void {
     this.kick = Math.max(0, this.kick - dt * 6);
     const targetDip = this.reloading ? 1 : 0;
     this.reloadDip += (targetDip - this.reloadDip) * Math.min(1, dt * 8);
+
+    if (this.sprinting) {
+      this.sprintBlend = Math.min(1, this.sprintBlend + dt / SPRINT_RAISE_DURATION);
+    } else {
+      this.sprintBlend = Math.max(0, this.sprintBlend - dt / SPRINT_LOWER_DURATION);
+    }
+    const run = this.sprintBlend * this.sprintBlend * (3 - 2 * this.sprintBlend);
 
     if (this.drawProgress < 1) {
       this.drawProgress = Math.min(1, this.drawProgress + dt / this.drawDuration);
@@ -195,15 +219,16 @@ export class ViewModel {
     const holster = 1 - easeOutCubic(this.drawProgress);
 
     this.root.position.set(
-      this.basePos.x + holster * 0.08,
-      this.basePos.y - this.reloadDip * 0.18 - holster * 0.52,
-      this.basePos.z - this.kick * 0.07 - holster * 0.22
+      this.basePos.x + holster * 0.08 - run * 0.1,
+      this.basePos.y - this.reloadDip * 0.18 - holster * 0.52 - run * 0.05,
+      this.basePos.z - this.kick * 0.07 - holster * 0.22 - run * 0.12
     );
 
+    // Rotação X negativa aponta o cano para cima (X positivo = cano para baixo).
     this.root.rotation.set(
-      -this.kick * 0.12 + this.reloadDip * 0.5 + holster * 1.15,
-      (this.melee ? this.kick * 0.9 : 0) + holster * 0.25,
-      (this.melee ? -this.kick * 0.55 : 0) - holster * 0.4
+      -this.kick * 0.12 + this.reloadDip * 0.5 + holster * 1.15 - run * 0.85,
+      (this.melee ? this.kick * 0.9 : 0) + holster * 0.25 + run * 0.3,
+      (this.melee ? -this.kick * 0.55 : 0) - holster * 0.4 + run * 0.12
     );
   }
 }

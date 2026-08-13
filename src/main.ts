@@ -1473,7 +1473,9 @@ function canAds(): boolean {
   return (
     player.isPointerLocked &&
     weapons.weapon.id === "sniper" &&
-    !playerDead
+    !playerDead &&
+    // Correndo (mesmo no ar) o scope fica bloqueado — arma está levantada.
+    !(player.isRunning && player.isMoving)
   );
 }
 
@@ -1801,6 +1803,11 @@ engine.runRenderLoop(() => {
   weapons.setAirborne(!player.isGrounded);
   weapons.setMoving(player.isMovingOnGround);
   weapons.setRunning(player.isRunning);
+  // Sprint de verdade exige movimento: parado segurando Shift não levanta a arma.
+  // isMoving (sem exigir chão) mantém a arma levantada ao pular correndo.
+  const sprinting = player.isRunning && player.isMoving;
+  weapons.setSprinting(sprinting);
+  viewModel.setSprinting(sprinting);
   weapons.update(dt);
   updateAds(dt);
   viewModel.update(dt);

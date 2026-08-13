@@ -16,6 +16,7 @@ import {
   weaponMaxRange,
 } from "../../shared/weapons";
 import { EffectsManager } from "./effects";
+import { SPRINT_LOWER_DURATION } from "../player/ViewModel";
 
 import "@babylonjs/core/Culling/ray";
 
@@ -69,6 +70,10 @@ export class WeaponSystem {
   private airborne = false;
   private moving = false;
   private running = false;
+  /** Correndo de verdade (shift + movimento): arma levantada, tiro bloqueado. */
+  private sprinting = false;
+  /** Tiro bloqueado enquanto a arma desce após parar de correr. */
+  private sprintBlockRemaining = 0;
   /** Mira com scope (sniper) — reduz/zera o espalhamento. */
   private aiming = false;
   private readonly recoilShots = new Map<string, number>();
@@ -188,6 +193,7 @@ export class WeaponSystem {
   /** True enquanto o gatilho está pressionado e ainda pode disparar. */
   get isShooting(): boolean {
     if (!this.enabled || !this.triggerHeld || this.reloadRemaining > 0) return false;
+    if (this.sprinting || this.sprintBlockRemaining > 0) return false;
     if (isMeleeWeapon(this.weapon)) return true;
     return this.ammo.get(this.weapon.id)!.mag > 0;
   }
@@ -253,6 +259,16 @@ export class WeaponSystem {
     this.running = on;
   }
 
+  /**
+   * Sprint real (correndo): bloqueia o disparo na hora e mantém o bloqueio
+   * durante a descida da arma (SPRINT_LOWER_DURATION) ao parar de correr.
+   */
+  setSprinting(on: boolean): void {
+    if (on === this.sprinting) return;
+    this.sprinting = on;
+    if (!on) this.sprintBlockRemaining = SPRINT_LOWER_DURATION;
+  }
+
   setAiming(on: boolean): void {
     this.aiming = on;
   }
@@ -302,6 +318,7 @@ export class WeaponSystem {
 
   update(dt: number): void {
     this.cooldown = Math.max(0, this.cooldown - dt);
+    this.sprintBlockRemaining = Math.max(0, this.sprintBlockRemaining - dt);
 
     if (this.reloadRemaining > 0) {
       this.reloadRemaining -= dt;
@@ -318,6 +335,7 @@ export class WeaponSystem {
     }
 
     if (!this.enabled || !this.triggerHeld || this.cooldown > 0) return;
+    if (this.sprinting || this.sprintBlockRemaining > 0) return;
     if (!this.weapon.auto && this.semiAutoLock) return;
 
     this.fire();

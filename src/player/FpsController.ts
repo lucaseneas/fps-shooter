@@ -535,6 +535,17 @@ export class FpsController {
     );
   }
 
+  /** Teclas de movimento pressionadas, mesmo no ar (sprint não para no pulo). */
+  get isMoving(): boolean {
+    return (
+      this.movementEnabled &&
+      (this.keys.has("KeyW") ||
+        this.keys.has("KeyA") ||
+        this.keys.has("KeyS") ||
+        this.keys.has("KeyD"))
+    );
+  }
+
   get isRunning(): boolean {
     return (
       !this.isCrouching &&
