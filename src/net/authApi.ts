@@ -9,6 +9,8 @@ export interface AuthUser {
   deaths: number;
   wins: number;
   matches: number;
+  /** XP de carreira — a patente é derivada dele (shared/ranks). */
+  xp: number;
   createdAt: string;
 }
 

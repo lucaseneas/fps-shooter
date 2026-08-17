@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 120">
+  <defs>
+    <path id="ch" d="M-23,9 L0,-7 L23,9" fill="none" stroke="#e8c14a" stroke-width="9" stroke-linejoin="miter"/>
+  </defs>
+  <rect x="5" y="5" width="86" height="110" rx="12" fill="#232f20" stroke="#10160e" stroke-width="4"/>
+  <rect x="12" y="12" width="72" height="96" rx="8" fill="#2b3a26" stroke="#43583b" stroke-width="2"/>
+  <use href="#ch" transform="translate(48 54)"/>
+</svg>

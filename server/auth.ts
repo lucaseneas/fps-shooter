@@ -13,6 +13,8 @@ export interface AuthUser {
   deaths: number;
   wins: number;
   matches: number;
+  /** XP de carreira — a patente é derivada dele (shared/ranks). */
+  xp: number;
   createdAt: string;
 }
 
@@ -35,6 +37,7 @@ interface UserRow {
   total_deaths: number;
   wins: number;
   matches_played: number;
+  xp: number;
   created_at: Date | string;
 }
 
@@ -58,6 +61,7 @@ function mapUser(row: UserRow): AuthUser {
     deaths: row.total_deaths,
     wins: row.wins,
     matches: row.matches_played,
+    xp: row.xp,
     createdAt: created,
   };
 }
@@ -88,7 +92,7 @@ function validateCredentials(
 }
 
 const USER_SELECT = `
-  id, username, total_kills, total_deaths, wins, matches_played, created_at
+  id, username, total_kills, total_deaths, wins, matches_played, xp, created_at
 `;
 
 export async function register(
@@ -183,21 +187,38 @@ export async function getProfile(token: unknown): Promise<AuthUser | null> {
   return row ? mapUser(row) : null;
 }
 
-/** Soma kills/deaths da partida e, se ganhou, incrementa wins. */
+/** XP de carreira de um usuário (para sincronizar a patente na sala). */
+export async function getUserXp(userId: number): Promise<number | null> {
+  if (!isAuthEnabled()) return null;
+  const result = await getPool().query<{ xp: number }>(
+    `SELECT xp FROM users WHERE id = $1`,
+    [userId]
+  );
+  return result.rows[0]?.xp ?? null;
+}
+
+/**
+ * Soma kills/deaths/xp da partida e, se ganhou, incrementa wins.
+ * Retorna o novo XP total (para refletir a patente no estado da sala).
+ */
 export async function recordMatchStats(
   userId: number,
-  stats: { kills: number; deaths: number; won: boolean }
-): Promise<void> {
-  if (!isAuthEnabled()) return;
+  stats: { kills: number; deaths: number; won: boolean; xpEarned: number }
+): Promise<number | null> {
+  if (!isAuthEnabled()) return null;
   const kills = Math.max(0, Math.floor(stats.kills));
   const deaths = Math.max(0, Math.floor(stats.deaths));
-  await getPool().query(
+  const xp = Math.max(0, Math.floor(stats.xpEarned));
+  const result = await getPool().query<{ xp: number }>(
     `UPDATE users SET
        total_kills = total_kills + $2,
        total_deaths = total_deaths + $3,
        wins = wins + $4,
-       matches_played = matches_played + 1
-     WHERE id = $1`,
-    [userId, kills, deaths, stats.won ? 1 : 0]
+       matches_played = matches_played + 1,
+       xp = xp + $5
+     WHERE id = $1
+     RETURNING xp`,
+    [userId, kills, deaths, stats.won ? 1 : 0, xp]
   );
+  return result.rows[0]?.xp ?? null;
 }

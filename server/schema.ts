@@ -35,6 +35,12 @@ export class PlayerState extends Schema {
   @type("boolean") inMatch = false;
   /** Combatente controlado pela IA. */
   @type("boolean") isBot = false;
+
+  // Sistema de patentes (nível por XP de carreira):
+  /** XP total da carreira — a patente é derivada dele (shared/ranks). */
+  @type("number") xp = 0;
+  /** XP ganho na partida atual (exibido na tela de fim de partida). */
+  @type("number") matchXp = 0;
 }
 
 export class MatchState extends Schema {

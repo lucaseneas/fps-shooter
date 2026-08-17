@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 120">
+  <defs>
+    <path id="st" d="M0,-14 L3.3,-4.5 L13.3,-4.3 L5.3,1.7 L8.2,11.3 L0,5.6 L-8.2,11.3 L-5.3,1.7 L-13.3,-4.3 L-3.3,-4.5 Z"/>
+  </defs>
+  <rect x="5" y="5" width="86" height="110" rx="12" fill="#1f2733" stroke="#0d1117" stroke-width="4"/>
+  <rect x="12" y="12" width="72" height="96" rx="8" fill="#26313f" stroke="#8a7440" stroke-width="2"/>
+  <use href="#st" transform="translate(48 44)" fill="#dfe6ec" stroke="#8b95a1" stroke-width="1.2"/>
+  <use href="#st" transform="translate(48 76)" fill="#dfe6ec" stroke="#8b95a1" stroke-width="1.2"/>
+</svg>

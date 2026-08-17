@@ -45,6 +45,12 @@ import {
   weaponsForCategory,
 } from "../shared/weapons";
 import { AppRoute, navigate, onRouteChange } from "./app/router";
+import {
+  MAX_XP,
+  rankForXp,
+  rankIconUrl,
+  rankProgress,
+} from "../shared/ranks";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const pageLogin = document.getElementById("pageLogin") as HTMLDivElement;
@@ -305,6 +311,19 @@ let session: AuthSession | null = null;
 let guestAllowed = false;
 let lobbyRefreshInterval = 0;
 
+// XP de convidado fica no navegador (contas: o servidor/banco é autoridade).
+const XP_STORAGE_KEY = "fps.xp";
+let guestXp = 0;
+let xpSyncSent = false;
+
+function loadGuestXp(): number {
+  const saved = parseInt(localStorage.getItem(XP_STORAGE_KEY) ?? "0", 10);
+  guestXp = Number.isFinite(saved) ? Math.min(MAX_XP, Math.max(0, saved)) : 0;
+  return guestXp;
+}
+
+loadGuestXp();
+
 function setAuthMessage(text: string, isError = false): void {
   authStatus.textContent = text;
   authStatus.classList.toggle("error", isError);
@@ -335,6 +354,29 @@ function renderProfilePanels(view: ProfilePanelView): void {
   }
 }
 
+/** Escreve a patente (insígnia + barra de XP) em todos os painéis data-rk. */
+function renderRankPanels(xp: number): void {
+  const progress = rankProgress(xp);
+  const { rank, next } = progress;
+  const total = Math.max(0, Math.floor(xp));
+  for (const el of document.querySelectorAll<HTMLElement>("[data-rk]")) {
+    const key = el.dataset.rk;
+    if (key === "icon" && el instanceof HTMLImageElement) {
+      el.src = rankIconUrl(rank);
+      el.alt = rank.name;
+      el.title = rank.name;
+    } else if (key === "name") {
+      el.textContent = rank.name;
+    } else if (key === "fill") {
+      el.style.width = `${Math.round(progress.ratio * 100)}%`;
+    } else if (key === "text") {
+      el.textContent = next
+        ? `${total} XP · faltam ${next.minXp - total} para ${next.name}`
+        : `${total} XP · patente máxima`;
+    }
+  }
+}
+
 function renderProfile(user: AuthUser): void {
   const kd = user.deaths > 0 ? user.kills / user.deaths : user.kills;
   const winRate = user.matches > 0 ? Math.round((user.wins / user.matches) * 100) : 0;
@@ -348,6 +390,7 @@ function renderProfile(user: AuthUser): void {
     kd: kd.toFixed(2),
     winRate: `${winRate}%`,
   });
+  renderRankPanels(user.xp);
 }
 
 function setAuthMode(mode: "login" | "register"): void {
@@ -510,6 +553,7 @@ async function enterHome(): Promise<void> {
       kd: "—",
       winRate: "—",
     });
+    renderRankPanels(loadGuestXp());
   }
   await refreshRooms();
   lobbyRefreshInterval = window.setInterval(refreshRooms, 3000);
@@ -1041,6 +1085,14 @@ function enterLobby(r: Room): void {
 
   setupRoom(r);
   applyDebugMode(debugMode);
+
+  // Convidado: informa o XP local para a patente aparecer na sala.
+  xpSyncSent = false;
+  if (!session) {
+    r.send("syncXp", { xp: loadGuestXp() });
+    xpSyncSent = true;
+  }
+
   navigate("/lobby");
   showLobby();
 }
@@ -1317,6 +1369,8 @@ interface LobbyPlayerRow {
   isSelf: boolean;
   ready: boolean;
   inMatch: boolean;
+  /** XP de carreira — define a insígnia ao lado do nome. */
+  xp: number;
 }
 
 function lobbyStatusChip(row: LobbyPlayerRow, matchStarted: boolean): string {
@@ -1338,6 +1392,13 @@ function renderLobbyPlayers(
     const el = document.createElement("div");
     el.className = `lobby-player-row${row.isSelf ? " self" : ""}`;
 
+    const rank = rankForXp(row.xp);
+    const insignia = document.createElement("img");
+    insignia.className = "lobby-rank";
+    insignia.src = rankIconUrl(rank);
+    insignia.alt = rank.name;
+    insignia.title = rank.name;
+
     const name = document.createElement("span");
     name.className = "lobby-player-name";
     name.textContent = row.name;
@@ -1348,7 +1409,7 @@ function renderLobbyPlayers(
       (row.isHost ? `<span class="lobby-chip host">Líder</span>` : "") +
       lobbyStatusChip(row, matchStarted);
 
-    el.append(name, chips);
+    el.append(insignia, name, chips);
 
     if (canKick && !row.isSelf) {
       const kick = document.createElement("button");
@@ -1387,6 +1448,7 @@ function updateLobbyUi(): void {
       isSelf: id === myId,
       ready: p.ready === true,
       inMatch: p.inMatch === true,
+      xp: p.xp ?? 0,
     });
   });
   rows.sort((a, b) => {
@@ -1464,6 +1526,11 @@ function updateLobbyUi(): void {
       lobbyReadyButton.textContent = "ESTOU PRONTO";
     }
   }
+
+  // Patente no painel do pré-lobby — o XP do estado da sala é o mais
+  // fresco (acabou de subir se houve partida).
+  const meSnap = rows.find((r) => r.isSelf);
+  renderRankPanels(meSnap?.xp ?? (session ? session.user.xp : loadGuestXp()));
 }
 
 chatInput.addEventListener("keydown", (e) => {
@@ -1477,6 +1544,16 @@ function setupRoom(r: Room): void {
   r.onStateChange(() => {
     if (inGame) reconcile(r);
     if (inLobby) updateLobbyUi();
+
+    // Convidado: quando o servidor atualiza o XP (fim de partida),
+    // grava o novo total no navegador.
+    if (!session && xpSyncSent) {
+      const own = getOwnSnapshot(r);
+      if (own && own.xp !== guestXp) {
+        guestXp = own.xp;
+        localStorage.setItem(XP_STORAGE_KEY, String(guestXp));
+      }
+    }
   });
 
   // Início de partida (Start do líder) ou entrada tardia via Play.
@@ -1734,10 +1811,21 @@ function reconcile(r: Room): void {
     player.setMovementEnabled(false);
     weapons.setEnabled(false);
     const own = getOwnSnapshot(r);
+    // XP da partida + detecção de promoção (patente antes/depois).
+    const earned = own?.matchXp ?? 0;
+    const xpAfter = own?.xp ?? 0;
+    const rankBefore = rankForXp(Math.max(0, xpAfter - earned));
+    const rankAfter = rankForXp(xpAfter);
     hud.showEndScreen(
       state.winnerName ?? "?",
       state.winnerName === own?.name,
-      scoreboardRows(r)
+      scoreboardRows(r),
+      {
+        earned,
+        rankName: rankAfter.name,
+        rankIcon: rankIconUrl(rankAfter),
+        rankedUp: earned > 0 && rankAfter.id !== rankBefore.id,
+      }
     );
     document.exitPointerLock();
   }
@@ -1801,6 +1889,7 @@ function scoreboardRows(r: Room): ScoreRow[] {
       deaths: p.deaths,
       isPlayer: id === r.sessionId,
       isHost: id === hostId,
+      xp: p.xp ?? 0,
     });
   });
   return rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);

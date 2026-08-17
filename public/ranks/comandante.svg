@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 120">
+  <defs>
+    <path id="st" d="M0,-14 L3.3,-4.5 L13.3,-4.3 L5.3,1.7 L8.2,11.3 L0,5.6 L-8.2,11.3 L-5.3,1.7 L-13.3,-4.3 L-3.3,-4.5 Z"/>
+  </defs>
+  <rect x="5" y="5" width="86" height="110" rx="12" fill="#1f2733" stroke="#0d1117" stroke-width="4"/>
+  <rect x="12" y="12" width="72" height="96" rx="8" fill="#26313f" stroke="#c9a227" stroke-width="3"/>
+  <path d="M20,80 Q24,46 44,32" fill="none" stroke="#e8c14a" stroke-width="4" stroke-linecap="round"/>
+  <path d="M76,80 Q72,46 52,32" fill="none" stroke="#e8c14a" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="17" cy="70" r="2.5" fill="#e8c14a"/>
+  <circle cx="19" cy="56" r="2.5" fill="#e8c14a"/>
+  <circle cx="26" cy="44" r="2.5" fill="#e8c14a"/>
+  <circle cx="79" cy="70" r="2.5" fill="#e8c14a"/>
+  <circle cx="77" cy="56" r="2.5" fill="#e8c14a"/>
+  <circle cx="70" cy="44" r="2.5" fill="#e8c14a"/>
+  <use href="#st" transform="translate(48 54) scale(1.35)" fill="#ffd24a" stroke="#a8760a" stroke-width="1"/>
+  <rect x="14" y="92" width="68" height="11" fill="#c9a227" stroke="#8a6d1a" stroke-width="1.5"/>
+</svg>

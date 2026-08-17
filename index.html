@@ -107,7 +107,7 @@
         <h2>Placar</h2>
         <table>
           <thead>
-            <tr><th>Jogador</th><th>K</th><th>D</th></tr>
+            <tr><th></th><th>Jogador</th><th>K</th><th>D</th></tr>
           </thead>
           <tbody id="scoreboardBody"></tbody>
         </table>
@@ -122,6 +122,7 @@
       <!-- Fim de partida -->
       <div id="endScreen" class="hidden">
         <div id="endTitle"></div>
+        <div id="endXpSummary" class="hidden"></div>
         <div class="end-actions">
           <button id="restartButton">Voltar ao lobby</button>
           <button id="menuButton" class="secondary">Sair da sala</button>
@@ -196,6 +197,14 @@
             <h2>Jogador</h2>
             <p class="profile-name" data-pf="name">—</p>
             <p class="profile-meta" data-pf="meta"></p>
+            <div class="rank-panel">
+              <img class="rank-insignia" data-rk="icon" src="/ranks/recruta.svg" alt="Patente" />
+              <div class="rank-info">
+                <span class="rank-name" data-rk="name">Recruta</span>
+                <div class="rank-xpbar"><div class="rank-xpfill" data-rk="fill"></div></div>
+                <span class="rank-xptext" data-rk="text">0 XP</span>
+              </div>
+            </div>
             <div class="stats-grid">
               <div class="stat-cell">
                 <span class="stat-value" data-pf="kills">0</span>
@@ -335,6 +344,14 @@
             <h2>Jogador</h2>
             <p class="profile-name" data-pf="name">—</p>
             <p class="profile-meta" data-pf="meta"></p>
+            <div class="rank-panel">
+              <img class="rank-insignia" data-rk="icon" src="/ranks/recruta.svg" alt="Patente" />
+              <div class="rank-info">
+                <span class="rank-name" data-rk="name">Recruta</span>
+                <div class="rank-xpbar"><div class="rank-xpfill" data-rk="fill"></div></div>
+                <span class="rank-xptext" data-rk="text">0 XP</span>
+              </div>
+            </div>
             <div class="stats-grid">
               <div class="stat-cell">
                 <span class="stat-value" data-pf="kills">0</span>

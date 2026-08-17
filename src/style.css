@@ -790,10 +790,25 @@ body {
   padding: 5px 8px;
 }
 
-#scoreboard th:nth-child(n + 2),
-#scoreboard td:nth-child(n + 2) {
+#scoreboard th:nth-child(n + 3),
+#scoreboard td:nth-child(n + 3) {
   text-align: center;
   width: 46px;
+}
+
+/* Coluna da insígnia de patente. */
+#scoreboard th:first-child,
+#scoreboard td:first-child {
+  width: 40px;
+  text-align: center;
+  padding-right: 2px;
+}
+
+#scoreboard .score-rank {
+  width: 26px;
+  height: auto;
+  vertical-align: middle;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
 }
 
 #scoreboard thead th {
@@ -828,7 +843,7 @@ body {
   background: rgba(255, 255, 255, 0.12);
 }
 
-#scoreboard tr.host:not(.me) td:first-child {
+#scoreboard tr.host:not(.me) td:nth-child(2) {
   color: #f0d78c;
 }
 
@@ -882,6 +897,55 @@ body {
   font-weight: 700;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
   margin-bottom: 14px;
+}
+
+#endXpSummary {
+  margin: -4px 0 16px;
+}
+
+#endXpSummary.hidden {
+  display: none;
+}
+
+#endXpSummary .end-xp {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+#endXpSummary .end-rankup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 8px 16px;
+  background: rgba(232, 193, 74, 0.14);
+  border: 1px solid rgba(232, 193, 74, 0.45);
+  border-radius: 10px;
+  color: #f0d78c;
+  font-size: 15px;
+  animation: rankup-pop 0.5s ease;
+}
+
+#endXpSummary .end-rankup img {
+  width: 34px;
+  height: auto;
+}
+
+@keyframes rankup-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 #restartButton {
@@ -1137,6 +1201,60 @@ body {
   color: #8b97a3;
 }
 
+/* ---------- Patente (perfil / pré-lobby) ---------- */
+.rank-panel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: rgba(10, 14, 20, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.rank-insignia {
+  width: 54px;
+  height: auto;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+
+.rank-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.rank-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: #f0d78c;
+}
+
+.rank-xpbar {
+  height: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.rank-xpfill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #b8741e, var(--accent));
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.rank-xptext {
+  font-size: 11px;
+  color: #8b97a3;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1355,6 +1473,13 @@ body {
 
 .lobby-player-row.self {
   border-color: rgba(255, 157, 47, 0.5);
+}
+
+.lobby-rank {
+  width: 30px;
+  height: auto;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
 }
 
 .lobby-player-name {

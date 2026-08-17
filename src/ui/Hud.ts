@@ -4,6 +4,7 @@ import {
   KILL_STREAK_REWARDS,
   nextKillStreakReward,
 } from "../../shared/killStreaks";
+import { rankForXp, rankIconUrl } from "../../shared/ranks";
 
 /** Linha do placar (dados vêm do estado do servidor). */
 export interface ScoreRow {
@@ -12,6 +13,16 @@ export interface ScoreRow {
   deaths: number;
   isPlayer: boolean;
   isHost?: boolean;
+  /** XP de carreira — define a insígnia exibida ao lado do nome. */
+  xp: number;
+}
+
+/** Resumo de XP exibido na tela de fim de partida. */
+export interface EndXpSummary {
+  earned: number;
+  rankName: string;
+  rankIcon: string;
+  rankedUp: boolean;
 }
 
 function el<T extends HTMLElement>(id: string): T {
@@ -43,6 +54,7 @@ export class Hud {
   private readonly deathTimer = el<HTMLDivElement>("deathTimer");
   private readonly endScreen = el<HTMLDivElement>("endScreen");
   private readonly endTitle = el<HTMLDivElement>("endTitle");
+  private readonly endXpSummary = el<HTMLDivElement>("endXpSummary");
   private readonly hitmarker = el<HTMLDivElement>("hitmarker");
   private readonly killBadge = el<HTMLDivElement>("killBadge");
   private readonly killStars = el<HTMLDivElement>("killStars");
@@ -353,8 +365,10 @@ export class Hud {
         ]
           .filter(Boolean)
           .join(" ");
+        const rank = rankForXp(c.xp);
         return `
       <tr class="${c.isPlayer ? "me" : ""}${c.isHost ? " host" : ""}">
+        <td><img class="score-rank" src="${rankIconUrl(rank)}" alt="${rank.name}" title="${rank.name}" /></td>
         <td>${escapeHtml(c.name)}${tags ? ` ${tags}` : ""}</td>
         <td>${c.kills}</td>
         <td>${c.deaths}</td>
@@ -376,10 +390,29 @@ export class Hud {
     this.deathScreen.classList.add("hidden");
   }
 
-  showEndScreen(winnerName: string, playerWon: boolean, rows: ScoreRow[]): void {
+  showEndScreen(
+    winnerName: string,
+    playerWon: boolean,
+    rows: ScoreRow[],
+    xp?: EndXpSummary
+  ): void {
     this.endTitle.textContent = playerWon
       ? "🏆 Você venceu!"
       : `${winnerName} venceu a partida`;
+    if (xp && xp.earned > 0) {
+      this.endXpSummary.innerHTML =
+        `<div class="end-xp">+${xp.earned} XP</div>` +
+        (xp.rankedUp
+          ? `<div class="end-rankup">` +
+            `<img src="${xp.rankIcon}" alt="${xp.rankName}" />` +
+            `<span>Promovido a <b>${xp.rankName}</b></span>` +
+            `</div>`
+          : "");
+      this.endXpSummary.classList.remove("hidden");
+    } else {
+      this.endXpSummary.innerHTML = "";
+      this.endXpSummary.classList.add("hidden");
+    }
     this.endScreen.classList.remove("hidden");
     this.setScoreboardVisible(true, rows);
   }

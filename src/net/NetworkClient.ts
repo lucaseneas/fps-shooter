@@ -30,6 +30,10 @@ export interface PlayerSnapshot {
   ready: boolean;
   inMatch: boolean;
   isBot: boolean;
+
+  // Patentes (XP de carreira / XP da partida)
+  xp: number;
+  matchXp: number;
 }
 
 export interface MatchSnapshot {

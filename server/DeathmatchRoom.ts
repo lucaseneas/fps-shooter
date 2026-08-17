@@ -21,8 +21,9 @@ import {
 } from "../shared/movement";
 import { raycastMap, rayAabb, raySphere, Vec3 } from "./physics";
 import { HITBOX } from "../shared/hitboxes";
-import { verifyToken, recordMatchStats } from "./auth";
+import { verifyToken, recordMatchStats, getUserXp } from "./auth";
 import { isAuthEnabled } from "./db";
+import { XP_RULES, MAX_XP, MULTIKILL_WINDOW_MS } from "../shared/ranks";
 
 const HISTORY_WINDOW_MS = 1000;
 /** Quantos inputs processar por jogador a cada tick (anti-speedhack). */
@@ -126,6 +127,15 @@ export class DeathmatchRoom extends Room<MatchState> {
   private userIds = new Map<string, number>();
   /** Evita gravar stats duas vezes no mesmo fim de partida. */
   private statsRecorded = false;
+
+  // Sistema de patentes:
+  /** Multi-kills da partida por combatente (janela = MULTIKILL_WINDOW_MS). */
+  private matchMultis = new Map<
+    string,
+    { chain: number; expiresAt: number; double: number; triple: number; multi: number }
+  >();
+  /** XP calculado no fim da partida por sessionId (base do persist). */
+  private matchXpEarned = new Map<string, number>();
 
   /** Timestamp (ms) em que cada morto deve renascer. */
   private respawnAt = new Map<string, number>();
@@ -274,6 +284,17 @@ export class DeathmatchRoom extends Room<MatchState> {
       }
     });
 
+    /**
+     * Convidados informam o XP guardado no navegador para a patente
+     * aparecer no pré-lobby/placar. Com conta autenticada o banco manda.
+     */
+    this.onMessage("syncXp", (client, msg: { xp?: unknown }) => {
+      if (this.userIds.has(client.sessionId)) return;
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      p.xp = clampInt(msg?.xp, 0, MAX_XP, 0);
+    });
+
     this.onMessage("chat", (client, msg: { text?: unknown }) => {
       const player = this.state.players.get(client.sessionId);
       if (!player || typeof msg?.text !== "string") return;
@@ -333,6 +354,13 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     if (account) {
       this.userIds.set(client.sessionId, account.id);
+      // Patente: carrega o XP de carreira do banco para o estado da sala.
+      void getUserXp(account.id)
+        .then((xp) => {
+          const pl = this.state.players.get(client.sessionId);
+          if (pl && typeof xp === "number") pl.xp = xp;
+        })
+        .catch((err) => console.error("[auth] xp:", err));
     }
 
     this.pendingInputs.set(client.sessionId, []);
@@ -360,6 +388,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.lastChatAt.delete(id);
     this.respawnAt.delete(id);
     this.deathPos.delete(id);
+    this.matchMultis.delete(id);
+    this.matchXpEarned.delete(id);
 
     if (this.state.hostId === id) {
       let nextHost = "";
@@ -558,6 +588,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.matchResetAt = 0;
     this.respawnAt.clear();
     this.deathPos.clear();
+    this.matchMultis.clear();
+    this.matchXpEarned.clear();
 
     for (const [id, p] of this.state.players) {
       p.kills = 0;
@@ -566,6 +598,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.activeStreak = "";
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
+      p.matchXp = 0;
       p.health = CONFIG.playerMaxHealth;
       p.alive = false;
       this.history.set(id, []);
@@ -608,6 +641,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.matchResetAt = 0;
     this.respawnAt.clear();
     this.deathPos.clear();
+    this.matchMultis.clear();
+    this.matchXpEarned.clear();
 
     for (const [, p] of this.state.players) {
       p.kills = 0;
@@ -616,6 +651,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.activeStreak = "";
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
+      p.matchXp = 0;
       p.health = CONFIG.playerMaxHealth;
       p.alive = false;
       p.ready = false;
@@ -865,6 +901,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     if (attacker && attackerId !== targetId) {
       attacker.kills++;
       attacker.killStreak++;
+      this.trackMultikill(attackerId);
       const reward = KILL_STREAK_REWARDS.find((r) => r.kills === attacker.killStreak);
       if (reward) {
         attacker.activeStreak = reward.id;
@@ -897,26 +934,75 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.state.matchOver = true;
       this.state.winnerName = attacker.name;
       this.matchResetAt = Date.now() + CONFIG.matchResetDelay * 1000;
+      this.awardMatchXp(attackerId);
       this.broadcast("matchEnd", { winnerName: attacker.name });
       void this.persistMatchStats(attackerId);
     }
     return true;
   }
 
-  /** Grava kills/deaths/wins dos humanos autenticados no fim da partida. */
+  /**
+   * Contabiliza a sequência de multi-kill (double/triple/multi) para o
+   * XP de fim de partida — mesma janela de 5s das medalhas do HUD.
+   */
+  private trackMultikill(id: string): void {
+    const now = Date.now();
+    let m = this.matchMultis.get(id);
+    if (!m) {
+      m = { chain: 0, expiresAt: 0, double: 0, triple: 0, multi: 0 };
+      this.matchMultis.set(id, m);
+    }
+    m.chain = now <= m.expiresAt ? m.chain + 1 : 1;
+    m.expiresAt = now + MULTIKILL_WINDOW_MS;
+    if (m.chain === 2) m.double++;
+    else if (m.chain === 3) m.triple++;
+    else if (m.chain >= 4) m.multi++;
+  }
+
+  /**
+   * Concede o XP de fim de partida a todo humano que participou:
+   * base + kills + multi-kills + vitória. O total (p.xp) é otimista —
+   * contas autenticadas são corrigidas pelo RETURNING do banco.
+   */
+  private awardMatchXp(winnerId: string): void {
+    for (const [id, p] of this.state.players) {
+      if (this.bots.has(id) || !p.inMatch) continue;
+      const multi = this.matchMultis.get(id);
+      const earned =
+        XP_RULES.matchPlayed +
+        p.kills * XP_RULES.kill +
+        (multi?.double ?? 0) * XP_RULES.doubleKill +
+        (multi?.triple ?? 0) * XP_RULES.tripleKill +
+        (multi?.multi ?? 0) * XP_RULES.multiKill +
+        (id === winnerId ? XP_RULES.victory : 0);
+      p.matchXp = earned;
+      p.xp += earned;
+      this.matchXpEarned.set(id, earned);
+    }
+  }
+
+  /** Grava kills/deaths/wins/xp dos humanos autenticados no fim da partida. */
   private async persistMatchStats(winnerId: string): Promise<void> {
     if (this.statsRecorded || !isAuthEnabled()) return;
     this.statsRecorded = true;
     const jobs: Promise<void>[] = [];
     for (const [sessionId, userId] of this.userIds) {
       const p = this.state.players.get(sessionId);
-      if (!p) continue;
+      // Quem ficou no pré-lobby não jogou: sem stats nem XP.
+      if (!p || !p.inMatch) continue;
+      const xpEarned = this.matchXpEarned.get(sessionId) ?? 0;
       jobs.push(
         recordMatchStats(userId, {
           kills: p.kills,
           deaths: p.deaths,
           won: sessionId === winnerId,
-        }).catch((err) => console.error("[auth] stats:", err))
+          xpEarned,
+        })
+          .then((totalXp) => {
+            const pl = this.state.players.get(sessionId);
+            if (pl && typeof totalXp === "number") pl.xp = totalXp;
+          })
+          .catch((err) => console.error("[auth] stats:", err))
       );
     }
     await Promise.all(jobs);
