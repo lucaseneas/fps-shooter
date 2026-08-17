@@ -15,27 +15,27 @@ export interface RankDef {
 
 export const RANKS: readonly RankDef[] = [
   { id: "recruta", name: "Recruta", minXp: 0 },
-  { id: "soldado2", name: "Soldado 2ª Classe", minXp: 150 },
-  { id: "soldado1", name: "Soldado 1ª Classe", minXp: 400 },
-  { id: "cabo", name: "Cabo", minXp: 800 },
-  { id: "sargento3", name: "Sargento 3ª Classe", minXp: 1400 },
-  { id: "sargento2", name: "Sargento 2ª Classe", minXp: 2200 },
-  { id: "sargento1", name: "Sargento 1ª Classe", minXp: 3200 },
-  { id: "subtenente", name: "Subtenente", minXp: 4500 },
-  { id: "aspirante", name: "Aspirante", minXp: 6000 },
-  { id: "tenente2", name: "Tenente 2ª Classe", minXp: 8000 },
-  { id: "tenente1", name: "Tenente 1ª Classe", minXp: 10500 },
-  { id: "capitao", name: "Capitão", minXp: 13500 },
-  { id: "major", name: "Major", minXp: 17500 },
-  { id: "tenente_coronel", name: "Tenente-Coronel", minXp: 23000 },
-  { id: "coronel", name: "Coronel", minXp: 30000 },
-  { id: "comandante", name: "Comandante", minXp: 40000 },
+  { id: "soldado2", name: "Soldado 2ª Classe", minXp: 450 },
+  { id: "soldado1", name: "Soldado 1ª Classe", minXp: 1200 },
+  { id: "cabo", name: "Cabo", minXp: 2400 },
+  { id: "sargento3", name: "Sargento 3ª Classe", minXp: 4200 },
+  { id: "sargento2", name: "Sargento 2ª Classe", minXp: 6600 },
+  { id: "sargento1", name: "Sargento 1ª Classe", minXp: 9600 },
+  { id: "subtenente", name: "Subtenente", minXp: 13500 },
+  { id: "aspirante", name: "Aspirante", minXp: 18000 },
+  { id: "tenente2", name: "Tenente 2ª Classe", minXp: 24000 },
+  { id: "tenente1", name: "Tenente 1ª Classe", minXp: 31500 },
+  { id: "capitao", name: "Capitão", minXp: 40500 },
+  { id: "major", name: "Major", minXp: 52500 },
+  { id: "tenente_coronel", name: "Tenente-Coronel", minXp: 69000 },
+  { id: "coronel", name: "Coronel", minXp: 90000 },
+  { id: "comandante", name: "Comandante", minXp: 120000 },
 ] as const;
 
 /**
  * Regras de XP concedido ao fim de cada partida.
- * Uma partida boa (20 kills + vitória) vale ~265 XP: Soldado 2ª sai na
- * primeira partida, mas Sargento 2ª pede ~8–9 partidas boas.
+ * Uma partida boa (20 kills + vitória) vale ~265 XP: Soldado 2ª sai em
+ * ~2 partidas, Sargento 2ª em ~25, Comandante em ~450 partidas boas.
  */
 export const XP_RULES = {
   /** XP base por jogar a partida até o fim. */
