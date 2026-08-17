@@ -18,6 +18,13 @@ export interface ScoreRow {
   xp: number;
 }
 
+/** Resumo de gold exibido na tela de fim de partida. */
+export interface EndGoldSummary {
+  earned: number;
+  /** Detalhamento: uma linha por fonte de gold (participação, kills...). */
+  lines: Array<{ label: string; gold: number }>;
+}
+
 /** Resumo de XP exibido na tela de fim de partida. */
 export interface EndXpSummary {
   earned: number;
@@ -26,6 +33,8 @@ export interface EndXpSummary {
   rankedUp: boolean;
   /** Detalhamento: uma linha por fonte de XP (participação, kills...). */
   lines: Array<{ label: string; xp: number }>;
+  /** Gold ganho na partida (base + desempenho + vitória). */
+  gold?: EndGoldSummary;
 }
 
 function el<T extends HTMLElement>(id: string): T {
@@ -52,6 +61,8 @@ export class Hud {
   private readonly killFeed = el<HTMLDivElement>("killFeed");
   private readonly scoreboard = el<HTMLDivElement>("scoreboard");
   private readonly scoreboardBody = el<HTMLTableSectionElement>("scoreboardBody");
+  /** Posição original do placar no DOM (ele entra no fluxo da tela de fim). */
+  private scoreboardHome: { parent: HTMLElement; next: ChildNode | null } | null = null;
   private readonly deathScreen = el<HTMLDivElement>("deathScreen");
   private readonly deathInfo = el<HTMLDivElement>("deathInfo");
   private readonly deathTimer = el<HTMLDivElement>("deathTimer");
@@ -398,8 +409,21 @@ export class Hud {
   }
 
   setScoreboardVisible(on: boolean, rows?: ScoreRow[]): void {
+    if (!on) this.restoreScoreboard();
     this.scoreboard.classList.toggle("hidden", !on);
     if (on && rows) this.renderScoreboard(rows);
+  }
+
+  /** Tira o placar do fluxo da tela de fim e o devolve ao HUD in-game. */
+  private restoreScoreboard(): void {
+    if (!this.scoreboard.classList.contains("end-mode")) return;
+    this.scoreboard.classList.remove("end-mode");
+    const home = this.scoreboardHome;
+    if (home) {
+      const anchor =
+        home.next && home.next.parentNode === home.parent ? home.next : null;
+      home.parent.insertBefore(this.scoreboard, anchor);
+    }
   }
 
   renderScoreboard(rows: ScoreRow[]): void {
@@ -446,7 +470,9 @@ export class Hud {
       ? "🏆 Você venceu!"
       : `${winnerName} venceu a partida`;
     if (xp && xp.earned > 0) {
-      const linesHtml =
+      const gold = xp.gold;
+      const hasGold = gold !== undefined && gold.earned > 0;
+      const xpLinesHtml =
         xp.lines.length > 0
           ? `<div class="end-xp-lines">` +
             xp.lines
@@ -457,8 +483,27 @@ export class Hud {
               .join("") +
             `</div>`
           : "";
+      const goldLinesHtml =
+        hasGold && gold.lines.length > 0
+          ? `<div class="end-xp-lines end-gold-lines">` +
+            gold.lines
+              .map(
+                (l) =>
+                  `<div class="end-xp-line end-gold-line"><span>${escapeHtml(l.label)}</span><span>+${l.gold}</span></div>`
+              )
+              .join("") +
+            `</div>`
+          : "";
+      const totalsHtml = hasGold
+        ? `<div class="end-totals"><div class="end-xp">+${xp.earned} XP</div><div class="end-gold">+${gold.earned} Gold</div></div>`
+        : `<div class="end-xp">+${xp.earned} XP</div>`;
+      // XP e Gold lado a lado: reduz a altura do resumo na tela de fim.
+      const linesHtml =
+        xpLinesHtml && goldLinesHtml
+          ? `<div class="end-rewards">${xpLinesHtml}${goldLinesHtml}</div>`
+          : xpLinesHtml + goldLinesHtml;
       this.endXpSummary.innerHTML =
-        `<div class="end-xp">+${xp.earned} XP</div>` +
+        totalsHtml +
         linesHtml +
         (xp.rankedUp
           ? `<div class="end-rankup">` +
@@ -471,8 +516,27 @@ export class Hud {
       this.endXpSummary.innerHTML = "";
       this.endXpSummary.classList.add("hidden");
     }
+    // Placar entra no fluxo da tela de fim (entre o resumo e os botões),
+    // assim o resumo de XP/Gold nunca fica por cima dele.
+    if (!this.scoreboardHome) {
+      this.scoreboardHome = {
+        parent: this.scoreboard.parentElement ?? document.body,
+        next: this.scoreboard.nextSibling,
+      };
+    }
+    this.endScreen.insertBefore(
+      this.scoreboard,
+      this.endScreen.querySelector(".end-actions")
+    );
+    this.scoreboard.classList.add("end-mode");
     this.endScreen.classList.remove("hidden");
     this.setScoreboardVisible(true, rows);
+  }
+
+  /** Esconde a tela de fim e devolve o placar ao overlay do HUD. */
+  hideEndScreen(): void {
+    this.endScreen.classList.add("hidden");
+    this.setScoreboardVisible(false);
   }
 
   updateActiveStreak(streakName: string, timeLeft: number): void {

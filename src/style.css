@@ -879,32 +879,70 @@ body {
 }
 
 /* ---------- Fim de partida ---------- */
+/* Overlay em coluna: título → recompensas → placar → botões, sem sobrepor. */
 #endScreen {
   position: absolute;
-  top: 18%;
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  justify-content: safe center;
+  gap: 14px;
   text-align: center;
   pointer-events: auto;
+  overflow-y: auto;
+  padding: 24px 16px;
 }
 
 #endScreen.hidden {
   display: none;
 }
 
+/* Placar dentro do fluxo da tela de fim (classe end-mode no elemento). */
+#endScreen #scoreboard {
+  position: static;
+  transform: none;
+  flex-shrink: 0;
+  max-height: 38vh;
+  overflow-y: auto;
+}
+
 #endTitle {
   font-size: 34px;
   font-weight: 700;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 
 #endXpSummary {
-  margin: -4px 0 16px;
+  margin: 0;
 }
 
 #endXpSummary.hidden {
   display: none;
+}
+
+/* Totais (+XP / +Gold) lado a lado. */
+#endXpSummary .end-totals {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 28px;
+}
+
+/* Detalhamentos de XP e Gold lado a lado (quebram em telas estreitas). */
+#endXpSummary .end-rewards {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+#endXpSummary .end-rewards .end-xp-lines {
+  margin-top: 0;
 }
 
 #endXpSummary .end-xp {
@@ -935,6 +973,22 @@ body {
 #endXpSummary .end-xp-line span:last-child {
   color: var(--accent);
   font-weight: 700;
+}
+
+/* Gold no fim de partida: mesmo layout do XP, cor de ouro. */
+#endXpSummary .end-gold {
+  font-size: 22px;
+  font-weight: 700;
+  color: #f0c14b;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 0 14px rgba(240, 193, 75, 0.3);
+}
+
+#endXpSummary .end-gold-lines {
+  border-color: rgba(240, 193, 75, 0.22);
+}
+
+#endXpSummary .end-gold-line span:last-child {
+  color: #f0c14b;
 }
 
 #endXpSummary .end-rankup {
@@ -1307,6 +1361,22 @@ body {
   text-transform: uppercase;
   letter-spacing: 1px;
   color: #8b97a3;
+}
+
+/* Célula de gold em destaque: ocupa a linha toda do grid de stats. */
+.gold-cell {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, rgba(90, 72, 18, 0.35), rgba(10, 14, 20, 0.55));
+  border-color: rgba(240, 193, 75, 0.35);
+}
+
+.gold-cell .stat-value {
+  color: #f0c14b;
+  text-shadow: 0 0 12px rgba(240, 193, 75, 0.35);
+}
+
+.gold-cell .stat-label {
+  color: #c9a94e;
 }
 
 .home-tip {

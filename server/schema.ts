@@ -47,6 +47,12 @@ export class PlayerState extends Schema {
   @type("number") doubleKills = 0;
   @type("number") tripleKills = 0;
   @type("number") multiKills = 0;
+
+  // Sistema de gold (moeda de recompensa — shared/gold):
+  /** Gold total acumulado entre partidas. */
+  @type("number") gold = 0;
+  /** Gold ganho na partida atual (exibido na tela de fim de partida). */
+  @type("number") matchGold = 0;
 }
 
 export class MatchState extends Schema {

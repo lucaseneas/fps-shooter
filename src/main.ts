@@ -52,6 +52,7 @@ import {
   rankIconUrl,
   rankProgress,
 } from "../shared/ranks";
+import { GOLD_RULES, MAX_GOLD } from "../shared/gold";
 import {
   KILL_STREAK_KEY_CODES,
   KILL_STREAK_REWARDS,
@@ -316,9 +317,11 @@ let session: AuthSession | null = null;
 let guestAllowed = false;
 let lobbyRefreshInterval = 0;
 
-// XP de convidado fica no navegador (contas: o servidor/banco é autoridade).
+// XP e gold de convidado ficam no navegador (contas: o servidor/banco é autoridade).
 const XP_STORAGE_KEY = "fps.xp";
+const GOLD_STORAGE_KEY = "fps.gold";
 let guestXp = 0;
+let guestGold = 0;
 let xpSyncSent = false;
 
 function loadGuestXp(): number {
@@ -327,7 +330,14 @@ function loadGuestXp(): number {
   return guestXp;
 }
 
+function loadGuestGold(): number {
+  const saved = parseInt(localStorage.getItem(GOLD_STORAGE_KEY) ?? "0", 10);
+  guestGold = Number.isFinite(saved) ? Math.min(MAX_GOLD, Math.max(0, saved)) : 0;
+  return guestGold;
+}
+
 loadGuestXp();
+loadGuestGold();
 
 function setAuthMessage(text: string, isError = false): void {
   authStatus.textContent = text;
@@ -349,6 +359,7 @@ interface ProfilePanelView {
   matches: string;
   kd: string;
   winRate: string;
+  gold: string;
 }
 
 /** Escreve o perfil em TODOS os painéis (home e pré-lobby usam data-pf). */
@@ -394,8 +405,17 @@ function renderProfile(user: AuthUser): void {
     matches: String(user.matches),
     kd: kd.toFixed(2),
     winRate: `${winRate}%`,
+    gold: String(Math.max(0, Math.floor(user.gold))),
   });
   renderRankPanels(user.xp);
+}
+
+/** Atualiza só as células de gold (usado no pré-lobby, pós-partida). */
+function renderGoldPanels(gold: number): void {
+  const total = String(Math.max(0, Math.floor(gold)));
+  for (const el of document.querySelectorAll<HTMLElement>('[data-pf="gold"]')) {
+    el.textContent = total;
+  }
 }
 
 function setAuthMode(mode: "login" | "register"): void {
@@ -557,6 +577,7 @@ async function enterHome(): Promise<void> {
       matches: "—",
       kd: "—",
       winRate: "—",
+      gold: String(loadGuestGold()),
     });
     renderRankPanels(loadGuestXp());
   }
@@ -1091,10 +1112,11 @@ function enterLobby(r: Room): void {
   setupRoom(r);
   applyDebugMode(debugMode);
 
-  // Convidado: informa o XP local para a patente aparecer na sala.
+  // Convidado: informa o XP e o gold locais para aparecerem na sala.
   xpSyncSent = false;
   if (!session) {
     r.send("syncXp", { xp: loadGuestXp() });
+    r.send("syncGold", { gold: loadGuestGold() });
     xpSyncSent = true;
   }
 
@@ -1174,11 +1196,10 @@ function cleanupMatchLocal(): void {
   player.setLookEnabled(true);
 
   hud.hideDeathScreen();
-  hud.setScoreboardVisible(false);
+  hud.hideEndScreen();
   hud.setHealth(CONFIG.playerMaxHealth);
   hud.setKills(0);
   hud.clearAllKillStreaks();
-  document.getElementById("endScreen")!.classList.add("hidden");
 
   settingsModal.classList.add("hidden");
   closeCreateRoomModal();
@@ -1376,6 +1397,8 @@ interface LobbyPlayerRow {
   inMatch: boolean;
   /** XP de carreira — define a insígnia ao lado do nome. */
   xp: number;
+  /** Gold total — exibido no próprio painel do pré-lobby. */
+  gold: number;
 }
 
 function lobbyStatusChip(row: LobbyPlayerRow, matchStarted: boolean): string {
@@ -1454,6 +1477,7 @@ function updateLobbyUi(): void {
       ready: p.ready === true,
       inMatch: p.inMatch === true,
       xp: p.xp ?? 0,
+      gold: p.gold ?? 0,
     });
   });
   rows.sort((a, b) => {
@@ -1532,10 +1556,11 @@ function updateLobbyUi(): void {
     }
   }
 
-  // Patente no painel do pré-lobby — o XP do estado da sala é o mais
+  // Patente e gold no painel do pré-lobby — o estado da sala é o mais
   // fresco (acabou de subir se houve partida).
   const meSnap = rows.find((r) => r.isSelf);
   renderRankPanels(meSnap?.xp ?? (session ? session.user.xp : loadGuestXp()));
+  renderGoldPanels(meSnap?.gold ?? (session ? session.user.gold : loadGuestGold()));
 }
 
 chatInput.addEventListener("keydown", (e) => {
@@ -1550,13 +1575,17 @@ function setupRoom(r: Room): void {
     if (inGame) reconcile(r);
     if (inLobby) updateLobbyUi();
 
-    // Convidado: quando o servidor atualiza o XP (fim de partida),
-    // grava o novo total no navegador.
+    // Convidado: quando o servidor atualiza o XP/gold (fim de partida),
+    // grava os novos totais no navegador.
     if (!session && xpSyncSent) {
       const own = getOwnSnapshot(r);
       if (own && own.xp !== guestXp) {
         guestXp = own.xp;
         localStorage.setItem(XP_STORAGE_KEY, String(guestXp));
+      }
+      if (own && own.gold !== guestGold) {
+        guestGold = own.gold;
+        localStorage.setItem(GOLD_STORAGE_KEY, String(guestGold));
       }
     }
   });
@@ -1761,8 +1790,7 @@ function setupRoom(r: Room): void {
 
   r.onMessage("matchReset", () => {
     endScreenShown = false;
-    document.getElementById("endScreen")!.classList.add("hidden");
-    hud.setScoreboardVisible(false);
+    hud.hideEndScreen();
     hud.setKills(0);
     hud.clearAllKillStreaks();
   });
@@ -1834,12 +1862,18 @@ function reconcile(r: Room): void {
     const rankAfter = rankForXp(xpAfter);
     const playerWon = state.winnerName === own?.name;
     const xpLines: Array<{ label: string; xp: number }> = [];
+    const goldLines: Array<{ label: string; gold: number }> = [];
     if (earned > 0 && own) {
       xpLines.push({ label: "Partida jogada", xp: XP_RULES.matchPlayed });
+      goldLines.push({ label: "Partida jogada", gold: GOLD_RULES.matchPlayed });
       if (own.kills > 0) {
         xpLines.push({
           label: `${own.kills} kill${own.kills > 1 ? "s" : ""}`,
           xp: own.kills * XP_RULES.kill,
+        });
+        goldLines.push({
+          label: `${own.kills} kill${own.kills > 1 ? "s" : ""}`,
+          gold: own.kills * GOLD_RULES.kill,
         });
       }
       if (own.doubleKills > 0) {
@@ -1847,11 +1881,19 @@ function reconcile(r: Room): void {
           label: `Double kill ×${own.doubleKills}`,
           xp: own.doubleKills * XP_RULES.doubleKill,
         });
+        goldLines.push({
+          label: `Double kill ×${own.doubleKills}`,
+          gold: own.doubleKills * GOLD_RULES.doubleKill,
+        });
       }
       if (own.tripleKills > 0) {
         xpLines.push({
           label: `Triple kill ×${own.tripleKills}`,
           xp: own.tripleKills * XP_RULES.tripleKill,
+        });
+        goldLines.push({
+          label: `Triple kill ×${own.tripleKills}`,
+          gold: own.tripleKills * GOLD_RULES.tripleKill,
         });
       }
       if (own.multiKills > 0) {
@@ -1859,8 +1901,15 @@ function reconcile(r: Room): void {
           label: `Multi kill ×${own.multiKills}`,
           xp: own.multiKills * XP_RULES.multiKill,
         });
+        goldLines.push({
+          label: `Multi kill ×${own.multiKills}`,
+          gold: own.multiKills * GOLD_RULES.multiKill,
+        });
       }
-      if (playerWon) xpLines.push({ label: "Vitória", xp: XP_RULES.victory });
+      if (playerWon) {
+        xpLines.push({ label: "Vitória", xp: XP_RULES.victory });
+        goldLines.push({ label: "Vitória", gold: GOLD_RULES.victory });
+      }
     }
     hud.showEndScreen(
       state.winnerName ?? "?",
@@ -1872,6 +1921,7 @@ function reconcile(r: Room): void {
         rankIcon: rankIconUrl(rankAfter),
         rankedUp: earned > 0 && rankAfter.id !== rankBefore.id,
         lines: xpLines,
+        gold: { earned: own?.matchGold ?? 0, lines: goldLines },
       }
     );
     document.exitPointerLock();
@@ -2197,8 +2247,7 @@ function switchTo(index: number): void {
 }
 
 restartButton.addEventListener("click", () => {
-  document.getElementById("endScreen")!.classList.add("hidden");
-  hud.setScoreboardVisible(false);
+  hud.hideEndScreen();
   audio.resume();
   returnToLobby();
 });

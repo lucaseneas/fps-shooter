@@ -11,6 +11,8 @@ export interface AuthUser {
   matches: number;
   /** XP de carreira — a patente é derivada dele (shared/ranks). */
   xp: number;
+  /** Gold acumulado — moeda de recompensa (shared/gold). */
+  gold: number;
   createdAt: string;
 }
 

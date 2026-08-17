@@ -40,6 +40,10 @@ export interface PlayerSnapshot {
   doubleKills: number;
   tripleKills: number;
   multiKills: number;
+
+  // Gold (total acumulado / ganho na partida)
+  gold: number;
+  matchGold: number;
 }
 
 export interface MatchSnapshot {

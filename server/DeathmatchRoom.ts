@@ -21,9 +21,10 @@ import {
 } from "../shared/movement";
 import { raycastMap, rayAabb, raySphere, Vec3 } from "./physics";
 import { HITBOX } from "../shared/hitboxes";
-import { verifyToken, recordMatchStats, getUserXp } from "./auth";
+import { verifyToken, recordMatchStats, getUserProgress } from "./auth";
 import { isAuthEnabled } from "./db";
 import { XP_RULES, MAX_XP, MULTIKILL_WINDOW_MS } from "../shared/ranks";
+import { MAX_GOLD, matchGoldFor } from "../shared/gold";
 
 const HISTORY_WINDOW_MS = 1000;
 /** Quantos inputs processar por jogador a cada tick (anti-speedhack). */
@@ -136,6 +137,8 @@ export class DeathmatchRoom extends Room<MatchState> {
   >();
   /** XP calculado no fim da partida por sessionId (base do persist). */
   private matchXpEarned = new Map<string, number>();
+  /** Gold calculado no fim da partida por sessionId (base do persist). */
+  private matchGoldEarned = new Map<string, number>();
 
   /** Timestamp (ms) em que cada morto deve renascer. */
   private respawnAt = new Map<string, number>();
@@ -312,6 +315,14 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.xp = clampInt(msg?.xp, 0, MAX_XP, 0);
     });
 
+    /** Convidados também informam o gold guardado no navegador. */
+    this.onMessage("syncGold", (client, msg: { gold?: unknown }) => {
+      if (this.userIds.has(client.sessionId)) return;
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      p.gold = clampInt(msg?.gold, 0, MAX_GOLD, 0);
+    });
+
     this.onMessage("chat", (client, msg: { text?: unknown }) => {
       const player = this.state.players.get(client.sessionId);
       if (!player || typeof msg?.text !== "string") return;
@@ -371,13 +382,16 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     if (account) {
       this.userIds.set(client.sessionId, account.id);
-      // Patente: carrega o XP de carreira do banco para o estado da sala.
-      void getUserXp(account.id)
-        .then((xp) => {
+      // Patente/gold: carrega o progresso de carreira do banco para a sala.
+      void getUserProgress(account.id)
+        .then((progress) => {
           const pl = this.state.players.get(client.sessionId);
-          if (pl && typeof xp === "number") pl.xp = xp;
+          if (pl && progress) {
+            pl.xp = progress.xp;
+            pl.gold = progress.gold;
+          }
         })
-        .catch((err) => console.error("[auth] xp:", err));
+        .catch((err) => console.error("[auth] progress:", err));
     }
 
     this.pendingInputs.set(client.sessionId, []);
@@ -407,6 +421,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.deathPos.delete(id);
     this.matchMultis.delete(id);
     this.matchXpEarned.delete(id);
+    this.matchGoldEarned.delete(id);
 
     if (this.state.hostId === id) {
       let nextHost = "";
@@ -640,6 +655,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.deathPos.clear();
     this.matchMultis.clear();
     this.matchXpEarned.clear();
+    this.matchGoldEarned.clear();
 
     for (const [id, p] of this.state.players) {
       p.kills = 0;
@@ -697,6 +713,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.deathPos.clear();
     this.matchMultis.clear();
     this.matchXpEarned.clear();
+    this.matchGoldEarned.clear();
 
     for (const [, p] of this.state.players) {
       p.kills = 0;
@@ -990,7 +1007,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.state.matchOver = true;
       this.state.winnerName = attacker.name;
       this.matchResetAt = Date.now() + CONFIG.matchResetDelay * 1000;
-      this.awardMatchXp(attackerId);
+      this.awardMatchRewards(attackerId);
       this.broadcast("matchEnd", { winnerName: attacker.name });
       void this.persistMatchStats(attackerId);
     }
@@ -1025,11 +1042,11 @@ export class DeathmatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Concede o XP de fim de partida a todo humano que participou:
-   * base + kills + multi-kills + vitória. O total (p.xp) é otimista —
-   * contas autenticadas são corrigidas pelo RETURNING do banco.
+   * Concede o XP e o gold de fim de partida a todo humano que participou:
+   * base + kills + multi-kills + vitória. Os totais (p.xp / p.gold) são
+   * otimistas — contas autenticadas são corrigidas pelo RETURNING do banco.
    */
-  private awardMatchXp(winnerId: string): void {
+  private awardMatchRewards(winnerId: string): void {
     for (const [id, p] of this.state.players) {
       if (this.bots.has(id) || !p.inMatch) continue;
       const earned =
@@ -1042,29 +1059,45 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.matchXp = earned;
       p.xp += earned;
       this.matchXpEarned.set(id, earned);
+
+      const goldEarned = matchGoldFor({
+        kills: p.kills,
+        doubleKills: p.doubleKills,
+        tripleKills: p.tripleKills,
+        multiKills: p.multiKills,
+        won: id === winnerId,
+      });
+      p.matchGold = goldEarned;
+      p.gold += goldEarned;
+      this.matchGoldEarned.set(id, goldEarned);
     }
   }
 
-  /** Grava kills/deaths/wins/xp dos humanos autenticados no fim da partida. */
+  /** Grava kills/deaths/wins/xp/gold dos humanos autenticados no fim da partida. */
   private async persistMatchStats(winnerId: string): Promise<void> {
     if (this.statsRecorded || !isAuthEnabled()) return;
     this.statsRecorded = true;
     const jobs: Promise<void>[] = [];
     for (const [sessionId, userId] of this.userIds) {
       const p = this.state.players.get(sessionId);
-      // Quem ficou no pré-lobby não jogou: sem stats nem XP.
+      // Quem ficou no pré-lobby não jogou: sem stats nem recompensas.
       if (!p || !p.inMatch) continue;
       const xpEarned = this.matchXpEarned.get(sessionId) ?? 0;
+      const goldEarned = this.matchGoldEarned.get(sessionId) ?? 0;
       jobs.push(
         recordMatchStats(userId, {
           kills: p.kills,
           deaths: p.deaths,
           won: sessionId === winnerId,
           xpEarned,
+          goldEarned,
         })
-          .then((totalXp) => {
+          .then((totals) => {
             const pl = this.state.players.get(sessionId);
-            if (pl && typeof totalXp === "number") pl.xp = totalXp;
+            if (pl && totals) {
+              pl.xp = totals.xp;
+              pl.gold = totals.gold;
+            }
           })
           .catch((err) => console.error("[auth] stats:", err))
       );

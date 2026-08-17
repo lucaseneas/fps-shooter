@@ -54,7 +54,8 @@ export async function migrate(): Promise<void> {
         ADD COLUMN IF NOT EXISTS total_deaths INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS wins INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS matches_played INTEGER NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0
+        ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0
     `);
     console.log("[auth] tabela users pronta");
   } catch (err: unknown) {
