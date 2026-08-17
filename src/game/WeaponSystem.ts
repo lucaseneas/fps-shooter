@@ -90,7 +90,8 @@ export class WeaponSystem {
     scene: Scene,
     camera: UniversalCamera,
     effects: EffectsManager,
-    private readonly ownerId: string
+    private readonly ownerId: string,
+    private readonly muzzlePosProvider?: () => Vector3
   ) {
     this.scene = scene;
     this.camera = camera;
@@ -446,10 +447,12 @@ export class WeaponSystem {
         : origin.add(dir.scale(range));
 
     if (withTracer) {
-      const muzzle = origin
-        .add(this.camera.getDirection(Vector3.Right()).scale(0.25))
-        .add(new Vector3(0, -0.2, 0))
-        .add(dir.scale(0.6));
+      const muzzle = this.muzzlePosProvider
+        ? this.muzzlePosProvider()
+        : origin
+            .add(this.camera.getDirection(Vector3.Right()).scale(0.25))
+            .add(new Vector3(0, -0.2, 0))
+            .add(dir.scale(0.6));
       this.effects.spawnTracer(muzzle, end);
     }
 

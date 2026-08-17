@@ -141,7 +141,12 @@ const authPassword = document.getElementById("authPassword") as HTMLInputElement
 const authSubmit = document.getElementById("authSubmit") as HTMLButtonElement;
 const authStatus = document.getElementById("authStatus") as HTMLParagraphElement;
 const logoutButton = document.getElementById("logoutButton") as HTMLButtonElement;
-const skinPreviewCanvas = document.getElementById("skinPreviewCanvas") as HTMLCanvasElement;
+const skinShopPreviewCanvas = document.getElementById("skinShopPreviewCanvas") as HTMLCanvasElement;
+const openSkinsButton = document.getElementById("openSkinsButton") as HTMLButtonElement;
+const skinsModal = document.getElementById("skinsModal") as HTMLDivElement;
+const closeSkinsModalButton = document.getElementById("closeSkinsModalButton") as HTMLButtonElement;
+const skinsCatalog = document.getElementById("skinsCatalog") as HTMLDivElement;
+const skinsModalGold = document.getElementById("skinsModalGold") as HTMLSpanElement;
 
 const engine = new Engine(canvas, true, {
   preserveDrawingBuffer: false,
@@ -163,7 +168,13 @@ const player = new FpsController(scene, canvas, {
 scene.activeCamera = player.camera;
 
 const viewModel = new ViewModel(scene, player.camera);
-const weapons = new WeaponSystem(scene, player.camera, effects, "self");
+const weapons = new WeaponSystem(
+  scene,
+  player.camera,
+  effects,
+  "self",
+  () => viewModel.getMuzzleWorldPosition()
+);
 viewModel.setWeapon(weapons.weapon);
 
 const SENS_STORAGE_KEY = "fps.sensitivity";
@@ -1074,18 +1085,189 @@ loadoutCancelButton.addEventListener("click", () => cancelLoadoutPick());
 spawnButton.addEventListener("click", () => requestPlayerSpawn());
 spectateButton.addEventListener("click", () => enterFreeSpectate());
 
-const skinButtons = document.querySelectorAll<HTMLButtonElement>(".skin-btn");
-skinButtons.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    skinButtons.forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    const skinId = btn.dataset.skin;
-    if (skinId) {
-      if (room) room.send("change_skin", skinId);
-      if (skinPreview) skinPreview.setSkin(skinId);
+// --- Loja e Vestiário de Skins ---
+interface SkinItem {
+  id: string;
+  name: string;
+  price: number;
+  desc: string;
+  isVip?: boolean;
+}
+
+const AVAILABLE_SKINS: SkinItem[] = [
+  {
+    id: "skin_default",
+    name: "Padrão",
+    price: 0,
+    desc: "Visual clássico do combatente.",
+  },
+  {
+    id: "skinvip1",
+    name: "Homem Aracnídeo",
+    price: 350,
+    desc: "Traje inspirado no herói aracnídeo.",
+  },
+  {
+    id: "skinbear",
+    name: "Urso",
+    price: 250,
+    desc: "Visual feroz e estiloso de urso pardo.",
+  },
+  {
+    id: "duckdoc",
+    name: "Pato Doutor",
+    price: 300,
+    desc: "Um pato elegante pronto para o combate.",
+  },
+];
+
+const OWNED_SKINS_KEY = "fps.ownedSkins";
+const ACTIVE_SKIN_KEY = "fps.activeSkin";
+
+function getOwnedSkins(): Set<string> {
+  try {
+    const raw = localStorage.getItem(OWNED_SKINS_KEY);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) return new Set([...list, "skin_default"]);
     }
-  });
-});
+  } catch {}
+  return new Set(["skin_default"]);
+}
+
+function saveOwnedSkins(owned: Set<string>): void {
+  localStorage.setItem(OWNED_SKINS_KEY, JSON.stringify([...owned]));
+}
+
+function getActiveSkin(): string {
+  const saved = localStorage.getItem(ACTIVE_SKIN_KEY);
+  const owned = getOwnedSkins();
+  if (saved && owned.has(saved)) return saved;
+  return "skin_default";
+}
+
+function setActiveSkin(skinId: string): void {
+  localStorage.setItem(ACTIVE_SKIN_KEY, skinId);
+  if (room) room.send("change_skin", skinId);
+  if (skinPreview) skinPreview.setSkin(skinId);
+}
+
+function getUserCurrentGold(): number {
+  if (session) return session.user.gold;
+  return loadGuestGold();
+}
+
+function deductUserGold(amount: number): boolean {
+  if (amount <= 0) return true;
+  if (session) {
+    if (session.user.gold < amount) return false;
+    session.user.gold -= amount;
+    renderGoldPanels(session.user.gold);
+    return true;
+  }
+  const current = loadGuestGold();
+  if (current < amount) return false;
+  const next = current - amount;
+  guestGold = next;
+  localStorage.setItem(GOLD_STORAGE_KEY, String(next));
+  renderGoldPanels(next);
+  return true;
+}
+
+function renderSkinsCatalog(): void {
+  if (!skinsCatalog) return;
+  skinsCatalog.innerHTML = "";
+  const owned = getOwnedSkins();
+  const active = getActiveSkin();
+  const currentGold = getUserCurrentGold();
+
+  if (skinsModalGold) {
+    skinsModalGold.textContent = String(Math.max(0, Math.floor(currentGold)));
+  }
+
+  for (const item of AVAILABLE_SKINS) {
+    const card = document.createElement("div");
+    card.className = `skin-card ${active === item.id ? "is-active" : ""}`;
+
+    const isOwned = owned.has(item.id);
+    const isEquipped = active === item.id;
+
+    const info = document.createElement("div");
+    info.className = "skin-info";
+
+    const priceText = item.price === 0
+      ? `<span class="skin-price-label">Incluído</span>`
+      : `<span class="skin-price-label">🪙 ${item.price} Gold</span>`;
+
+    info.innerHTML = `<h4>${item.name}</h4><p class="skin-desc">${item.desc}</p><div class="skin-price-wrap">${priceText}</div>`;
+
+    const action = document.createElement("div");
+    action.className = "skin-action";
+
+    if (isEquipped) {
+      const btn = document.createElement("button");
+      btn.className = "btn-equipped";
+      btn.textContent = "Equipada ✓";
+      action.appendChild(btn);
+    } else if (isOwned) {
+      const btn = document.createElement("button");
+      btn.className = "btn-equip";
+      btn.textContent = "Equipar";
+      btn.addEventListener("click", () => {
+        setActiveSkin(item.id);
+        renderSkinsCatalog();
+      });
+      action.appendChild(btn);
+    } else {
+      const btn = document.createElement("button");
+      btn.className = "btn-buy";
+      btn.innerHTML = `<span>Comprar</span> <span>(🪙 ${item.price})</span>`;
+      btn.disabled = currentGold < item.price;
+      btn.addEventListener("click", () => {
+        if (deductUserGold(item.price)) {
+          owned.add(item.id);
+          saveOwnedSkins(owned);
+          setActiveSkin(item.id);
+          renderSkinsCatalog();
+        } else {
+          alert("Gold insuficiente para comprar esta skin!");
+        }
+      });
+      action.appendChild(btn);
+    }
+
+    // Clique no card muda o preview 3D na hora para ver
+    card.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).tagName === "BUTTON") return;
+      if (skinPreview) skinPreview.setSkin(item.id);
+    });
+
+    card.append(info, action);
+    skinsCatalog.appendChild(card);
+  }
+}
+
+function openSkinsModal(): void {
+  if (!skinsModal) return;
+  renderSkinsCatalog();
+  skinsModal.classList.remove("hidden");
+  if (skinPreview) {
+    skinPreview.setSkin(getActiveSkin());
+    skinPreview.start();
+    skinPreview.resize();
+  }
+}
+
+function closeSkinsModal(): void {
+  if (!skinsModal) return;
+  skinsModal.classList.add("hidden");
+  if (skinPreview) {
+    skinPreview.stop();
+  }
+}
+
+openSkinsButton?.addEventListener("click", openSkinsModal);
+closeSkinsModalButton?.addEventListener("click", closeSkinsModal);
 
 document.addEventListener("click", (e) => {
   if (loadoutModal.classList.contains("hidden")) return;
@@ -1119,6 +1301,9 @@ function enterLobby(r: Room): void {
     r.send("syncGold", { gold: loadGuestGold() });
     xpSyncSent = true;
   }
+
+  // Envia a skin atualmente equipada no menu
+  r.send("change_skin", getActiveSkin());
 
   navigate("/lobby");
   showLobby();
@@ -2273,6 +2458,12 @@ document.addEventListener("pointerlockchange", () => {
   if (player.isPointerLocked) {
     audio.resume();
     settingsModal.classList.add("hidden");
+
+    // Trava a tecla Escape no navegador para que o ESC abra apenas o menu de pausa/jogo
+    // e não desarme o fullscreen do navegador (F11 continua como tecla nativa).
+    if ("keyboard" in navigator && typeof (navigator as any).keyboard?.lock === "function") {
+      (navigator as any).keyboard.lock(["Escape"]).catch(() => {});
+    }
   } else if (inGame && !endScreenShown) {
     exitAdsImmediate();
     if (chatTyping || loadoutPicking) return;
@@ -2356,8 +2547,9 @@ hud.setLoadoutWeapons(weapons.loadoutWeapons, weapons.weaponIndex);
 hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, false);
 hud.setKills(0);
 
-if (skinPreviewCanvas) {
-  skinPreview = new SkinPreview(skinPreviewCanvas);
+if (skinShopPreviewCanvas) {
+  skinPreview = new SkinPreview(skinShopPreviewCanvas);
+  skinPreview.setSkin(getActiveSkin());
 }
 
 engine.runRenderLoop(() => {
