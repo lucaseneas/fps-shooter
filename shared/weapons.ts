@@ -106,7 +106,7 @@ export const WEAPONS: WeaponDef[] = [
     name: "Magnum .357",
     desc: "Revólver pesado: headshot letal a qualquer distância. Preciso parado, impreciso andando.",
     auto: false,
-    fireInterval: 0.8,
+    fireInterval: 0.95,
     damageBody: 35,
     damageHead: 100,
     pellets: 1,

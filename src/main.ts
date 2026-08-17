@@ -1798,7 +1798,7 @@ engine.runRenderLoop(() => {
   if (dt * 1000 > frameMaxMs) frameMaxMs = dt * 1000;
 
   player.update(dt);
-  player.updateRecoil(dt, weapons.isShooting);
+  player.updateRecoil(dt);
   weapons.setCrouching(player.isCrouching);
   weapons.setAirborne(!player.isGrounded);
   weapons.setMoving(player.isMovingOnGround);

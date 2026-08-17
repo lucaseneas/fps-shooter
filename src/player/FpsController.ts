@@ -428,9 +428,8 @@ export class FpsController {
     this.recoilYawOffset += yawKick;
   }
 
-  /** Recupera a mira quando não está atirando. */
-  updateRecoil(deltaSeconds: number, shooting: boolean): void {
-    if (shooting) return;
+  /** Recupera a mira continuamente, mesmo com o gatilho pressionado. */
+  updateRecoil(deltaSeconds: number): void {
     const t = Math.min(1, deltaSeconds * this.recoilRecoverySpeed);
     this.recoilOffset = Scalar.Lerp(this.recoilOffset, 0, t);
     this.recoilYawOffset = Scalar.Lerp(this.recoilYawOffset, 0, t);
