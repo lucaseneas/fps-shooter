@@ -34,6 +34,10 @@ export interface PlayerSnapshot {
   // Patentes (XP de carreira / XP da partida)
   xp: number;
   matchXp: number;
+  /** Multi-kills da partida (detalhamento do XP na tela de fim). */
+  doubleKills: number;
+  tripleKills: number;
+  multiKills: number;
 }
 
 export interface MatchSnapshot {

@@ -23,6 +23,8 @@ export interface EndXpSummary {
   rankName: string;
   rankIcon: string;
   rankedUp: boolean;
+  /** Detalhamento: uma linha por fonte de XP (participação, kills...). */
+  lines: Array<{ label: string; xp: number }>;
 }
 
 function el<T extends HTMLElement>(id: string): T {
@@ -400,8 +402,20 @@ export class Hud {
       ? "🏆 Você venceu!"
       : `${winnerName} venceu a partida`;
     if (xp && xp.earned > 0) {
+      const linesHtml =
+        xp.lines.length > 0
+          ? `<div class="end-xp-lines">` +
+            xp.lines
+              .map(
+                (l) =>
+                  `<div class="end-xp-line"><span>${escapeHtml(l.label)}</span><span>+${l.xp}</span></div>`
+              )
+              .join("") +
+            `</div>`
+          : "";
       this.endXpSummary.innerHTML =
         `<div class="end-xp">+${xp.earned} XP</div>` +
+        linesHtml +
         (xp.rankedUp
           ? `<div class="end-rankup">` +
             `<img src="${xp.rankIcon}" alt="${xp.rankName}" />` +

@@ -914,6 +914,29 @@ body {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
 }
 
+#endXpSummary .end-xp-lines {
+  margin-top: 8px;
+  padding: 8px 14px;
+  background: rgba(10, 14, 20, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  min-width: 240px;
+}
+
+#endXpSummary .end-xp-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  font-size: 13px;
+  color: #c3ccd6;
+  padding: 2px 0;
+}
+
+#endXpSummary .end-xp-line span:last-child {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 #endXpSummary .end-rankup {
   display: flex;
   align-items: center;

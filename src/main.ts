@@ -47,6 +47,7 @@ import {
 import { AppRoute, navigate, onRouteChange } from "./app/router";
 import {
   MAX_XP,
+  XP_RULES,
   rankForXp,
   rankIconUrl,
   rankProgress,
@@ -1816,15 +1817,46 @@ function reconcile(r: Room): void {
     const xpAfter = own?.xp ?? 0;
     const rankBefore = rankForXp(Math.max(0, xpAfter - earned));
     const rankAfter = rankForXp(xpAfter);
+    const playerWon = state.winnerName === own?.name;
+    const xpLines: Array<{ label: string; xp: number }> = [];
+    if (earned > 0 && own) {
+      xpLines.push({ label: "Partida jogada", xp: XP_RULES.matchPlayed });
+      if (own.kills > 0) {
+        xpLines.push({
+          label: `${own.kills} kill${own.kills > 1 ? "s" : ""}`,
+          xp: own.kills * XP_RULES.kill,
+        });
+      }
+      if (own.doubleKills > 0) {
+        xpLines.push({
+          label: `Double kill ×${own.doubleKills}`,
+          xp: own.doubleKills * XP_RULES.doubleKill,
+        });
+      }
+      if (own.tripleKills > 0) {
+        xpLines.push({
+          label: `Triple kill ×${own.tripleKills}`,
+          xp: own.tripleKills * XP_RULES.tripleKill,
+        });
+      }
+      if (own.multiKills > 0) {
+        xpLines.push({
+          label: `Multi kill ×${own.multiKills}`,
+          xp: own.multiKills * XP_RULES.multiKill,
+        });
+      }
+      if (playerWon) xpLines.push({ label: "Vitória", xp: XP_RULES.victory });
+    }
     hud.showEndScreen(
       state.winnerName ?? "?",
-      state.winnerName === own?.name,
+      playerWon,
       scoreboardRows(r),
       {
         earned,
         rankName: rankAfter.name,
         rankIcon: rankIconUrl(rankAfter),
         rankedUp: earned > 0 && rankAfter.id !== rankBefore.id,
+        lines: xpLines,
       }
     );
     document.exitPointerLock();

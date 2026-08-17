@@ -41,6 +41,10 @@ export class PlayerState extends Schema {
   @type("number") xp = 0;
   /** XP ganho na partida atual (exibido na tela de fim de partida). */
   @type("number") matchXp = 0;
+  /** Multi-kills da partida (detalhamento do XP na tela de fim). */
+  @type("number") doubleKills = 0;
+  @type("number") tripleKills = 0;
+  @type("number") multiKills = 0;
 }
 
 export class MatchState extends Schema {

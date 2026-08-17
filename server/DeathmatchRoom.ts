@@ -599,6 +599,9 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
       p.matchXp = 0;
+      p.doubleKills = 0;
+      p.tripleKills = 0;
+      p.multiKills = 0;
       p.health = CONFIG.playerMaxHealth;
       p.alive = false;
       this.history.set(id, []);
@@ -652,6 +655,9 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
       p.matchXp = 0;
+      p.doubleKills = 0;
+      p.tripleKills = 0;
+      p.multiKills = 0;
       p.health = CONFIG.playerMaxHealth;
       p.alive = false;
       p.ready = false;
@@ -944,6 +950,7 @@ export class DeathmatchRoom extends Room<MatchState> {
   /**
    * Contabiliza a sequência de multi-kill (double/triple/multi) para o
    * XP de fim de partida — mesma janela de 5s das medalhas do HUD.
+   * Os contadores vão ao estado para o detalhamento do XP no cliente.
    */
   private trackMultikill(id: string): void {
     const now = Date.now();
@@ -954,9 +961,17 @@ export class DeathmatchRoom extends Room<MatchState> {
     }
     m.chain = now <= m.expiresAt ? m.chain + 1 : 1;
     m.expiresAt = now + MULTIKILL_WINDOW_MS;
-    if (m.chain === 2) m.double++;
-    else if (m.chain === 3) m.triple++;
-    else if (m.chain >= 4) m.multi++;
+    const p = this.state.players.get(id);
+    if (m.chain === 2) {
+      m.double++;
+      if (p) p.doubleKills = m.double;
+    } else if (m.chain === 3) {
+      m.triple++;
+      if (p) p.tripleKills = m.triple;
+    } else if (m.chain >= 4) {
+      m.multi++;
+      if (p) p.multiKills = m.multi;
+    }
   }
 
   /**
@@ -967,13 +982,12 @@ export class DeathmatchRoom extends Room<MatchState> {
   private awardMatchXp(winnerId: string): void {
     for (const [id, p] of this.state.players) {
       if (this.bots.has(id) || !p.inMatch) continue;
-      const multi = this.matchMultis.get(id);
       const earned =
         XP_RULES.matchPlayed +
         p.kills * XP_RULES.kill +
-        (multi?.double ?? 0) * XP_RULES.doubleKill +
-        (multi?.triple ?? 0) * XP_RULES.tripleKill +
-        (multi?.multi ?? 0) * XP_RULES.multiKill +
+        p.doubleKills * XP_RULES.doubleKill +
+        p.tripleKills * XP_RULES.tripleKill +
+        p.multiKills * XP_RULES.multiKill +
         (id === winnerId ? XP_RULES.victory : 0);
       p.matchXp = earned;
       p.xp += earned;
