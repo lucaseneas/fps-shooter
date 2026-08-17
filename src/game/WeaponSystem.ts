@@ -144,6 +144,7 @@ export class WeaponSystem {
     const id = this.weapon.id;
     const isRifle = id === "rifle" || id === "ak47";
     const isSniper = id === "sniper";
+    const isMagnum = id === "magnum";
 
     if (isSniper && this.aiming) {
       if (this.airborne) return 5.5;
@@ -164,12 +165,17 @@ export class WeaponSystem {
     if (this.crouching) return id === "shotgun" ? 1.0 : 0.5;
     if (this.running) {
       if (isSniper) return 4.5;
+      if (isMagnum) return 4.0;
       return isRifle ? 12.0 : 2.8;
     }
     if (this.moving) {
       if (isSniper) return 3.5;
+      // Magnum: revólver pesado, instável andando
+      if (isMagnum) return 3.0;
       return isRifle ? 7.0 : 1.8;
     }
+    // Magnum parado: mais preciso que as demais armas
+    if (isMagnum) return 0.6;
     return 1.0;
   }
 
