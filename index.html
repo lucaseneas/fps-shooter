@@ -235,6 +235,9 @@
                 <span class="stat-label">Gold</span>
               </div>
             </div>
+            <div class="profile-actions">
+              <button type="button" id="openSkinsButton" class="skins-btn">Skins & Loja</button>
+            </div>
             <p class="info-text home-tip">
               Loadout personalizado · 1 principal · 2 secundária · 3 melee · I troca as armas · Crie a sala e seja o líder · Kills para vencer configurável.
             </p>
@@ -468,20 +471,41 @@
         </p>
         <div id="loadoutOptions" class="loadout-options"></div>
 
-        <div class="skin-selector">
-          <h3>Sua Skin</h3>
-          <div class="skin-selector-content">
-            <canvas id="skinPreviewCanvas" width="160" height="220"></canvas>
-            <div class="skin-options">
-              <button class="skin-btn active" data-skin="skin_default">Padrão</button>
-              <button class="skin-btn" data-skin="skinvip1">VIP (Ouro)</button>
-            </div>
-          </div>
-        </div>
         <div class="modal-actions loadout-actions">
           <button id="spawnButton" class="spawn-btn hidden" type="button">Spawn</button>
           <button id="spectateButton" class="spectate-btn hidden" type="button">Espectador</button>
           <button id="loadoutCancelButton" class="secondary hidden" type="button">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Vestiário & Loja de Skins (Acessível no Menu) -->
+    <div id="skinsModal" class="hidden">
+      <div class="modal-card skins-card">
+        <header class="skins-header">
+          <div>
+            <h2>Vestiário & Loja de Skins</h2>
+            <p class="skins-hint">Gire o personagem em 360º arrastando com o mouse.</p>
+          </div>
+          <div class="skins-user-gold">
+            <span class="gold-icon">🪙</span>
+            <span id="skinsModalGold">0</span> Gold
+          </div>
+        </header>
+
+        <div class="skins-modal-body">
+          <div class="skins-3d-view">
+            <canvas id="skinShopPreviewCanvas" width="280" height="360"></canvas>
+            <span class="preview-360-badge">🔄 360° Interativo</span>
+          </div>
+
+          <div class="skins-catalog" id="skinsCatalog">
+            <!-- Renderizado dinamicamente via TypeScript -->
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="closeSkinsModalButton" class="secondary">Fechar</button>
         </div>
       </div>
     </div>
