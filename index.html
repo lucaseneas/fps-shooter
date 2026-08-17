@@ -223,7 +223,7 @@
               </div>
             </div>
             <p class="info-text home-tip">
-              Loadout personalizado · 1 principal · 2 secundária · 3 melee · I troca as armas · Crie a sala e seja o líder · Primeiro a 20 kills.
+              Loadout personalizado · 1 principal · 2 secundária · 3 melee · I troca as armas · Crie a sala e seja o líder · Kills para vencer configurável.
             </p>
           </aside>
 
@@ -285,6 +285,25 @@
               />
               <span id="createBotsValue">7</span>
             </div>
+          </div>
+          <div class="setting-row">
+            <label for="createGameMode">Modo de jogo</label>
+            <select id="createGameMode" class="setting-select">
+              <option value="ffa" selected>Free-for-All</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label for="createKillsToWin">Kills para vencer</label>
+            <select id="createKillsToWin" class="setting-select">
+              <option value="5">5 kills</option>
+              <option value="10">10 kills</option>
+              <option value="15">15 kills</option>
+              <option value="20" selected>20 kills</option>
+              <option value="25">25 kills</option>
+              <option value="30">30 kills</option>
+              <option value="40">40 kills</option>
+              <option value="50">50 kills</option>
+            </select>
           </div>
           <div class="modal-actions">
             <button type="submit">Criar e entrar</button>

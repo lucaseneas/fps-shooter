@@ -65,6 +65,8 @@ interface RoomCreateOptions {
   roomName?: string;
   bots?: number;
   maxPlayers?: number;
+  gameMode?: string;
+  killsToWin?: number;
 }
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
@@ -127,6 +129,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     const maxPlayers = clampInt(options.maxPlayers, 2, CONFIG.roomSize, CONFIG.roomSize);
     const desiredBots = clampInt(options.bots, 0, maxPlayers - 1, Math.max(0, maxPlayers - 1));
     const roomName = sanitizeRoomName(options.roomName);
+    const gameMode = typeof options.gameMode === "string" ? options.gameMode : "ffa";
+    const killsToWin = clampInt(options.killsToWin, 1, 100, CONFIG.killsToWin);
 
     this.maxClients = maxPlayers;
     this.roomCapacity = maxPlayers;
@@ -134,6 +138,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.roomName = roomName;
     this.state.desiredBots = desiredBots;
     this.state.maxPlayers = maxPlayers;
+    this.state.gameMode = gameMode;
+    this.state.killsToWin = killsToWin;
 
     // Metadata exibida na lista de salas do lobby.
     void this.setMetadata({
@@ -141,6 +147,8 @@ export class DeathmatchRoom extends Room<MatchState> {
       name: roomName,
       bots: desiredBots,
       maxPlayers,
+      gameMode,
+      killsToWin,
     });
 
     // Sala nunca fica vazia: bots preenchem os slots (pilar #1 do GDD).
@@ -702,7 +710,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.deathPos.set(targetId, { x: target.x, z: target.z });
     this.respawnAt.set(targetId, Date.now() + CONFIG.respawnDelay * 1000);
 
-    if (attacker && attacker.kills >= CONFIG.killsToWin) {
+    if (attacker && attacker.kills >= this.state.killsToWin) {
       this.state.matchOver = true;
       this.state.winnerName = attacker.name;
       this.matchResetAt = Date.now() + CONFIG.matchResetDelay * 1000;

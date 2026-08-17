@@ -99,6 +99,8 @@ const createMaxPlayersValue = document.getElementById(
 const createBots = document.getElementById("createBots") as HTMLInputElement;
 const createBotsValue = document.getElementById("createBotsValue") as HTMLSpanElement;
 const createRoomCancel = document.getElementById("createRoomCancel") as HTMLButtonElement;
+const createGameMode = document.getElementById("createGameMode") as HTMLSelectElement;
+const createKillsToWin = document.getElementById("createKillsToWin") as HTMLSelectElement;
 const minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement;
 const authTabLogin = document.getElementById("authTabLogin") as HTMLButtonElement;
 const authTabRegister = document.getElementById("authTabRegister") as HTMLButtonElement;
@@ -490,9 +492,10 @@ function renderRoomList(rooms: RoomListing[]): void {
     const safeName = r.name.replace(/[<>&]/g, (c) =>
       c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;"
     );
+    const modeLabel = r.gameMode === "ffa" ? "Free-for-All" : r.gameMode;
     info.innerHTML =
       `<b>${safeName}</b><br />` +
-      `<span class="room-meta">${r.clients}/${r.maxClients} jogadores · ${r.bots} bots · Mapa: ${r.map}</span>`;
+      `<span class="room-meta">${modeLabel} · ${r.killsToWin} kills · ${r.clients}/${r.maxClients} jogadores · ${r.bots} bots · Mapa: ${r.map}</span>`;
 
     const joinBtn = document.createElement("button");
     joinBtn.textContent = "Entrar";
@@ -559,7 +562,7 @@ async function joinLobbyRoom(roomId: string | null): Promise<void> {
       ? await joinRoomById(roomId, playerName())
       : await createRoom(
           playerName(),
-          createOpts ?? { roomName: "Sala", bots: 7, maxPlayers: 8 }
+          createOpts ?? { roomName: "Sala", bots: 7, maxPlayers: 8, gameMode: "ffa", killsToWin: 20 }
         );
   } catch {
     statusEl.classList.add("error");
@@ -603,8 +606,10 @@ createRoomForm.addEventListener("submit", (e) => {
     maxPlayers - 1,
     Math.max(0, parseInt(createBots.value, 10) || 0)
   );
+  const gameMode = createGameMode.value;
+  const killsToWin = parseInt(createKillsToWin.value, 10) || 20;
   localStorage.setItem(BOTS_STORAGE_KEY, String(bots));
-  pendingCreateOptions = { roomName, bots, maxPlayers };
+  pendingCreateOptions = { roomName, bots, maxPlayers, gameMode, killsToWin };
   closeCreateRoomModal();
   beginJoinFlow(null);
 });
@@ -1280,8 +1285,13 @@ function setupRoom(r: Room): void {
   let lastHostId = "";
   let lastDesiredBots = -1;
   let lastMaxPlayers = -1;
+  let lastKillsToWin = -1;
   r.onStateChange(() => {
     const snap = getMatchSnapshot(r);
+    if (snap.killsToWin !== lastKillsToWin) {
+      lastKillsToWin = snap.killsToWin;
+      hud.setKillsTarget(snap.killsToWin);
+    }
     if (
       snap.hostId === lastHostId &&
       snap.desiredBots === lastDesiredBots &&

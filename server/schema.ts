@@ -38,4 +38,8 @@ export class MatchState extends Schema {
   @type("string") roomName = "Sala";
   @type("number") desiredBots = 7;
   @type("number") maxPlayers = 8;
+  /** Modo de jogo da sala (ex: "ffa"). */
+  @type("string") gameMode = "ffa";
+  /** Kills necessárias para vencer a partida. */
+  @type("number") killsToWin = 20;
 }

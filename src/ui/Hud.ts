@@ -131,8 +131,15 @@ export class Hud {
       .join("");
   }
 
+  private killsTarget: number = CONFIG.killsToWin;
+
+  /** Define o total de kills para vencer (vem da config da sala). */
+  setKillsTarget(target: number): void {
+    this.killsTarget = target;
+  }
+
   setKills(kills: number): void {
-    this.killCount.textContent = `${kills} / ${CONFIG.killsToWin}`;
+    this.killCount.textContent = `${kills} / ${this.killsTarget}`;
   }
 
   /** Atualiza a timeline de kill streaks (kills sem morrer). */

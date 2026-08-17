@@ -1,3 +1,13 @@
+/** Modos de jogo disponíveis. */
+export const GAME_MODES = [
+  { id: "ffa", label: "Free-for-All" },
+] as const;
+
+export type GameModeId = (typeof GAME_MODES)[number]["id"];
+
+/** Opções de kills para vencer a partida. */
+export const KILLS_TO_WIN_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50] as const;
+
 /** Regras da partida — compartilhado entre cliente e servidor. */
 export const CONFIG = {
   /** Slots totais da sala: humanos + bots completam o resto. */
