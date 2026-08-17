@@ -1,4 +1,4 @@
-import { Schema, MapSchema, type } from "@colyseus/schema";
+import { Schema, MapSchema, ArraySchema, type } from "@colyseus/schema";
 
 export class PlayerState extends Schema {
   @type("string") name = "";
@@ -25,6 +25,8 @@ export class PlayerState extends Schema {
   @type("number") killStreak = 0;
   @type("string") activeStreak = "";
   @type("number") streakTimeLeft = 0;
+  /** Streaks liberados aguardando ativação manual (teclas Z/X/C). */
+  @type(["string"]) availableStreaks = new ArraySchema<string>();
   /** Segundos restantes de invencibilidade (spawn ou streak). */
   @type("number") invincibleTimeLeft = 0;
 

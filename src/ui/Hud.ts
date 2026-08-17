@@ -2,6 +2,7 @@ import { WeaponDef, isMeleeWeapon } from "../../shared/weapons";
 import { CONFIG } from "../../shared/config";
 import {
   KILL_STREAK_REWARDS,
+  killStreakKeyLabel,
   nextKillStreakReward,
 } from "../../shared/killStreaks";
 import { rankForXp, rankIconUrl } from "../../shared/ranks";
@@ -87,6 +88,9 @@ export class Hud {
   private activeWeaponIndex = 0;
   private loadoutWeapons: WeaponDef[] = [];
   private currentKillStreak = 0;
+  /** Streaks liberados aguardando ativação (ids vindos do servidor). */
+  private availableStreakIds: string[] = [];
+  private activeStreakId = "";
 
   private static readonly KILL_STREAK_WINDOW_MS = 5000;
   private static readonly KILL_BADGE_VISIBLE_MS = 2200;
@@ -164,6 +168,21 @@ export class Hud {
     this.renderStreakTimeline(streak);
   }
 
+  /**
+   * Sincroniza os streaks liberados (aguardando tecla) e o streak ativo.
+   * Re-renderiza a timeline apenas quando algo muda.
+   */
+  updateAvailableStreaks(ids: string[], activeId: string): void {
+    const changed =
+      activeId !== this.activeStreakId ||
+      ids.length !== this.availableStreakIds.length ||
+      ids.some((id, i) => id !== this.availableStreakIds[i]);
+    if (!changed) return;
+    this.availableStreakIds = ids;
+    this.activeStreakId = activeId;
+    this.renderStreakTimeline(this.currentKillStreak);
+  }
+
   private renderStreakTimeline(streak: number): void {
     this.streakTlCount.textContent = String(streak);
 
@@ -176,31 +195,52 @@ export class Hud {
 
     this.streakTlNodes.innerHTML = rewards
       .map((reward) => {
-        const earned = streak >= reward.kills;
+        const unlocked = streak >= reward.kills;
+        const available = this.availableStreakIds.includes(reward.id);
+        const active = this.activeStreakId === reward.id;
         const isNext = next?.id === reward.id;
         const remain = Math.max(0, reward.kills - streak);
+        const key = killStreakKeyLabel(reward.id);
         const classes = ["streak-tl-node"];
-        if (earned) classes.push("earned");
-        if (isNext) classes.push("next");
+        if (unlocked) classes.push("earned");
+        if (isNext && !available && !active) classes.push("next");
+        if (available) classes.push("available");
+        if (active) classes.push("active");
 
-        const remainHtml =
-          isNext && remain > 0
-            ? `<div class="streak-tl-remain">faltam ${remain}</div>`
-            : "";
+        let dot: string | number = reward.kills;
+        if (active) dot = "▶";
+        else if (available) dot = key;
+        else if (unlocked) dot = "✓";
+
+        let statusHtml = "";
+        if (active) {
+          statusHtml = `<div class="streak-tl-active-tag">ATIVO</div>`;
+        } else if (available) {
+          statusHtml = `<div class="streak-tl-press">pressione ${key}</div>`;
+        } else if (isNext && remain > 0) {
+          statusHtml = `<div class="streak-tl-remain">faltam ${remain}</div>`;
+        }
 
         return (
           `<div class="${classes.join(" ")}">` +
-          `<div class="streak-tl-dot">${earned ? "✓" : reward.kills}</div>` +
+          `<div class="streak-tl-dot">${dot}</div>` +
           `<div class="streak-tl-info">` +
           `<div class="streak-tl-req">${reward.icon} ${reward.kills} KILLS</div>` +
           `<div class="streak-tl-name">${reward.name}</div>` +
-          remainHtml +
+          statusHtml +
           `</div></div>`
         );
       })
       .join("");
 
-    if (next) {
+    if (this.availableStreakIds.length > 0) {
+      const hints = this.availableStreakIds.map((id) => {
+        const name =
+          KILL_STREAK_REWARDS.find((r) => r.id === id)?.name ?? id;
+        return `[${killStreakKeyLabel(id)}] ${name}`;
+      });
+      this.streakTlHint.textContent = `Ativar: ${hints.join(" · ")}`;
+    } else if (next) {
       const remain = next.kills - streak;
       this.streakTlHint.textContent =
         remain === 1
@@ -270,11 +310,15 @@ export class Hud {
     );
   }
 
-  /** Esconde a insignia local (ex.: ao morrer). */
+  /** Esconde a insignia local (ex.: ao morrer) e limpa a pilha de streaks. */
   resetKillStreak(): void {
     clearTimeout(this.killBadgeTimeout);
     this.killBadge.classList.remove("show");
+    this.availableStreakIds = [];
+    this.activeStreakId = "";
     this.setKillStreak(0);
+    // setKillStreak não re-renderiza quando o streak já era 0.
+    this.renderStreakTimeline(this.currentKillStreak);
   }
 
   /** Zera todas as sequências (fim de partida / saída). */

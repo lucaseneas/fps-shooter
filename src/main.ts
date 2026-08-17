@@ -52,6 +52,10 @@ import {
   rankIconUrl,
   rankProgress,
 } from "../shared/ranks";
+import {
+  KILL_STREAK_KEY_CODES,
+  KILL_STREAK_REWARDS,
+} from "../shared/killStreaks";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const pageLogin = document.getElementById("pageLogin") as HTMLDivElement;
@@ -1585,7 +1589,18 @@ function setupRoom(r: Room): void {
 
   r.onMessage("killstreakEarned", (e: { playerName: string; streakName: string }) => {
     if (!inGame) return;
-    hud.showKillstreakToast(`${e.playerName} ativou o kill streak [${e.streakName}]!`);
+    hud.showKillstreakToast(`${e.playerName} liberou [${e.streakName}]!`);
+  });
+
+  r.onMessage("killstreakActivated", (e: { playerName: string; streakName: string }) => {
+    if (!inGame) return;
+    hud.showKillstreakToast(`${e.playerName} ativou [${e.streakName}]!`);
+  });
+
+  // Tentou ativar um streak enquanto outro ainda está rodando.
+  r.onMessage("streakDenied", () => {
+    if (!inGame) return;
+    hud.showKillstreakToast("Aguarde o streak ativo terminar!");
   });
 
   r.onMessage("hitConfirm", (e: { headshot: boolean }) => {
@@ -1894,6 +1909,10 @@ function handleOwnState(p: PlayerSnapshot): void {
   }
   hud.setKills(p.kills);
   hud.setKillStreak(p.killStreak);
+  hud.updateAvailableStreaks(
+    p.availableStreaks ? Array.from(p.availableStreaks) : [],
+    p.activeStreak
+  );
   hud.updateActiveStreak(p.activeStreak, p.streakTimeLeft);
   weapons.setNoRecoil(p.activeStreak === "no_recoil");
   const invincible = (p.invincibleTimeLeft ?? 0) > 0;
@@ -2137,6 +2156,17 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyQ") {
     e.preventDefault();
     switchTo(lastWeaponIndex);
+  }
+  // Ativação manual de kill streaks: Z/X/C conforme a ordem da timeline.
+  const streakSlot = KILL_STREAK_KEY_CODES.indexOf(
+    e.code as (typeof KILL_STREAK_KEY_CODES)[number]
+  );
+  if (streakSlot >= 0) {
+    e.preventDefault();
+    const reward = KILL_STREAK_REWARDS[streakSlot];
+    if (reward && room && inGame && !playerDead && !awaitingSpawn) {
+      room.send("activateStreak", { id: reward.id });
+    }
   }
   if (e.code === "Digit1") switchTo(0);
   if (e.code === "Digit2") switchTo(1);

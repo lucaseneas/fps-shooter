@@ -24,6 +24,8 @@ export interface PlayerSnapshot {
   activeStreak: string;
   streakTimeLeft: number;
   invincibleTimeLeft: number;
+  /** Streaks liberados aguardando ativação (ArraySchema no runtime). */
+  availableStreaks: string[];
   skinId: string;
 
   // Pré-lobby

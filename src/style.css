@@ -2551,6 +2551,59 @@ kbd {
   color: #ffb347;
 }
 
+/* Streak liberado, aguardando ativação (Z/X/C). */
+.streak-tl-node.available {
+  opacity: 1;
+}
+
+.streak-tl-node.available .streak-tl-dot {
+  border-color: #7ef0ff;
+  background: rgba(0, 80, 110, 0.95);
+  color: #fff;
+  font-weight: 800;
+  font-size: 10px;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.8);
+  animation: streak-tl-pulse 1.2s ease-in-out infinite;
+}
+
+.streak-tl-node.available .streak-tl-name {
+  color: #7ef0ff;
+}
+
+.streak-tl-press {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: #7ef0ff;
+  text-transform: uppercase;
+}
+
+/* Streak ativo no momento. */
+.streak-tl-node.active {
+  opacity: 1;
+}
+
+.streak-tl-node.active .streak-tl-dot {
+  border-color: #6fd66f;
+  background: rgba(20, 80, 30, 0.95);
+  color: #6fd66f;
+  font-size: 8px;
+  box-shadow: 0 0 12px rgba(111, 214, 111, 0.65);
+}
+
+.streak-tl-node.active .streak-tl-name {
+  color: #6fd66f;
+}
+
+.streak-tl-active-tag {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: #6fd66f;
+}
+
 .streak-tl-hint {
   margin-top: 10px;
   padding-top: 8px;

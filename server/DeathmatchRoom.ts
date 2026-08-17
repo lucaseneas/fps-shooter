@@ -194,6 +194,23 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.handleFire(client, msg);
     });
 
+    /**
+     * Ativação manual de kill streak (teclas Z/X/C). Apenas um streak
+     * ativo por vez — o próximo só pode ser ligado quando o atual acabar.
+     */
+    this.onMessage("activateStreak", (client, msg: { id?: unknown }) => {
+      if (this.state.matchOver) return;
+      const p = this.state.players.get(client.sessionId);
+      if (!p || !p.alive || !p.inMatch) return;
+      const id = typeof msg?.id === "string" ? msg.id : "";
+      if (!id || !p.availableStreaks.includes(id)) return;
+      if (p.activeStreak) {
+        client.send("streakDenied", { activeStreak: p.activeStreak });
+        return;
+      }
+      this.tryActivateStreak(p, id);
+    });
+
     this.onMessage("spong", (client, msg: { t: number }) => {
       if (typeof msg?.t !== "number") return;
       const rtt = Math.max(0, Date.now() - msg.t);
@@ -422,7 +439,7 @@ export class DeathmatchRoom extends Room<MatchState> {
   }
 
   private processKillStreaks(dt: number): void {
-    for (const [, p] of this.state.players) {
+    for (const [id, p] of this.state.players) {
       if (p.streakTimeLeft > 0) {
         p.streakTimeLeft = Math.max(0, p.streakTimeLeft - dt);
         if (p.streakTimeLeft === 0) {
@@ -432,12 +449,45 @@ export class DeathmatchRoom extends Room<MatchState> {
       if (p.invincibleTimeLeft > 0) {
         p.invincibleTimeLeft = Math.max(0, p.invincibleTimeLeft - dt);
       }
+      // Bots não têm tecla: ativam assim que um slot fica livre.
+      const firstAvailable = p.availableStreaks[0];
+      if (
+        this.bots.has(id) &&
+        p.alive &&
+        !p.activeStreak &&
+        firstAvailable !== undefined
+      ) {
+        this.tryActivateStreak(p, firstAvailable);
+      }
     }
   }
 
   /** Concede (ou estende) invencibilidade no jogador. */
   private grantInvincibility(player: PlayerState, seconds: number): void {
     player.invincibleTimeLeft = Math.max(player.invincibleTimeLeft, seconds);
+  }
+
+  /**
+   * Ativa um streak liberado. Só vale se o jogador possuir o streak na
+   * pilha de disponíveis e não houver nenhum outro ativo no momento.
+   */
+  private tryActivateStreak(p: PlayerState, id: string): boolean {
+    if (p.activeStreak) return false;
+    const index = p.availableStreaks.indexOf(id);
+    if (index < 0) return false;
+    const reward = KILL_STREAK_REWARDS.find((r) => r.id === id);
+    if (!reward) return false;
+    p.availableStreaks.splice(index, 1);
+    p.activeStreak = reward.id;
+    p.streakTimeLeft = reward.duration;
+    if (reward.id === "invincibility") {
+      this.grantInvincibility(p, reward.duration);
+    }
+    this.broadcast("killstreakActivated", {
+      playerName: p.name,
+      streakName: reward.name,
+    });
+    return true;
   }
 
   /** Aplica os inputs enfileirados de cada humano com a física compartilhada. */
@@ -598,6 +648,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.activeStreak = "";
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
+      p.availableStreaks.clear();
       p.matchXp = 0;
       p.doubleKills = 0;
       p.tripleKills = 0;
@@ -654,6 +705,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.activeStreak = "";
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
+      p.availableStreaks.clear();
       p.matchXp = 0;
       p.doubleKills = 0;
       p.tripleKills = 0;
@@ -903,18 +955,16 @@ export class DeathmatchRoom extends Room<MatchState> {
     target.activeStreak = "";
     target.streakTimeLeft = 0;
     target.invincibleTimeLeft = 0;
+    target.availableStreaks.clear();
 
     if (attacker && attackerId !== targetId) {
       attacker.kills++;
       attacker.killStreak++;
       this.trackMultikill(attackerId);
       const reward = KILL_STREAK_REWARDS.find((r) => r.kills === attacker.killStreak);
-      if (reward) {
-        attacker.activeStreak = reward.id;
-        attacker.streakTimeLeft = reward.duration;
-        if (reward.id === "invincibility") {
-          this.grantInvincibility(attacker, reward.duration);
-        }
+      if (reward && !attacker.availableStreaks.includes(reward.id)) {
+        // Libera para ativação manual (Z/X/C) — o efeito só começa ao ativar.
+        attacker.availableStreaks.push(reward.id);
         this.broadcast("killstreakEarned", {
           playerName: attacker.name,
           streakName: reward.name,
