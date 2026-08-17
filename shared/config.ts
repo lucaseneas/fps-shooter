@@ -5,6 +5,13 @@ export const GAME_MODES = [
 
 export type GameModeId = (typeof GAME_MODES)[number]["id"];
 
+/** Mapas disponíveis para as salas. */
+export const MAPS = [
+  { id: "praca", label: "Praça" },
+] as const;
+
+export type MapId = (typeof MAPS)[number]["id"];
+
 /** Opções de kills para vencer a partida. */
 export const KILLS_TO_WIN_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50] as const;
 

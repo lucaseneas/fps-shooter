@@ -25,6 +25,11 @@ export interface PlayerSnapshot {
   streakTimeLeft: number;
   invincibleTimeLeft: number;
   skinId: string;
+
+  // Pré-lobby
+  ready: boolean;
+  inMatch: boolean;
+  isBot: boolean;
 }
 
 export interface MatchSnapshot {
@@ -36,6 +41,8 @@ export interface MatchSnapshot {
   winnerName: string;
   gameMode: string;
   killsToWin: number;
+  mapId: string;
+  matchStarted: boolean;
 }
 
 let cachedClient: Client | null = null;
@@ -71,6 +78,7 @@ export interface CreateRoomOptions {
   maxPlayers: number;
   gameMode: string;
   killsToWin: number;
+  mapId: string;
 }
 
 /** Entrada da lista de salas do lobby. */
@@ -83,6 +91,7 @@ export interface RoomListing {
   bots: number;
   gameMode: string;
   killsToWin: number;
+  matchStarted: boolean;
 }
 
 type RoomMetadata = {
@@ -92,6 +101,7 @@ type RoomMetadata = {
   maxPlayers?: number;
   gameMode?: string;
   killsToWin?: number;
+  matchStarted?: boolean;
 };
 
 /** Lista as salas de mata-mata disponíveis (não cheias). */
@@ -108,6 +118,7 @@ export async function listRooms(): Promise<RoomListing[]> {
       bots: typeof meta.bots === "number" ? meta.bots : 0,
       gameMode: typeof meta.gameMode === "string" ? meta.gameMode : "ffa",
       killsToWin: typeof meta.killsToWin === "number" ? meta.killsToWin : 20,
+      matchStarted: meta.matchStarted === true,
     };
   });
 }
@@ -124,6 +135,7 @@ export async function createRoom(
     maxPlayers: settings.maxPlayers,
     gameMode: settings.gameMode,
     killsToWin: settings.killsToWin,
+    mapId: settings.mapId,
   });
 }
 
@@ -153,5 +165,7 @@ export function getMatchSnapshot(room: Room): MatchSnapshot {
     winnerName: typeof s.winnerName === "string" ? s.winnerName : "",
     gameMode: typeof s.gameMode === "string" ? s.gameMode : "ffa",
     killsToWin: typeof s.killsToWin === "number" ? s.killsToWin : CONFIG.killsToWin,
+    mapId: typeof s.mapId === "string" ? s.mapId : "praca",
+    matchStarted: s.matchStarted === true,
   };
 }

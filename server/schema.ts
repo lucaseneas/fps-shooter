@@ -27,6 +27,14 @@ export class PlayerState extends Schema {
   @type("number") streakTimeLeft = 0;
   /** Segundos restantes de invencibilidade (spawn ou streak). */
   @type("number") invincibleTimeLeft = 0;
+
+  // Pré-lobby:
+  /** Jogador marcou "Pronto" no pré-lobby. */
+  @type("boolean") ready = false;
+  /** Jogador está dentro da partida (falso = aguardando no pré-lobby). */
+  @type("boolean") inMatch = false;
+  /** Combatente controlado pela IA. */
+  @type("boolean") isBot = false;
 }
 
 export class MatchState extends Schema {
@@ -42,4 +50,8 @@ export class MatchState extends Schema {
   @type("string") gameMode = "ffa";
   /** Kills necessárias para vencer a partida. */
   @type("number") killsToWin = 20;
+  /** Mapa da partida (id em shared/config MAPS). */
+  @type("string") mapId = "praca";
+  /** Falso = sala em pré-lobby; verdadeiro = partida em andamento. */
+  @type("boolean") matchStarted = false;
 }

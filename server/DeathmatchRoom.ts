@@ -2,7 +2,7 @@ import { Room, Client } from "colyseus";
 
 import { MatchState, PlayerState } from "./schema";
 import { BotAi, BotWorld, ShotEvent } from "./BotAi";
-import { CONFIG } from "../shared/config";
+import { CONFIG, GAME_MODES, MAPS } from "../shared/config";
 import { KILL_STREAK_REWARDS } from "../shared/killStreaks";
 import { pickBotNames } from "../shared/names";
 import { pickSpawnFarFrom, randomSpawn } from "../shared/spawnPoints";
@@ -67,7 +67,21 @@ interface RoomCreateOptions {
   maxPlayers?: number;
   gameMode?: string;
   killsToWin?: number;
+  mapId?: string;
 }
+
+/** Payload do líder para alterar as configurações da sala (pré-lobby). */
+interface RoomSettingsMessage {
+  roomName?: unknown;
+  mapId?: unknown;
+  gameMode?: unknown;
+  killsToWin?: unknown;
+  maxPlayers?: unknown;
+  bots?: unknown;
+}
+
+/** Código de close usado ao remover um jogador da sala (kick pelo líder). */
+const KICK_CLOSE_CODE = 4000;
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
@@ -129,8 +143,16 @@ export class DeathmatchRoom extends Room<MatchState> {
     const maxPlayers = clampInt(options.maxPlayers, 2, CONFIG.roomSize, CONFIG.roomSize);
     const desiredBots = clampInt(options.bots, 0, maxPlayers - 1, Math.max(0, maxPlayers - 1));
     const roomName = sanitizeRoomName(options.roomName);
-    const gameMode = typeof options.gameMode === "string" ? options.gameMode : "ffa";
+    const gameMode =
+      typeof options.gameMode === "string" &&
+      GAME_MODES.some((m) => m.id === options.gameMode)
+        ? options.gameMode
+        : "ffa";
     const killsToWin = clampInt(options.killsToWin, 1, 100, CONFIG.killsToWin);
+    const mapId =
+      typeof options.mapId === "string" && MAPS.some((m) => m.id === options.mapId)
+        ? options.mapId
+        : MAPS[0].id;
 
     this.maxClients = maxPlayers;
     this.roomCapacity = maxPlayers;
@@ -140,16 +162,10 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.maxPlayers = maxPlayers;
     this.state.gameMode = gameMode;
     this.state.killsToWin = killsToWin;
+    this.state.mapId = mapId;
 
     // Metadata exibida na lista de salas do lobby.
-    void this.setMetadata({
-      map: "Praça",
-      name: roomName,
-      bots: desiredBots,
-      maxPlayers,
-      gameMode,
-      killsToWin,
-    });
+    void this.syncMetadata();
 
     // Sala nunca fica vazia: bots preenchem os slots (pilar #1 do GDD).
     this.rebalanceBots();
@@ -190,13 +206,52 @@ export class DeathmatchRoom extends Room<MatchState> {
         Math.min(this.roomCapacity - 1, Math.floor(msg.count))
       );
       this.state.desiredBots = this.desiredBots;
-      void this.setMetadata({
-        map: "Praça",
-        name: this.state.roomName,
-        bots: this.desiredBots,
-        maxPlayers: this.state.maxPlayers,
-      });
+      void this.syncMetadata();
       this.rebalanceBots();
+    });
+
+    // --- Pré-lobby ---
+
+    /** Jogador marca/desmarca "Pronto" (só vale com a partida parada). */
+    this.onMessage("setReady", (client, msg: { ready?: unknown }) => {
+      if (this.state.matchStarted) return;
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      p.ready = msg?.ready === true;
+    });
+
+    /** Líder inicia a partida com todos que estavam prontos. */
+    this.onMessage("startMatch", (client) => {
+      if (client.sessionId !== this.state.hostId) return;
+      if (this.state.matchStarted) return;
+      this.startMatch();
+    });
+
+    /** Entrada tardia: jogador no pré-lobby entra na partida em andamento. */
+    this.onMessage("playMatch", (client) => {
+      if (!this.state.matchStarted || this.state.matchOver) return;
+      const p = this.state.players.get(client.sessionId);
+      if (!p || p.inMatch) return;
+      p.inMatch = true;
+      p.ready = false;
+      client.send("matchStart");
+    });
+
+    /** Líder altera mapa/modo/kills/etc. — apenas no pré-lobby. */
+    this.onMessage("updateSettings", (client, msg: RoomSettingsMessage) => {
+      if (client.sessionId !== this.state.hostId) return;
+      if (this.state.matchStarted) return;
+      this.applySettings(msg ?? {});
+    });
+
+    /** Líder remove um humano da sala (bots se controlam pelo slider). */
+    this.onMessage("kickPlayer", (client, msg: { playerId?: unknown }) => {
+      if (client.sessionId !== this.state.hostId) return;
+      const targetId = typeof msg?.playerId === "string" ? msg.playerId : "";
+      if (!targetId || targetId === client.sessionId) return;
+      if (this.bots.has(targetId)) return;
+      const target = this.clients.find((c) => c.sessionId === targetId);
+      target?.leave(KICK_CLOSE_CODE);
     });
 
     this.onMessage("setDebug", (client, msg: { enabled: boolean }) => {
@@ -236,7 +291,8 @@ export class DeathmatchRoom extends Room<MatchState> {
       if (this.state.matchOver) return;
       const id = client.sessionId;
       const p = this.state.players.get(id);
-      if (!p || p.alive) return;
+      // Só spawna quem realmente entrou na partida (Start/Play).
+      if (!p || !p.inMatch || p.alive) return;
       // Morte: o timer de respawn manda; aqui só o spawn inicial / pós-reset.
       if (this.respawnAt.has(id)) return;
       this.respawnPlayer(id);
@@ -323,7 +379,10 @@ export class DeathmatchRoom extends Room<MatchState> {
 
   private update(dt: number): void {
     this.processHumanInputs();
-    for (const bot of this.bots.values()) bot.update(dt);
+    // No pré-lobby os bots aguardam parados nos spawns.
+    if (this.state.matchStarted) {
+      for (const bot of this.bots.values()) bot.update(dt);
+    }
     this.pushHistory();
     this.pingClients();
     this.processRespawns();
@@ -488,12 +547,15 @@ export class DeathmatchRoom extends Room<MatchState> {
     client?.send("respawn", { x: spawn.x, z: spawn.z });
   }
 
+  /** Fim de partida: placar zera e todos os humanos voltam ao pré-lobby. */
   private processMatchReset(): void {
     if (!this.state.matchOver || Date.now() < this.matchResetAt) return;
 
     this.state.matchOver = false;
     this.state.winnerName = "";
+    this.state.matchStarted = false;
     this.statsRecorded = false;
+    this.matchResetAt = 0;
     this.respawnAt.clear();
     this.deathPos.clear();
 
@@ -504,12 +566,133 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.activeStreak = "";
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
-      // Espectadores que nunca spawnaram continuam fora do mapa.
-      if (this.bots.has(id) || this.bodies.has(id) || p.alive || this.respawnAt.has(id)) {
-        this.respawnPlayer(id);
+      p.health = CONFIG.playerMaxHealth;
+      p.alive = false;
+      this.history.set(id, []);
+      if (this.bots.has(id)) {
+        // Bot aguarda o próximo start num spawn limpo.
+        const spawn = randomSpawn();
+        p.x = spawn.x;
+        p.z = spawn.z;
+        p.y = 0;
+        p.vy = 0;
+        this.bots.get(id)?.reset();
+      } else {
+        p.inMatch = false;
+        p.ready = false;
+        this.bodies.delete(id);
+        this.pendingInputs.get(id)?.splice(0);
       }
     }
     this.broadcast("matchReset");
+    this.broadcast("backToLobby");
+    void this.syncMetadata();
+  }
+
+  /** Inicia a partida com o líder + todos os humanos prontos (e os bots). */
+  private startMatch(): void {
+    // Captura quem entra ANTES de limpar os flags de pronto.
+    const joining = new Set<string>();
+    for (const client of this.clients) {
+      const p = this.state.players.get(client.sessionId);
+      if (!p) continue;
+      if (client.sessionId === this.state.hostId || p.ready) {
+        joining.add(client.sessionId);
+      }
+    }
+
+    this.state.matchStarted = true;
+    this.state.matchOver = false;
+    this.state.winnerName = "";
+    this.statsRecorded = false;
+    this.matchResetAt = 0;
+    this.respawnAt.clear();
+    this.deathPos.clear();
+
+    for (const [, p] of this.state.players) {
+      p.kills = 0;
+      p.deaths = 0;
+      p.killStreak = 0;
+      p.activeStreak = "";
+      p.streakTimeLeft = 0;
+      p.invincibleTimeLeft = 0;
+      p.health = CONFIG.playerMaxHealth;
+      p.alive = false;
+      p.ready = false;
+    }
+
+    // Bots sempre participam — nascem direto nos spawns.
+    for (const id of this.bots.keys()) {
+      const p = this.state.players.get(id);
+      if (!p) continue;
+      p.inMatch = true;
+      this.respawnPlayer(id);
+    }
+
+    // O spawn dos humanos acontece via requestSpawn após o loadout no cliente.
+    for (const client of this.clients) {
+      const p = this.state.players.get(client.sessionId);
+      if (!p) continue;
+      p.inMatch = joining.has(client.sessionId);
+      if (p.inMatch) client.send("matchStart");
+    }
+    void this.syncMetadata();
+  }
+
+  /** Aplica as configurações enviadas pelo líder (somente pré-lobby). */
+  private applySettings(msg: RoomSettingsMessage): void {
+    if (typeof msg.roomName === "string") {
+      this.state.roomName = sanitizeRoomName(msg.roomName);
+    }
+    if (typeof msg.mapId === "string" && MAPS.some((m) => m.id === msg.mapId)) {
+      this.state.mapId = msg.mapId;
+    }
+    if (
+      typeof msg.gameMode === "string" &&
+      GAME_MODES.some((m) => m.id === msg.gameMode)
+    ) {
+      this.state.gameMode = msg.gameMode;
+    }
+    if (typeof msg.killsToWin === "number") {
+      this.state.killsToWin = clampInt(msg.killsToWin, 1, 100, this.state.killsToWin);
+    }
+    if (typeof msg.maxPlayers === "number") {
+      const humans = this.state.players.size - this.bots.size;
+      const maxPlayers = clampInt(
+        msg.maxPlayers,
+        Math.max(2, humans),
+        CONFIG.roomSize,
+        this.state.maxPlayers
+      );
+      this.maxClients = maxPlayers;
+      this.roomCapacity = maxPlayers;
+      this.state.maxPlayers = maxPlayers;
+      if (this.desiredBots > maxPlayers - 1) {
+        this.desiredBots = Math.max(0, maxPlayers - 1);
+        this.state.desiredBots = this.desiredBots;
+      }
+    }
+    if (typeof msg.bots === "number") {
+      this.desiredBots = clampInt(msg.bots, 0, this.roomCapacity - 1, this.desiredBots);
+      this.state.desiredBots = this.desiredBots;
+    }
+    void this.syncMetadata();
+    this.rebalanceBots();
+  }
+
+  /** Publica o estado atual da sala na listagem do lobby. */
+  private syncMetadata(): Promise<unknown> {
+    const mapLabel =
+      MAPS.find((m) => m.id === this.state.mapId)?.label ?? this.state.mapId;
+    return this.setMetadata({
+      map: mapLabel,
+      name: this.state.roomName,
+      bots: this.desiredBots,
+      maxPlayers: this.state.maxPlayers,
+      gameMode: this.state.gameMode,
+      killsToWin: this.state.killsToWin,
+      matchStarted: this.state.matchStarted,
+    });
   }
 
   // --- Combate (hitscan server-side com lag compensation) ---
@@ -762,11 +945,14 @@ export class DeathmatchRoom extends Room<MatchState> {
     const p = new PlayerState();
     p.name = name;
     p.health = CONFIG.playerMaxHealth;
-    
+    p.isBot = true;
+    // Bots nunca ficam no pré-lobby: entram em toda partida.
+    p.inMatch = true;
+
     // O bot clona a skin do líder, se não achar usa a default
     const host = this.state.hostId ? this.state.players.get(this.state.hostId) : null;
     p.skinId = host ? host.skinId : "skin_default";
-    
+
     const spawn = randomSpawn();
     p.x = spawn.x;
     p.z = spawn.z;

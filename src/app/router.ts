@@ -1,6 +1,6 @@
 /** Router SPA simples (History API). */
 
-export type AppRoute = "/login" | "/home" | "/play";
+export type AppRoute = "/login" | "/home" | "/lobby" | "/play";
 
 type RouteListener = (route: AppRoute) => void;
 
@@ -13,6 +13,7 @@ function normalizePath(pathname: string): string {
 export function currentRoute(): AppRoute {
   const path = normalizePath(window.location.pathname);
   if (path === "/home") return "/home";
+  if (path === "/lobby") return "/lobby";
   if (path === "/play") return "/play";
   return "/login";
 }

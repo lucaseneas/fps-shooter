@@ -123,8 +123,8 @@
       <div id="endScreen" class="hidden">
         <div id="endTitle"></div>
         <div class="end-actions">
-          <button id="restartButton">Jogar novamente</button>
-          <button id="menuButton" class="secondary">Voltar ao menu</button>
+          <button id="restartButton">Voltar ao lobby</button>
+          <button id="menuButton" class="secondary">Sair da sala</button>
         </div>
       </div>
     </div>
@@ -194,31 +194,31 @@
         <div class="home-layout">
           <aside class="home-profile">
             <h2>Jogador</h2>
-            <p class="profile-name" id="homeDisplayName">—</p>
-            <p class="profile-meta" id="homeMemberSince"></p>
+            <p class="profile-name" data-pf="name">—</p>
+            <p class="profile-meta" data-pf="meta"></p>
             <div class="stats-grid">
               <div class="stat-cell">
-                <span class="stat-value" id="statKills">0</span>
+                <span class="stat-value" data-pf="kills">0</span>
                 <span class="stat-label">Kills</span>
               </div>
               <div class="stat-cell">
-                <span class="stat-value" id="statDeaths">0</span>
+                <span class="stat-value" data-pf="deaths">0</span>
                 <span class="stat-label">Deaths</span>
               </div>
               <div class="stat-cell">
-                <span class="stat-value" id="statWins">0</span>
+                <span class="stat-value" data-pf="wins">0</span>
                 <span class="stat-label">Vitórias</span>
               </div>
               <div class="stat-cell">
-                <span class="stat-value" id="statMatches">0</span>
+                <span class="stat-value" data-pf="matches">0</span>
                 <span class="stat-label">Partidas</span>
               </div>
               <div class="stat-cell">
-                <span class="stat-value" id="statKd">0.00</span>
+                <span class="stat-value" data-pf="kd">0.00</span>
                 <span class="stat-label">K/D</span>
               </div>
               <div class="stat-cell">
-                <span class="stat-value" id="statWinRate">0%</span>
+                <span class="stat-value" data-pf="winRate">0%</span>
                 <span class="stat-label">Win rate</span>
               </div>
             </div>
@@ -287,6 +287,12 @@
             </div>
           </div>
           <div class="setting-row">
+            <label for="createMap">Mapa</label>
+            <select id="createMap" class="setting-select">
+              <option value="praca" selected>Praça</option>
+            </select>
+          </div>
+          <div class="setting-row">
             <label for="createGameMode">Modo de jogo</label>
             <select id="createGameMode" class="setting-select">
               <option value="ffa" selected>Free-for-All</option>
@@ -310,6 +316,121 @@
             <button type="button" id="createRoomCancel" class="secondary">Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Página /lobby — pré-lobby da sala -->
+    <div id="pageLobby" class="app-page hidden">
+      <div class="home-shell lobby-shell">
+        <header class="home-top">
+          <div>
+            <h1 id="lobbyRoomName">Sala</h1>
+            <p class="subtitle" id="lobbyStatus">Aguardando jogadores</p>
+          </div>
+          <button type="button" id="lobbyLeaveButton" class="secondary">Sair da sala</button>
+        </header>
+
+        <div class="lobby-layout">
+          <aside class="home-profile">
+            <h2>Jogador</h2>
+            <p class="profile-name" data-pf="name">—</p>
+            <p class="profile-meta" data-pf="meta"></p>
+            <div class="stats-grid">
+              <div class="stat-cell">
+                <span class="stat-value" data-pf="kills">0</span>
+                <span class="stat-label">Kills</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" data-pf="deaths">0</span>
+                <span class="stat-label">Deaths</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" data-pf="wins">0</span>
+                <span class="stat-label">Vitórias</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" data-pf="matches">0</span>
+                <span class="stat-label">Partidas</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" data-pf="kd">0.00</span>
+                <span class="stat-label">K/D</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" data-pf="winRate">0%</span>
+                <span class="stat-label">Win rate</span>
+              </div>
+            </div>
+          </aside>
+
+          <div class="lobby-main">
+            <section class="lobby-panel lobby-players">
+              <h2>
+                Jogadores
+                <span id="lobbyPlayersCount" class="lobby-count"></span>
+              </h2>
+              <div id="lobbyPlayersList" class="lobby-players-list"></div>
+              <p class="lobby-ready-count" id="lobbyReadyCount"></p>
+            </section>
+
+            <aside class="lobby-panel lobby-chat">
+              <h2>Chat da sala</h2>
+              <div id="lobbyChatLog" class="lobby-chat-log" aria-live="polite"></div>
+              <form id="lobbyChatForm" class="lobby-chat-form">
+                <input
+                  id="lobbyChatInput"
+                  type="text"
+                  maxlength="160"
+                  placeholder="Mensagem para a sala..."
+                  autocomplete="off"
+                />
+              </form>
+            </aside>
+          </div>
+
+          <aside class="lobby-panel lobby-settings">
+            <h2>Configurações</h2>
+            <div class="setting-row">
+              <label for="lobbyMapSelect">Mapa</label>
+              <select id="lobbyMapSelect" class="setting-select"></select>
+            </div>
+            <div class="setting-row">
+              <label for="lobbyModeSelect">Modo de jogo</label>
+              <select id="lobbyModeSelect" class="setting-select"></select>
+            </div>
+            <div class="setting-row">
+              <label for="lobbyKillsSelect">Kills para vencer</label>
+              <select id="lobbyKillsSelect" class="setting-select"></select>
+            </div>
+            <div class="setting-row">
+              <label for="lobbyMaxPlayersSelect">Jogadores (máx.)</label>
+              <select id="lobbyMaxPlayersSelect" class="setting-select"></select>
+            </div>
+            <div class="setting-row">
+              <label for="lobbyBotsSlider">Bots</label>
+              <div class="setting-control">
+                <input
+                  id="lobbyBotsSlider"
+                  type="range"
+                  min="0"
+                  max="7"
+                  step="1"
+                  value="7"
+                />
+                <span id="lobbyBotsValue">7</span>
+              </div>
+            </div>
+            <p class="setting-hint" id="lobbySettingsHint">
+              Apenas o líder pode alterar as configurações.
+            </p>
+          </aside>
+        </div>
+
+        <footer class="lobby-footer">
+          <button type="button" id="lobbyReadyButton" class="lobby-main-action">
+            ESTOU PRONTO
+          </button>
+        </footer>
       </div>
     </div>
 

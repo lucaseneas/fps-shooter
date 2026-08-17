@@ -32,7 +32,7 @@ import {
   restoreSession,
 } from "./net/authApi";
 import { Minimap } from "./ui/Minimap";
-import { CONFIG } from "../shared/config";
+import { CONFIG, GAME_MODES, KILLS_TO_WIN_OPTIONS, MAPS } from "../shared/config";
 import {
   DEFAULT_LOADOUT,
   LoadoutSlots,
@@ -101,6 +101,25 @@ const createBotsValue = document.getElementById("createBotsValue") as HTMLSpanEl
 const createRoomCancel = document.getElementById("createRoomCancel") as HTMLButtonElement;
 const createGameMode = document.getElementById("createGameMode") as HTMLSelectElement;
 const createKillsToWin = document.getElementById("createKillsToWin") as HTMLSelectElement;
+const createMap = document.getElementById("createMap") as HTMLSelectElement;
+const pageLobby = document.getElementById("pageLobby") as HTMLDivElement;
+const lobbyRoomName = document.getElementById("lobbyRoomName") as HTMLHeadingElement;
+const lobbyStatus = document.getElementById("lobbyStatus") as HTMLParagraphElement;
+const lobbyLeaveButton = document.getElementById("lobbyLeaveButton") as HTMLButtonElement;
+const lobbyMapSelect = document.getElementById("lobbyMapSelect") as HTMLSelectElement;
+const lobbyModeSelect = document.getElementById("lobbyModeSelect") as HTMLSelectElement;
+const lobbyKillsSelect = document.getElementById("lobbyKillsSelect") as HTMLSelectElement;
+const lobbyMaxPlayersSelect = document.getElementById("lobbyMaxPlayersSelect") as HTMLSelectElement;
+const lobbyBotsSlider = document.getElementById("lobbyBotsSlider") as HTMLInputElement;
+const lobbyBotsValue = document.getElementById("lobbyBotsValue") as HTMLSpanElement;
+const lobbySettingsHint = document.getElementById("lobbySettingsHint") as HTMLParagraphElement;
+const lobbyPlayersList = document.getElementById("lobbyPlayersList") as HTMLDivElement;
+const lobbyPlayersCount = document.getElementById("lobbyPlayersCount") as HTMLSpanElement;
+const lobbyReadyCount = document.getElementById("lobbyReadyCount") as HTMLParagraphElement;
+const lobbyChatLog = document.getElementById("lobbyChatLog") as HTMLDivElement;
+const lobbyChatForm = document.getElementById("lobbyChatForm") as HTMLFormElement;
+const lobbyChatInput = document.getElementById("lobbyChatInput") as HTMLInputElement;
+const lobbyReadyButton = document.getElementById("lobbyReadyButton") as HTMLButtonElement;
 const minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement;
 const authTabLogin = document.getElementById("authTabLogin") as HTMLButtonElement;
 const authTabRegister = document.getElementById("authTabRegister") as HTMLButtonElement;
@@ -110,14 +129,6 @@ const authPassword = document.getElementById("authPassword") as HTMLInputElement
 const authSubmit = document.getElementById("authSubmit") as HTMLButtonElement;
 const authStatus = document.getElementById("authStatus") as HTMLParagraphElement;
 const logoutButton = document.getElementById("logoutButton") as HTMLButtonElement;
-const homeDisplayName = document.getElementById("homeDisplayName") as HTMLElement;
-const homeMemberSince = document.getElementById("homeMemberSince") as HTMLElement;
-const statKills = document.getElementById("statKills") as HTMLElement;
-const statDeaths = document.getElementById("statDeaths") as HTMLElement;
-const statWins = document.getElementById("statWins") as HTMLElement;
-const statMatches = document.getElementById("statMatches") as HTMLElement;
-const statKd = document.getElementById("statKd") as HTMLElement;
-const statWinRate = document.getElementById("statWinRate") as HTMLElement;
 const skinPreviewCanvas = document.getElementById("skinPreviewCanvas") as HTMLCanvasElement;
 
 const engine = new Engine(canvas, true, {
@@ -270,6 +281,7 @@ debugModeToggle.addEventListener("change", () => {
 
 let room: Room | null = null;
 let inGame = false;
+let inLobby = false;
 const remotePlayers = new Map<string, RemotePlayer>();
 let ownInitialized = false;
 let lastKnownHealth: number = CONFIG.playerMaxHealth;
@@ -304,17 +316,38 @@ function formatMemberSince(iso: string): string {
   return `Membro desde ${d.toLocaleDateString("pt-BR")}`;
 }
 
+interface ProfilePanelView {
+  name: string;
+  meta: string;
+  kills: string;
+  deaths: string;
+  wins: string;
+  matches: string;
+  kd: string;
+  winRate: string;
+}
+
+/** Escreve o perfil em TODOS os painéis (home e pré-lobby usam data-pf). */
+function renderProfilePanels(view: ProfilePanelView): void {
+  for (const el of document.querySelectorAll<HTMLElement>("[data-pf]")) {
+    const key = el.dataset.pf as keyof ProfilePanelView | undefined;
+    if (key && key in view) el.textContent = view[key];
+  }
+}
+
 function renderProfile(user: AuthUser): void {
-  homeDisplayName.textContent = user.username;
-  homeMemberSince.textContent = formatMemberSince(user.createdAt);
-  statKills.textContent = String(user.kills);
-  statDeaths.textContent = String(user.deaths);
-  statWins.textContent = String(user.wins);
-  statMatches.textContent = String(user.matches);
   const kd = user.deaths > 0 ? user.kills / user.deaths : user.kills;
-  statKd.textContent = kd.toFixed(2);
   const winRate = user.matches > 0 ? Math.round((user.wins / user.matches) * 100) : 0;
-  statWinRate.textContent = `${winRate}%`;
+  renderProfilePanels({
+    name: user.username,
+    meta: formatMemberSince(user.createdAt),
+    kills: String(user.kills),
+    deaths: String(user.deaths),
+    wins: String(user.wins),
+    matches: String(user.matches),
+    kd: kd.toFixed(2),
+    winRate: `${winRate}%`,
+  });
 }
 
 function setAuthMode(mode: "login" | "register"): void {
@@ -337,17 +370,36 @@ function showPages(route: AppRoute): void {
 function applyRoute(route: AppRoute): void {
   if (route === "/play") {
     if (!inGame) {
-      navigate(session || guestAllowed ? "/home" : "/login", true);
+      navigate(
+        inLobby ? "/lobby" : session || guestAllowed ? "/home" : "/login",
+        true
+      );
       return;
     }
     pageLogin.classList.add("hidden");
     pageHome.classList.add("hidden");
+    pageLobby.classList.add("hidden");
+    return;
+  }
+
+  if (route === "/lobby") {
+    if (!room) {
+      navigate(session || guestAllowed ? "/home" : "/login", true);
+      return;
+    }
+    if (inGame) {
+      navigate("/play", true);
+      return;
+    }
+    pageLogin.classList.add("hidden");
+    pageHome.classList.add("hidden");
+    pageLobby.classList.remove("hidden");
     return;
   }
 
   if (route === "/home") {
-    if (inGame) {
-      void room?.leave();
+    if (room) {
+      void room.leave();
       return;
     }
     if (authEnabled && !session && !guestAllowed) {
@@ -359,8 +411,8 @@ function applyRoute(route: AppRoute): void {
     return;
   }
 
-  if (inGame) {
-    void room?.leave();
+  if (room) {
+    void room.leave();
     return;
   }
   if (authEnabled && session) {
@@ -448,14 +500,16 @@ async function enterHome(): Promise<void> {
       renderProfile(session.user);
     }
   } else {
-    homeDisplayName.textContent = playerName();
-    homeMemberSince.textContent = "Modo convidado";
-    statKills.textContent = "—";
-    statDeaths.textContent = "—";
-    statWins.textContent = "—";
-    statMatches.textContent = "—";
-    statKd.textContent = "—";
-    statWinRate.textContent = "—";
+    renderProfilePanels({
+      name: playerName(),
+      meta: "Modo convidado",
+      kills: "—",
+      deaths: "—",
+      wins: "—",
+      matches: "—",
+      kd: "—",
+      winRate: "—",
+    });
   }
   await refreshRooms();
   lobbyRefreshInterval = window.setInterval(refreshRooms, 3000);
@@ -493,9 +547,10 @@ function renderRoomList(rooms: RoomListing[]): void {
       c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;"
     );
     const modeLabel = r.gameMode === "ffa" ? "Free-for-All" : r.gameMode;
+    const startedLabel = r.matchStarted ? " · <b class='room-live'>Em partida</b>" : "";
     info.innerHTML =
       `<b>${safeName}</b><br />` +
-      `<span class="room-meta">${modeLabel} · ${r.killsToWin} kills · ${r.clients}/${r.maxClients} jogadores · ${r.bots} bots · Mapa: ${r.map}</span>`;
+      `<span class="room-meta">${modeLabel} · ${r.killsToWin} kills · ${r.clients}/${r.maxClients} jogadores · ${r.bots} bots · Mapa: ${r.map}${startedLabel}</span>`;
 
     const joinBtn = document.createElement("button");
     joinBtn.textContent = "Entrar";
@@ -562,7 +617,7 @@ async function joinLobbyRoom(roomId: string | null): Promise<void> {
       ? await joinRoomById(roomId, playerName())
       : await createRoom(
           playerName(),
-          createOpts ?? { roomName: "Sala", bots: 7, maxPlayers: 8, gameMode: "ffa", killsToWin: 20 }
+          createOpts ?? { roomName: "Sala", bots: 7, maxPlayers: 8, gameMode: "ffa", killsToWin: 20, mapId: MAPS[0].id }
         );
   } catch {
     statusEl.classList.add("error");
@@ -579,7 +634,7 @@ async function joinLobbyRoom(roomId: string | null): Promise<void> {
   statusEl.textContent = "";
   createRoomButton.disabled = false;
   refreshRoomsButton.disabled = false;
-  startGame(room);
+  enterLobby(room);
 }
 
 function beginJoinFlow(roomId: string | null): void {
@@ -608,8 +663,9 @@ createRoomForm.addEventListener("submit", (e) => {
   );
   const gameMode = createGameMode.value;
   const killsToWin = parseInt(createKillsToWin.value, 10) || 20;
+  const mapId = createMap.value || MAPS[0].id;
   localStorage.setItem(BOTS_STORAGE_KEY, String(bots));
-  pendingCreateOptions = { roomName, bots, maxPlayers, gameMode, killsToWin };
+  pendingCreateOptions = { roomName, bots, maxPlayers, gameMode, killsToWin, mapId };
   closeCreateRoomModal();
   beginJoinFlow(null);
 });
@@ -970,12 +1026,14 @@ document.addEventListener("click", (e) => {
 
 applySelectedLoadout(savedLoadout());
 
-function startGame(r: Room): void {
-  inGame = true;
+/** Entra no pré-lobby da sala (criação ou join bem-sucedidos). */
+function enterLobby(r: Room): void {
+  room = r;
+  inLobby = true;
+  inGame = false;
   pageLogin.classList.add("hidden");
   pageHome.classList.add("hidden");
   settingsModal.classList.add("hidden");
-  navigate("/play");
 
   player.onInput = (input) => {
     if (ownInitialized && !awaitingSpawn) room?.send("input", input);
@@ -983,14 +1041,45 @@ function startGame(r: Room): void {
 
   setupRoom(r);
   applyDebugMode(debugMode);
+  navigate("/lobby");
+  showLobby();
+}
 
+/** Servidor avisou que entramos na partida (Start do líder ou Play tardio). */
+function startMatchLocal(): void {
+  if (!room || inGame) return;
+  inGame = true;
+  inLobby = false;
+  hideLobby();
+  navigate("/play");
   audio.resume();
   enterPreSpawn();
 }
 
-function resetToMenu(errorMsg?: string): void {
+/** Partida encerrada: limpa o estado local de combate e volta ao pré-lobby. */
+function returnToLobby(): void {
+  if (!room) return;
+  cleanupMatchLocal();
   inGame = false;
-  room = null;
+  inLobby = true;
+  navigate("/lobby");
+  showLobby();
+}
+
+function showLobby(): void {
+  pageLogin.classList.add("hidden");
+  pageHome.classList.add("hidden");
+  pageLobby.classList.remove("hidden");
+  lastLobbySig = "";
+  updateLobbyUi();
+}
+
+function hideLobby(): void {
+  pageLobby.classList.add("hidden");
+}
+
+/** Limpa HUD, bonecos remotos e flags de combate — sem sair da sala. */
+function cleanupMatchLocal(): void {
   ownInitialized = false;
   playerDead = false;
   endScreenShown = false;
@@ -1037,6 +1126,15 @@ function resetToMenu(errorMsg?: string): void {
   settingsModal.classList.add("hidden");
   closeCreateRoomModal();
   player.exitImmersive();
+}
+
+function resetToMenu(errorMsg?: string): void {
+  inGame = false;
+  inLobby = false;
+  room = null;
+  cleanupMatchLocal();
+  lobbyChatLog.replaceChildren();
+  hideLobby();
   syncRoomSettingsUi();
 
   if (errorMsg) {
@@ -1085,15 +1183,18 @@ function closeChat(relock: boolean): void {
 }
 
 function addChatMessage(name: string, text: string): void {
-  const entry = document.createElement("div");
-  entry.className = "chat-entry";
-  const sender = document.createElement("span");
-  sender.className = "chat-name";
-  sender.textContent = `${name}: `;
-  entry.append(sender, document.createTextNode(text));
-  chatLog.append(entry);
-  while (chatLog.childElementCount > 100) chatLog.firstElementChild?.remove();
-  chatLog.scrollTop = chatLog.scrollHeight;
+  // O chat é da sala: aparece no pré-lobby e dentro da partida.
+  for (const log of [chatLog, lobbyChatLog]) {
+    const entry = document.createElement("div");
+    entry.className = "chat-entry";
+    const sender = document.createElement("span");
+    sender.className = "chat-name";
+    sender.textContent = `${name}: `;
+    entry.append(sender, document.createTextNode(text));
+    log.append(entry);
+    while (log.childElementCount > 100) log.firstElementChild?.remove();
+    log.scrollTop = log.scrollHeight;
+  }
 }
 
 settingsButton.addEventListener("click", openMenuSettings);
@@ -1125,6 +1226,246 @@ chatForm.addEventListener("submit", (e) => {
   closeChat(true);
 });
 
+// --- Pré-lobby ---
+
+function fillSelect(
+  select: HTMLSelectElement,
+  options: ReadonlyArray<{ value: string; label: string }>
+): void {
+  select.innerHTML = "";
+  for (const opt of options) {
+    const el = document.createElement("option");
+    el.value = opt.value;
+    el.textContent = opt.label;
+    select.appendChild(el);
+  }
+}
+
+fillSelect(
+  lobbyMapSelect,
+  MAPS.map((m) => ({ value: m.id, label: m.label }))
+);
+fillSelect(
+  lobbyModeSelect,
+  GAME_MODES.map((m) => ({ value: m.id, label: m.label }))
+);
+fillSelect(
+  lobbyKillsSelect,
+  KILLS_TO_WIN_OPTIONS.map((k) => ({ value: String(k), label: `${k} kills` }))
+);
+fillSelect(
+  lobbyMaxPlayersSelect,
+  Array.from({ length: CONFIG.roomSize - 1 }, (_, i) => {
+    const n = i + 2;
+    return { value: String(n), label: `${n} jogadores` };
+  })
+);
+
+function sendLobbySetting(msg: Record<string, unknown>): void {
+  if (!room) return;
+  room.send("updateSettings", msg);
+}
+
+lobbyMapSelect.addEventListener("change", () =>
+  sendLobbySetting({ mapId: lobbyMapSelect.value })
+);
+lobbyModeSelect.addEventListener("change", () =>
+  sendLobbySetting({ gameMode: lobbyModeSelect.value })
+);
+lobbyKillsSelect.addEventListener("change", () =>
+  sendLobbySetting({ killsToWin: parseInt(lobbyKillsSelect.value, 10) })
+);
+lobbyMaxPlayersSelect.addEventListener("change", () =>
+  sendLobbySetting({ maxPlayers: parseInt(lobbyMaxPlayersSelect.value, 10) })
+);
+lobbyBotsSlider.addEventListener("input", () => {
+  lobbyBotsValue.textContent = lobbyBotsSlider.value;
+  sendLobbySetting({ bots: parseInt(lobbyBotsSlider.value, 10) });
+});
+
+lobbyReadyButton.addEventListener("click", () => {
+  if (!room) return;
+  const snap = getMatchSnapshot(room);
+  if (snap.matchStarted) {
+    room.send("playMatch");
+    return;
+  }
+  if (snap.hostId === room.sessionId) {
+    room.send("startMatch");
+    return;
+  }
+  const me = getOwnSnapshot(room);
+  room.send("setReady", { ready: !me?.ready });
+});
+
+lobbyLeaveButton.addEventListener("click", () => {
+  void room?.leave();
+});
+
+lobbyChatForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = lobbyChatInput.value.trim();
+  if (text) room?.send("chat", { text });
+  lobbyChatInput.value = "";
+  lobbyChatInput.focus();
+});
+
+interface LobbyPlayerRow {
+  id: string;
+  name: string;
+  isHost: boolean;
+  isSelf: boolean;
+  ready: boolean;
+  inMatch: boolean;
+}
+
+function lobbyStatusChip(row: LobbyPlayerRow, matchStarted: boolean): string {
+  if (row.inMatch && matchStarted)
+    return `<span class="lobby-chip playing">Em partida</span>`;
+  if (row.isHost) return `<span class="lobby-chip ready">Pronto</span>`;
+  return row.ready
+    ? `<span class="lobby-chip ready">Pronto</span>`
+    : `<span class="lobby-chip waiting">Aguardando</span>`;
+}
+
+function renderLobbyPlayers(
+  rows: LobbyPlayerRow[],
+  matchStarted: boolean,
+  canKick: boolean
+): void {
+  lobbyPlayersList.innerHTML = "";
+  for (const row of rows) {
+    const el = document.createElement("div");
+    el.className = `lobby-player-row${row.isSelf ? " self" : ""}`;
+
+    const name = document.createElement("span");
+    name.className = "lobby-player-name";
+    name.textContent = row.name;
+
+    const chips = document.createElement("span");
+    chips.className = "lobby-chips";
+    chips.innerHTML =
+      (row.isHost ? `<span class="lobby-chip host">Líder</span>` : "") +
+      lobbyStatusChip(row, matchStarted);
+
+    el.append(name, chips);
+
+    if (canKick && !row.isSelf) {
+      const kick = document.createElement("button");
+      kick.type = "button";
+      kick.className = "lobby-kick";
+      kick.title = "Remover da sala";
+      kick.textContent = "✕";
+      kick.addEventListener("click", () => {
+        room?.send("kickPlayer", { playerId: row.id });
+      });
+      el.appendChild(kick);
+    }
+
+    lobbyPlayersList.appendChild(el);
+  }
+}
+
+/** Assinatura do último render — patches a 30Hz não devem re-renderizar à toa. */
+let lastLobbySig = "";
+
+function updateLobbyUi(): void {
+  if (!room || !inLobby) return;
+  const snap = getMatchSnapshot(room);
+  const myId = room.sessionId;
+  const isHost = snap.hostId === myId;
+  const canEdit = isHost && !snap.matchStarted;
+
+  // O pré-lobby lista apenas jogadores reais — bots ficam de fora.
+  const rows: LobbyPlayerRow[] = [];
+  forEachPlayer(room, (p, id) => {
+    if (p.isBot === true) return;
+    rows.push({
+      id,
+      name: p.name,
+      isHost: id === snap.hostId,
+      isSelf: id === myId,
+      ready: p.ready === true,
+      inMatch: p.inMatch === true,
+    });
+  });
+  rows.sort((a, b) => {
+    if (a.isHost !== b.isHost) return a.isHost ? -1 : 1;
+    if (a.ready !== b.ready) return a.ready ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const sig = JSON.stringify([
+    snap.roomName,
+    snap.matchStarted,
+    snap.mapId,
+    snap.gameMode,
+    snap.killsToWin,
+    snap.maxPlayers,
+    snap.desiredBots,
+    canEdit,
+    rows,
+  ]);
+  if (sig === lastLobbySig) return;
+  lastLobbySig = sig;
+
+  lobbyRoomName.textContent = snap.roomName;
+  lobbyStatus.textContent = snap.matchStarted
+    ? "Partida em andamento — clique em Jogar para entrar"
+    : "Pré-lobby — aguardando o líder iniciar";
+  lobbyStatus.classList.toggle("live", snap.matchStarted);
+
+  // Configurações: líder edita no pré-lobby; demais só veem.
+  lobbyMapSelect.value = snap.mapId;
+  lobbyModeSelect.value = snap.gameMode;
+  lobbyKillsSelect.value = String(snap.killsToWin);
+  lobbyMaxPlayersSelect.value = String(snap.maxPlayers);
+  const maxBots = Math.max(0, snap.maxPlayers - 1);
+  lobbyBotsSlider.max = String(maxBots);
+  lobbyBotsSlider.value = String(Math.min(maxBots, snap.desiredBots));
+  lobbyBotsValue.textContent = String(Math.min(maxBots, snap.desiredBots));
+  for (const el of [
+    lobbyMapSelect,
+    lobbyModeSelect,
+    lobbyKillsSelect,
+    lobbyMaxPlayersSelect,
+    lobbyBotsSlider,
+  ]) {
+    el.disabled = !canEdit;
+  }
+  lobbySettingsHint.textContent = canEdit
+    ? "Você é o líder — ajuste as regras antes de iniciar."
+    : snap.matchStarted
+      ? "Partida em andamento — configurações bloqueadas."
+      : "Apenas o líder pode alterar as configurações.";
+
+  // Lista de jogadores: líder primeiro, depois os prontos.
+  const readyCount = rows.filter((r) => r.ready || r.isHost).length;
+  lobbyPlayersCount.textContent = `${rows.length}/${snap.maxPlayers}`;
+  lobbyReadyCount.textContent = snap.matchStarted
+    ? ""
+    : `${readyCount} de ${rows.length} prontos`;
+
+  renderLobbyPlayers(rows, snap.matchStarted, isHost);
+
+  // Ação principal: Start (líder) / Ready / Play tardio.
+  lobbyReadyButton.classList.remove("ready", "play");
+  if (snap.matchStarted) {
+    lobbyReadyButton.textContent = "JOGAR AGORA";
+    lobbyReadyButton.classList.add("play");
+  } else if (isHost) {
+    lobbyReadyButton.textContent = "INICIAR PARTIDA";
+  } else {
+    const me = rows.find((r) => r.isSelf);
+    if (me?.ready) {
+      lobbyReadyButton.textContent = "PRONTO ✓";
+      lobbyReadyButton.classList.add("ready");
+    } else {
+      lobbyReadyButton.textContent = "ESTOU PRONTO";
+    }
+  }
+}
+
 chatInput.addEventListener("keydown", (e) => {
   if (e.code === "Escape") {
     e.preventDefault();
@@ -1133,7 +1474,16 @@ chatInput.addEventListener("keydown", (e) => {
 });
 
 function setupRoom(r: Room): void {
-  r.onStateChange(() => reconcile(r));
+  r.onStateChange(() => {
+    if (inGame) reconcile(r);
+    if (inLobby) updateLobbyUi();
+  });
+
+  // Início de partida (Start do líder) ou entrada tardia via Play.
+  r.onMessage("matchStart", () => startMatchLocal());
+
+  // Fim de partida: sala inteira volta ao pré-lobby.
+  r.onMessage("backToLobby", () => returnToLobby());
 
   r.onMessage("kill", (e: {
     killerId: string;
@@ -1142,6 +1492,7 @@ function setupRoom(r: Room): void {
     victimName: string;
     weaponName: string;
   }) => {
+    if (!inGame) return;
     const isLocal = e.killerId === r.sessionId;
     const streak = hud.handleKill(
       e.killerId,
@@ -1155,15 +1506,18 @@ function setupRoom(r: Room): void {
   });
 
   r.onMessage("killstreakEarned", (e: { playerName: string; streakName: string }) => {
+    if (!inGame) return;
     hud.showKillstreakToast(`${e.playerName} ativou o kill streak [${e.streakName}]!`);
   });
 
   r.onMessage("hitConfirm", (e: { headshot: boolean }) => {
+    if (!inGame) return;
     hud.showHitmarker(e.headshot);
     audio.hitmarker(e.headshot);
   });
 
   r.onMessage("damaged", (e: { x: number; y: number; z: number }) => {
+    if (!inGame) return;
     const feet = player.getFeet();
     const dx = e.x - feet.x;
     const dz = e.z - feet.z;
@@ -1179,6 +1533,7 @@ function setupRoom(r: Room): void {
   });
 
   r.onMessage("died", (e: { killerName: string; weaponName: string }) => {
+    if (!inGame) return;
     closeChat(false);
     playerDead = true;
     deathCountdown = CONFIG.respawnDelay;
@@ -1191,6 +1546,7 @@ function setupRoom(r: Room): void {
   });
 
   r.onMessage("respawn", (e: { x: number; z: number }) => {
+    if (!inGame) return;
     const wasPreSpawn = awaitingSpawn;
     if (wasPreSpawn) {
       loadoutPicking = false;
@@ -1225,6 +1581,7 @@ function setupRoom(r: Room): void {
     endY: number;
     endZ: number;
   }) => {
+    if (!inGame) return;
     const from = shooterHead(e.shooterId);
     if (!from) return;
     const end = new Vector3(e.endX, e.endY, e.endZ);
@@ -1237,6 +1594,7 @@ function setupRoom(r: Room): void {
     shooterId: string;
     ends: Array<{ x: number; y: number; z: number }>;
   }) => {
+    if (!inGame) return;
     const from = shooterHead(e.shooterId);
     if (!from) return;
     for (const end of e.ends) {
@@ -1249,7 +1607,7 @@ function setupRoom(r: Room): void {
     origin: { x: number; y: number; z: number };
     ends: Array<{ x: number; y: number; z: number }>;
   }) => {
-    if (!debugMode) return;
+    if (!inGame || !debugMode) return;
     const origin = new Vector3(e.origin.x, e.origin.y, e.origin.z);
     for (const end of e.ends) {
       effects.spawnDebugTracer(origin, new Vector3(end.x, end.y, end.z));
@@ -1257,6 +1615,7 @@ function setupRoom(r: Room): void {
   });
 
   r.onMessage("matchEnd", () => {
+    if (!inGame) return;
     player.setMovementEnabled(false);
     weapons.setEnabled(false);
   });
@@ -1317,7 +1676,13 @@ function setupRoom(r: Room): void {
 
   r.onLeave((code) => {
     window.clearInterval(pingInterval);
-    resetToMenu(code > 1000 ? "Desconectado do servidor." : undefined);
+    resetToMenu(
+      code === 4000
+        ? "Você foi removido da sala pelo líder."
+        : code > 1000
+          ? "Desconectado do servidor."
+          : undefined
+    );
   });
 }
 
@@ -1428,6 +1793,8 @@ function scoreboardRows(r: Room): ScoreRow[] {
   const { hostId } = getMatchSnapshot(r);
   const rows: ScoreRow[] = [];
   forEachPlayer(r, (p, id) => {
+    // Quem ficou no pré-lobby não aparece no placar da partida.
+    if (!p.inMatch) return;
     rows.push({
       name: p.name,
       kills: p.kills,
@@ -1681,14 +2048,13 @@ function switchTo(index: number): void {
 restartButton.addEventListener("click", () => {
   document.getElementById("endScreen")!.classList.add("hidden");
   hud.setScoreboardVisible(false);
-  player.requestPointerLock();
+  audio.resume();
+  returnToLobby();
 });
 
 menuButton.addEventListener("click", () => {
   void room?.leave();
 });
-
-restartButton.addEventListener("click", () => audio.resume());
 
 canvas.addEventListener("click", () => {
   if (
