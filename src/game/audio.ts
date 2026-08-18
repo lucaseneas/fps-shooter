@@ -104,6 +104,10 @@ export class AudioManager {
         this.noise(0.09, 0.45, "bandpass", 1100);
         this.tone(175, 0.08, 0.32, "square", 80);
         break;
+      case "mp5":
+        this.noise(0.06, 0.3, "bandpass", 1700);
+        this.tone(240, 0.05, 0.22, "square", 110);
+        break;
       case "shotgun":
         this.noise(0.24, 0.6, "lowpass", 600);
         this.tone(95, 0.16, 0.4, "square", 45);

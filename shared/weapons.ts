@@ -3,6 +3,7 @@ export type WeaponId =
   | "magnum"
   | "rifle"
   | "ak47"
+  | "mp5"
   | "shotgun"
   | "sniper"
   | "knife";
@@ -68,7 +69,9 @@ export interface WeaponDef {
 }
 
 /** Teto do multiplicador de velocidade (faca) — servidor/cliente limitam aqui. */
-export const MAX_MOVE_SPEED_MULT = 1.2;
+export const MAX_MOVE_SPEED_MULT = 1.3;
+/** Piso do multiplicador (armas pesadas). Margem abaixo da AWP (0.95). */
+export const MIN_MOVE_SPEED_MULT = 0.8;
 
 /** Categoria da arma no inventário do loadout. */
 export function weaponCategory(id: WeaponId): WeaponCategory {
@@ -106,6 +109,7 @@ export const WEAPONS: WeaponDef[] = [
     sprayBloomMax: 0.7,
     sprayBloomRamp: 4,
     drawTime: 0.7,
+    moveSpeedMult: 1.2,
   },
   {
     id: "magnum",
@@ -129,6 +133,7 @@ export const WEAPONS: WeaponDef[] = [
     sprayBloomMax: 2.2,
     sprayBloomRamp: 3,
     drawTime: 0.8,
+    moveSpeedMult: 1.2,
   },
   {
     id: "rifle",
@@ -177,6 +182,30 @@ export const WEAPONS: WeaponDef[] = [
     drawTime: 0.75,
   },
   {
+    id: "mp5",
+    name: "MP5",
+    desc: "Submetralhadora: cadência altíssima e recuo suave, mas dano baixo e spread alto. Pente de 45.",
+    auto: true,
+    fireInterval: 0.08,
+    damageBody: 13,
+    damageHead: 30,
+    pellets: 1,
+    pelletPattern: [[0, 0]],
+    magSize: 45,
+    reserveAmmo: 135,
+    reloadTime: 2.0,
+    recoilPattern: [[0.1, 0.2], [-0.12, 0.24], [0.14, 0.27], [-0.16, 0.3], [0.12, 0.32], [-0.1, 0.34]],
+    falloffStart: 12,
+    falloffEnd: 35,
+    falloffMin: 0.45,
+    viewColor: [0.2, 0.21, 0.23],
+    baseSpread: 1.4,
+    sprayBloomMax: 1.8,
+    sprayBloomRamp: 5,
+    drawTime: 0.6,
+    moveSpeedMult: 1.15,
+  },
+  {
     id: "shotgun",
     name: "Calibre .12",
     desc: "Devastadora de perto — 9 projéteis por disparo.",
@@ -198,6 +227,7 @@ export const WEAPONS: WeaponDef[] = [
     sprayBloomMax: 0.8,
     sprayBloomRamp: 2,
     drawTime: 0.7,
+    moveSpeedMult: 1.1,
   },
   {
     id: "sniper",
@@ -221,6 +251,7 @@ export const WEAPONS: WeaponDef[] = [
     sprayBloomMax: 0.6,
     sprayBloomRamp: 3,
     drawTime: 0.7,
+    moveSpeedMult: 0.95,
   },
   {
     id: "knife",

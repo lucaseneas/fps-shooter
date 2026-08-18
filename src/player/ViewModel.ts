@@ -68,6 +68,19 @@ const WEAPON_CONFIGS: Record<string, WeaponViewModelConfig> = {
     sprintPitch: -0.80,
     sprintPosOffset: new Vector3(-0.08, -0.04, -0.08),
   },
+  mp5: {
+    offset: new Vector3(-0.1, 0.05, -0.32),
+    muzzle: new Vector3(-0.1, 0.05, 0.33),
+    // Modelo centrado no pivô: o giro do sprint a derrubava na tela —
+    // sobe a arma durante a corrida e inclina menos que as demais.
+    sprintPitch: -0.6,
+    sprintPosOffset: new Vector3(-0.08, 0.06, -0.02),
+    // O GLB da MP5 tem o eixo longo em Z (~10 unidades) e já aponta para
+    // frente como importado — sem rotação. O targetLength normaliza o
+    // tamanho (SMG compacta, ~0.62).
+    rotation: new Vector3(0, 0, 0),
+    targetLength: 0.62,
+  },
   sniper: {
     offset: new Vector3(-0.1, 0.05, -0.35),
     muzzle: new Vector3(-0.1, 0.05, 0.72),
@@ -132,6 +145,7 @@ export function weaponModelTransform(
 export const WEAPON_ASSETS: Record<string, string> = {
   rifle: "/assets/rifle_v2.glb",
   ak47: "/assets/ak47.glb",
+  mp5: "/assets/MP5.glb",
   pistol: "/assets/pistol.glb",
   magnum: "/assets/magnum.glb",
   shotgun: "/assets/shotgun.glb",

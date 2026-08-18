@@ -936,14 +936,15 @@ function weaponThumbHtml(w: WeaponDef): string {
 }
 
 function weaponStatsLine(w: WeaponDef): string {
+  const speedPct = Math.round(((w.moveSpeedMult ?? 1) - 1) * 100);
+  const speed =
+    speedPct !== 0 ? ` · ${speedPct > 0 ? "+" : ""}${speedPct}% velocidade` : "";
   if (isMeleeWeapon(w)) {
-    const speedBonus = Math.round(((w.moveSpeedMult ?? 1) - 1) * 100);
-    const speed = speedBonus > 0 ? ` · +${speedBonus}% velocidade` : "";
     return `Dano ${w.damageBody} · Alcance ${w.meleeRange}m${speed}`;
   }
   const rpm = Math.round(60 / w.fireInterval);
   const dmg = w.pellets > 1 ? `${w.damageBody}×${w.pellets}` : `${w.damageBody}`;
-  return `Dano ${dmg} · Cadência ${rpm} · Pente ${w.magSize}`;
+  return `Dano ${dmg} · Cadência ${rpm} · Pente ${w.magSize}${speed}`;
 }
 
 function weaponCurrentHtml(w: WeaponDef): string {

@@ -1,5 +1,5 @@
 import { MAP_BOXES, PLAY_BOUND } from "./mapData";
-import { MAX_MOVE_SPEED_MULT } from "./weapons";
+import { MAX_MOVE_SPEED_MULT, MIN_MOVE_SPEED_MULT } from "./weapons";
 
 /**
  * Simulação de movimento do player — código COMPARTILHADO e determinístico.
@@ -98,7 +98,7 @@ export function stepPlayer(s: BodyState, input: PlayerInput): void {
     typeof input.speedMult === "number" && Number.isFinite(input.speedMult)
       ? input.speedMult
       : 1;
-  const speedMult = clamp(rawMult, 1, MAX_MOVE_SPEED_MULT);
+  const speedMult = clamp(rawMult, MIN_MOVE_SPEED_MULT, MAX_MOVE_SPEED_MULT);
   const speed =
     WALK_SPEED *
     (crouched ? CROUCH_MULTIPLIER : input.run ? RUN_MULTIPLIER : 1) *
