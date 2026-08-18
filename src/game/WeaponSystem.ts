@@ -370,7 +370,7 @@ export class WeaponSystem {
     const hits: HitInfo[] = [];
     const dirs: Vector3[] = [];
     const noRecoil = this.noRecoilActive;
-    const recoilMultiplier = noRecoil ? 0 : this.crouching ? 0.5 : 1.0;
+    const recoilMultiplier = noRecoil ? 0 : this.crouching ? 0.7 : 1.0;
 
     const spreadMultiplier = melee || noRecoil ? 0 : this.spreadMultiplier();
     const range = weaponMaxRange(this.weapon);

@@ -147,9 +147,9 @@ export class FpsController {
   // Estado de input
   private readonly keys = new Set<string>();
   private yaw = 0;
-  /** Mira real (só o mouse altera). */
+  /** Mira real — alterada pelo mouse e pela parte permanente do recoil. */
   private basePitch = 0;
-  /** Recoil visual temporário — some ao parar de atirar. */
+  /** Soco visual do recoil — recupera continuamente. */
   private recoilOffset = 0;
   private recoilYawOffset = 0;
   private pointerLocked = false;
@@ -173,8 +173,12 @@ export class FpsController {
   private mouseHz = 0;
   private mouseHzWindowStart = 0;
   private readonly maxPitch = Math.PI / 2 - 0.02;
-  /** Velocidade de retorno da mira após soltar o gatilho. */
+  /** Velocidade de recuperação do soco visual do recoil. */
   private readonly recoilRecoverySpeed = 16;
+  /** Fração do recoil que sobe a mira de verdade — não volta sozinha (CS-like). */
+  private readonly recoilPermanentRatio = 0.8;
+  /** Fração do recoil que vira soco visual temporário. */
+  private readonly recoilVisualRatio = 0.45;
   /** Altura atual dos olhos (interpolada entre em pé e agachado). */
   private eyeY = EYE_HEIGHT;
   /** fps = jogando · overview = topo pré-spawn · freefly = espectador livre. */
@@ -418,17 +422,28 @@ export class FpsController {
     this.syncVisual();
   }
 
-  /** Chute de recoil visual: levanta a mira enquanto atira. */
+  /**
+   * Recoil CS-like: a maior parte do chute move a mira permanentemente
+   * (segurar o gatilho faz a mira subir — o jogador compensa puxando o mouse
+   * para baixo); uma fração menor vira soco visual que recupera sozinho.
+   */
   applyRecoil(pitchKick: number, yawKick = 0): void {
-    this.recoilOffset = Scalar.Clamp(
-      this.recoilOffset - pitchKick,
+    this.basePitch = Scalar.Clamp(
+      this.basePitch - pitchKick * this.recoilPermanentRatio,
       -this.maxPitch,
       this.maxPitch
     );
-    this.recoilYawOffset += yawKick;
+    this.yaw += yawKick * this.recoilPermanentRatio;
+
+    this.recoilOffset = Scalar.Clamp(
+      this.recoilOffset - pitchKick * this.recoilVisualRatio,
+      -this.maxPitch,
+      this.maxPitch
+    );
+    this.recoilYawOffset += yawKick * this.recoilVisualRatio;
   }
 
-  /** Recupera a mira continuamente, mesmo com o gatilho pressionado. */
+  /** Recupera só o soco visual; a subida permanente da mira fica onde o recoil deixou. */
   updateRecoil(deltaSeconds: number): void {
     const t = Math.min(1, deltaSeconds * this.recoilRecoverySpeed);
     this.recoilOffset = Scalar.Lerp(this.recoilOffset, 0, t);
