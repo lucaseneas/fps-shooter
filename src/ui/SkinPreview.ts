@@ -13,7 +13,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import "@babylonjs/loaders/glTF";
 
-import { WEAPON_ASSETS } from "../player/ViewModel";
+import { WEAPON_ASSETS, weaponModelTransform } from "../player/ViewModel";
 
 /** Ponto de encaixe da arma na mão direita do dummy (mesma pose do RemotePlayer). */
 const GUN_ATTACH_POS = new Vector3(0.32, 1.22, 0.3);
@@ -128,11 +128,15 @@ export class SkinPreview {
       .then((container) => {
         const inst = container.instantiateModelsToScene();
         const gunOffset = new TransformNode(`previewGunOffset_${id}`, this.scene);
-        // Mesma rotação usada no RemotePlayer/ViewModel para deitar o GLB para frente.
-        gunOffset.rotationQuaternion = Quaternion.FromEulerAngles(Math.PI / -2, 0, 0);
         if (this.gunRoot) gunOffset.parent = this.gunRoot;
 
         const model = inst.rootNodes[0] as Mesh;
+        // Mesma rotação/escala do ViewModel (medida antes de parentar) para o
+        // preview ficar idêntico ao jogo.
+        const transform = weaponModelTransform(id, model);
+        gunOffset.rotationQuaternion = Quaternion.FromEulerVector(transform.rotation);
+        gunOffset.scaling.setAll(transform.scale);
+
         model.parent = gunOffset;
         model.getChildMeshes(false).forEach((m) => {
           m.isPickable = false;

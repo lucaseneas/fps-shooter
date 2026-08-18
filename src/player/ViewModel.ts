@@ -27,6 +27,20 @@ interface WeaponViewModelConfig {
   muzzle: Vector3;
   sprintPitch: number;
   sprintPosOffset: Vector3;
+  /**
+   * Rotação (euler, rad) aplicada ao modelo GLB.
+   * Padrão: -90° em X — os GLBs têm o eixo longo em Y e isso "deita"
+   * o modelo apontando para frente (correto para armas de fogo).
+   */
+  rotation?: Vector3;
+  /** Escala uniforme extra aplicada ao modelo GLB (padrão 1). Multiplica a auto-escala. */
+  scale?: number;
+  /**
+   * Comprimento alvo do maior eixo do modelo (unidades do view model).
+   * Se definido, o GLB é medido no carregamento e escalado automaticamente
+   * para esse tamanho — permite usar GLBs de qualquer escala de origem.
+   */
+  targetLength?: number;
 }
 
 const DEFAULT_CONFIG: WeaponViewModelConfig = {
@@ -34,7 +48,12 @@ const DEFAULT_CONFIG: WeaponViewModelConfig = {
   muzzle: new Vector3(-0.1, 0.05, 0.45),
   sprintPitch: -0.85,
   sprintPosOffset: new Vector3(-0.1, -0.05, -0.12),
+  // Armas novas sem config própria: normaliza para o tamanho de uma arma longa.
+  targetLength: 0.7,
 };
+
+/** Rotação padrão dos GLBs: deita o eixo Y do modelo para a frente da câmera. */
+const DEFAULT_MODEL_ROTATION = new Vector3(Math.PI / -2, 0, 0);
 
 const WEAPON_CONFIGS: Record<string, WeaponViewModelConfig> = {
   rifle: {
@@ -76,12 +95,39 @@ const WEAPON_CONFIGS: Record<string, WeaponViewModelConfig> = {
     sprintPosOffset: new Vector3(-0.04, -0.02, -0.03),
   },
   knife: {
-    offset: new Vector3(-0.06, 0.0, -0.2),
+    offset: new Vector3(-0.06, -0.1, -0.2),
     muzzle: new Vector3(0, 0, 0),
     sprintPitch: -0.35,
     sprintPosOffset: new Vector3(-0.03, -0.02, -0.03),
+    // Faca: lâmina para cima (180° em X desfaz o "deitar" padrão das armas),
+    // com leve inclinação lateral. O GLB tem só 12cm — escala maior para aparecer.
+    rotation: new Vector3(Math.PI, 0, 0.35),
+    scale: 1.3,
   },
 };
+
+/**
+ * Rotação/escala do modelo GLB de uma arma (usado no ViewModel e no SkinPreview).
+ * Se `model` for passado e a config tiver `targetLength`, mede o bounding box
+ * do modelo (chame ANTES de parentar) e calcula a auto-escala.
+ */
+export function weaponModelTransform(
+  id: string,
+  model?: Mesh
+): { rotation: Vector3; scale: number } {
+  const cfg = WEAPON_CONFIGS[id] ?? DEFAULT_CONFIG;
+  let scale = cfg.scale ?? 1;
+
+  if (cfg.targetLength != null && model) {
+    model.computeWorldMatrix(true);
+    const { min, max } = model.getHierarchyBoundingVectors(true);
+    const size = max.subtract(min);
+    const current = Math.max(size.x, size.y, size.z);
+    if (current > 1e-6) scale *= cfg.targetLength / current;
+  }
+
+  return { rotation: cfg.rotation ?? DEFAULT_MODEL_ROTATION, scale };
+}
 
 export const WEAPON_ASSETS: Record<string, string> = {
   rifle: "/assets/rifle_v2.glb",
@@ -191,16 +237,16 @@ export class ViewModel {
         const inst = container.instantiateModelsToScene();
         const gunOffset = new TransformNode(`vmGunOffset_${id}`, this.scene);
         gunOffset.parent = this.modelsRoot;
-        
-        // Posição e rotação calibradas por arma
-        gunOffset.position = cfg.offset.clone();
-        gunOffset.rotationQuaternion = Quaternion.FromEulerAngles(
-          Math.PI / -2,
-          0,
-          0
-        );
 
         const model = inst.rootNodes[0] as Mesh;
+        // Mede o bounding box antes de parentar (espaço original do GLB).
+        const transform = weaponModelTransform(id, model);
+
+        // Posição, rotação e escala calibradas por arma
+        gunOffset.position = cfg.offset.clone();
+        gunOffset.rotationQuaternion = Quaternion.FromEulerVector(transform.rotation);
+        gunOffset.scaling.setAll(transform.scale);
+
         model.parent = gunOffset;
 
         for (const m of model.getChildMeshes()) {
