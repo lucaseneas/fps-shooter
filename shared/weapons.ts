@@ -53,8 +53,12 @@ export interface WeaponDef {
   falloffMin: number;
   /** Cor do view model (RGB 0–1). */
   viewColor: [number, number, number];
-  /** Espalhamento base em graus. */
+  /** Espalhamento base em graus (em movimento; parado o 1º tiro é sempre reto). */
   baseSpread: number;
+  /** Spread máximo (graus) atingido ao segurar o gatilho em rajada. */
+  sprayBloomMax: number;
+  /** Tiros após o 3º até o bloom chegar ao máximo. */
+  sprayBloomRamp: number;
   /** Tempo para sacar a arma e poder atirar (segundos). */
   drawTime: number;
   /** Alcance do golpe melee (metros). Se definido, a arma não gasta munição. */
@@ -99,6 +103,8 @@ export const WEAPONS: WeaponDef[] = [
     falloffMin: 0.6,
     viewColor: [0.55, 0.57, 0.6],
     baseSpread: 0.4,
+    sprayBloomMax: 0.7,
+    sprayBloomRamp: 4,
     drawTime: 0.7,
   },
   {
@@ -120,6 +126,8 @@ export const WEAPONS: WeaponDef[] = [
     falloffMin: 1, // sem perda de dano — headshot é sempre 100 (letal)
     viewColor: [0.42, 0.42, 0.46],
     baseSpread: 0.5,
+    sprayBloomMax: 2.2,
+    sprayBloomRamp: 3,
     drawTime: 0.8,
   },
   {
@@ -141,6 +149,8 @@ export const WEAPONS: WeaponDef[] = [
     falloffMin: 0.7,
     viewColor: [0.3, 0.35, 0.28],
     baseSpread: 0.4,
+    sprayBloomMax: 1.5,
+    sprayBloomRamp: 6,
     drawTime: 0.7,
   },
   {
@@ -162,6 +172,8 @@ export const WEAPONS: WeaponDef[] = [
     falloffMin: 0.65,
     viewColor: [0.45, 0.3, 0.16],
     baseSpread: 0.45,
+    sprayBloomMax: 2.2,
+    sprayBloomRamp: 7,
     drawTime: 0.75,
   },
   {
@@ -183,6 +195,8 @@ export const WEAPONS: WeaponDef[] = [
     falloffMin: 0.2,
     viewColor: [0.5, 0.32, 0.18],
     baseSpread: 1.2,
+    sprayBloomMax: 0.8,
+    sprayBloomRamp: 2,
     drawTime: 0.7,
   },
   {
@@ -203,7 +217,9 @@ export const WEAPONS: WeaponDef[] = [
     falloffEnd: 120,
     falloffMin: 1,
     viewColor: [0.18, 0.2, 0.24],
-    baseSpread: 6.5, // hipfire bem imprecisa; ADS zera o spread
+    baseSpread: 6.5, // hipfire em movimento é bem imprecisa; parado o 1º tiro é reto
+    sprayBloomMax: 0.6,
+    sprayBloomRamp: 3,
     drawTime: 0.7,
   },
   {
@@ -225,6 +241,8 @@ export const WEAPONS: WeaponDef[] = [
     falloffMin: 0,
     viewColor: [0.72, 0.74, 0.78],
     baseSpread: 0,
+    sprayBloomMax: 0,
+    sprayBloomRamp: 1,
     drawTime: 0.7,
     meleeRange: 2.2,
     moveSpeedMult: MAX_MOVE_SPEED_MULT,
@@ -245,6 +263,20 @@ export function weaponMaxRange(weapon: WeaponDef): number {
 
 export function weaponMoveSpeedMult(weapon: WeaponDef): number {
   return weapon.moveSpeedMult ?? 1;
+}
+
+/**
+ * Spread extra (graus) do tiro `shot` de uma rajada (0 = primeiro tiro).
+ * 1º tiro: 0 — parado, sai sempre reto. 2º/3º: aumento bem pequeno;
+ * do 3º em diante cresce gradualmente até `sprayBloomMax`.
+ */
+export function sprayBloom(weapon: WeaponDef, shot: number): number {
+  const max = weapon.sprayBloomMax;
+  if (shot <= 0 || max <= 0) return 0;
+  if (shot === 1) return max * 0.08;
+  if (shot === 2) return max * 0.18;
+  const t = Math.min(1, (shot - 2) / Math.max(1, weapon.sprayBloomRamp));
+  return max * (0.18 + 0.82 * t);
 }
 
 /** Multiplicador de dano pela distância (linear entre start e end). */

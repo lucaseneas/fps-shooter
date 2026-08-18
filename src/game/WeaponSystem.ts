@@ -13,6 +13,7 @@ import {
   damageFalloff,
   getWeapon,
   isMeleeWeapon,
+  sprayBloom,
   weaponMaxRange,
 } from "../../shared/weapons";
 import { EffectsManager } from "./effects";
@@ -78,6 +79,9 @@ export class WeaponSystem {
   private aiming = false;
   private readonly recoilShots = new Map<string, number>();
   private readonly lastShotAt = new Map<string, number>();
+  /** Contagem de tiros da rajada por arma (para o bloom progressivo). */
+  private readonly sprayShots = new Map<string, number>();
+  private readonly sprayLastShotAt = new Map<string, number>();
 
   /** Chamado a cada disparo — o servidor decide o dano (lag comp). */
   onFire: ((data: FireData) => void) | null = null;
@@ -134,7 +138,29 @@ export class WeaponSystem {
       }
     }
 
-    return (maxPatternOffset + this.weapon.baseSpread) * spreadMultiplier;
+    return maxPatternOffset * spreadMultiplier + this.randomSpread(this.peekSprayShot());
+  }
+
+  /**
+   * Spread aleatório (graus) do tiro `sprayShot` da rajada.
+   * Parado: só o bloom da rajada — 1º tiro é sempre 0 (reto).
+   * Em movimento: spread base por postura + bloom da rajada.
+   */
+  private randomSpread(sprayShot: number): number {
+    const bloom = sprayBloom(this.weapon, sprayShot);
+    if (!this.moving && !this.running && !this.airborne) return bloom;
+    return this.weapon.baseSpread * this.spreadMultiplier() + bloom;
+  }
+
+  /** Janela sem disparo para o spread da rajada resetar a zero. */
+  private static readonly SPRAY_RESET_MS = 200;
+
+  /** Índice do próximo tiro na rajada (0 = primeiro tiro). */
+  private peekSprayShot(): number {
+    const id = this.weapon.id;
+    const prev = this.sprayLastShotAt.get(id) ?? -Infinity;
+    if (performance.now() - prev > WeaponSystem.SPRAY_RESET_MS) return 0;
+    return this.sprayShots.get(id) ?? 0;
   }
 
   /**
@@ -294,6 +320,8 @@ export class WeaponSystem {
     this.reloadRemaining = 0;
     this.cooldown = Math.max(this.cooldown, this.weapon.drawTime);
     this.semiAutoLock = false;
+    this.sprayShots.clear();
+    this.sprayLastShotAt.clear();
     this.onStateChanged?.();
   }
 
@@ -375,12 +403,15 @@ export class WeaponSystem {
     const spreadMultiplier = melee || noRecoil ? 0 : this.spreadMultiplier();
     const range = weaponMaxRange(this.weapon);
 
+    const sprayShot = this.peekSprayShot();
+    this.sprayShots.set(this.weapon.id, sprayShot + 1);
+    this.sprayLastShotAt.set(this.weapon.id, performance.now());
+    const maxSpread = melee || noRecoil ? 0 : this.randomSpread(sprayShot);
+
     for (let i = 0; i < this.weapon.pellets; i++) {
       // No Recoil: tiros perfeitos no centro (ignora padrão de pellets e spread).
       const [yaw, pitch] = noRecoil ? [0, 0] : (this.weapon.pelletPattern[i] ?? [0, 0]);
 
-      const baseSpread = noRecoil ? 0 : this.weapon.baseSpread;
-      const maxSpread = baseSpread * spreadMultiplier;
       const angle = Math.random() * Math.PI * 2;
       const randRadius = Math.random() * maxSpread;
       const randYaw = randRadius * Math.cos(angle);
