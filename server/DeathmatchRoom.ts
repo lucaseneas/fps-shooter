@@ -367,6 +367,7 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     const p = new PlayerState();
     p.name = name;
+    p.userId = account?.id ?? 0;
     p.health = CONFIG.playerMaxHealth;
     // Entra em espectador: só aparece no mapa após requestSpawn.
     p.alive = false;

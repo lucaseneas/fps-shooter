@@ -2,6 +2,8 @@ import { Schema, MapSchema, ArraySchema, type } from "@colyseus/schema";
 
 export class PlayerState extends Schema {
   @type("string") name = "";
+  /** Id da conta autenticada (0 = convidado) — usado pelo sistema Social. */
+  @type("number") userId = 0;
   @type("number") x = 0;
   @type("number") y = 0;
   @type("number") z = 0;
@@ -72,4 +74,26 @@ export class MatchState extends Schema {
   @type("string") mapId = "praca";
   /** Falso = sala em pré-lobby; verdadeiro = partida em andamento. */
   @type("boolean") matchStarted = false;
+}
+
+// --- Sala Social (presença global: amigos online, sala atual, convites) ---
+
+export class SocialUserState extends Schema {
+  @type("number") userId = 0;
+  @type("string") name = "";
+  /** "home" | "lobby" | "playing". */
+  @type("string") status = "home";
+  /** Sala de mata-mata em que está (vazio = fora de sala). */
+  @type("string") roomId = "";
+  @type("string") roomName = "";
+  /** Humanos na sala atual (para o check "sala cheia"). */
+  @type("number") roomClients = 0;
+  @type("number") roomMax = 0;
+  @type("boolean") matchStarted = false;
+  @type("string") skinId = "skin_default";
+}
+
+export class SocialState extends Schema {
+  /** Presença por sessionId — cada aba conectada é uma entrada. */
+  @type({ map: SocialUserState }) users = new MapSchema<SocialUserState>();
 }

@@ -55,9 +55,32 @@ export async function migrate(): Promise<void> {
         ADD COLUMN IF NOT EXISTS wins INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS matches_played INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0
+        ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS active_skin VARCHAR(32) NOT NULL DEFAULT 'skin_default',
+        ADD COLUMN IF NOT EXISTS loadout JSONB NOT NULL DEFAULT '{"primary":"rifle","secondary":"pistol","melee":"knife"}',
+        ADD COLUMN IF NOT EXISTS inventory JSONB NOT NULL DEFAULT '{"characterSkins":["skin_default"],"weapons":["rifle","ak47","shotgun","sniper","pistol","magnum","knife"],"weaponSkins":[],"equipment":[]}'
     `);
     console.log("[auth] tabela users pronta");
+    // Sistema Social: pedidos pendentes e amizades (par normalizado a<b).
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS friend_requests (
+        id SERIAL PRIMARY KEY,
+        from_user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        to_user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (from_user, to_user)
+      )
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS friendships (
+        user_a INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_b INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_a, user_b),
+        CHECK (user_a < user_b)
+      )
+    `);
+    console.log("[social] tabelas de amizade prontas");
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code;
     if (code === "ENETUNREACH" || code === "ENOTFOUND" || code === "ETIMEDOUT") {

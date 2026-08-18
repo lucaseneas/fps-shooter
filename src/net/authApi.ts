@@ -1,6 +1,13 @@
 /** Cliente HTTP para auth (mesmo host do Colyseus). */
 
 import { CONFIG } from "../../shared/config";
+import type { ItemType, PlayerInventory } from "../../shared/inventory";
+
+export interface AccountLoadout {
+  primary: string;
+  secondary: string;
+  melee: string;
+}
 
 export interface AuthUser {
   id: number;
@@ -13,6 +20,12 @@ export interface AuthUser {
   xp: number;
   /** Gold acumulado — moeda de recompensa (shared/gold). */
   gold: number;
+  /** Skin ativa persistida na conta. */
+  activeSkin: string;
+  /** Loadout equipado persistido na conta. */
+  loadout: AccountLoadout;
+  /** Inventário persistido na conta (skins, armas, futuros itens). */
+  inventory: PlayerInventory;
   createdAt: string;
 }
 
@@ -136,4 +149,62 @@ export async function fetchProfile(): Promise<AuthUser | null> {
   });
   if (!result.ok) return null;
   return result.data.user;
+}
+
+/** Persiste skin ativa + loadout na conta (só com sessão). */
+export async function saveAccountPrefs(prefs: {
+  activeSkin: string;
+  loadout: AccountLoadout;
+}): Promise<boolean> {
+  const token = loadStoredToken();
+  if (!token) return false;
+  const result = await api<{ prefs: unknown }>("/api/account/prefs", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(prefs),
+  });
+  return result.ok;
+}
+
+export type BuyItemResult =
+  | { ok: true; gold: number; inventory: PlayerInventory }
+  | { ok: false; error: string };
+
+/** Compra um item da loja na conta (o servidor valida preço e saldo). */
+export async function buyShopItem(
+  type: ItemType,
+  itemId: string
+): Promise<BuyItemResult> {
+  const token = loadStoredToken();
+  if (!token) return { ok: false, error: "Entre numa conta para comprar." };
+  const result = await api<{ gold: number; inventory: PlayerInventory }>(
+    "/api/shop/buy",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ type, itemId }),
+    }
+  );
+  if (!result.ok) return { ok: false, error: result.error };
+  return { ok: true, gold: result.data.gold, inventory: result.data.inventory };
+}
+
+/**
+ * Une o inventário local ao da conta (login migra skins de convidado).
+ * Devolve o inventário merged vindo do servidor, ou null se falhar.
+ */
+export async function syncAccountInventory(
+  inventory: PlayerInventory
+): Promise<PlayerInventory | null> {
+  const token = loadStoredToken();
+  if (!token) return null;
+  const result = await api<{ inventory: PlayerInventory }>(
+    "/api/inventory/sync",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(inventory),
+    }
+  );
+  return result.ok ? result.data.inventory : null;
 }

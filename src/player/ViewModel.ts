@@ -83,7 +83,7 @@ const WEAPON_CONFIGS: Record<string, WeaponViewModelConfig> = {
   },
 };
 
-const WEAPON_ASSETS: Record<string, string> = {
+export const WEAPON_ASSETS: Record<string, string> = {
   rifle: "/assets/rifle_v2.glb",
   ak47: "/assets/ak47.glb",
   pistol: "/assets/pistol.glb",

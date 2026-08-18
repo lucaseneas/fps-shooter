@@ -4,6 +4,8 @@ import { loadStoredToken } from "./authApi";
 
 export interface PlayerSnapshot {
   name: string;
+  /** Id da conta autenticada (0 = convidado) — usado pelo Social. */
+  userId: number;
   x: number;
   y: number;
   z: number;
@@ -73,7 +75,8 @@ function getServerUrl(): string {
   return `${proto}//${window.location.hostname}:${CONFIG.serverPort}`;
 }
 
-function getClient(): Client {
+/** Cliente Colyseus compartilhado (mata-mata e sala social usam o mesmo). */
+export function getClient(): Client {
   if (!cachedClient) {
     cachedClient = new Client(getServerUrl());
   }

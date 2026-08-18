@@ -2,9 +2,18 @@ import "dotenv/config";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { Server } from "colyseus";
 import { DeathmatchRoom } from "./DeathmatchRoom";
+import { SocialRoom } from "./SocialRoom";
 import { CONFIG } from "../shared/config";
 import { isAuthEnabled, migrate } from "./db";
-import { login, register, getProfile } from "./auth";
+import {
+  login,
+  register,
+  getProfile,
+  verifyToken,
+  saveAccountPrefs,
+  purchaseItem,
+  mergeAccountInventory,
+} from "./auth";
 
 const port = Number(process.env.PORT) || CONFIG.serverPort;
 /** Render (e outros PaaS) exigem escutar em 0.0.0.0, não só localhost. */
@@ -115,6 +124,71 @@ async function handleApi(
     return true;
   }
 
+  if (req.method === "POST" && path === "/api/account/prefs") {
+    try {
+      const account = verifyToken(bearerToken(req));
+      if (!account) {
+        sendJson(res, 401, { error: "Não autenticado." });
+        return true;
+      }
+      const body = await readJson(req);
+      const result = await saveAccountPrefs(account.id, body);
+      if (typeof result === "string") {
+        sendJson(res, 400, { error: result });
+        return true;
+      }
+      sendJson(res, 200, { prefs: result });
+    } catch (err) {
+      console.error("[auth] prefs:", err);
+      sendJson(res, 400, { error: "JSON inválido." });
+    }
+    return true;
+  }
+
+  // Loja: compra servidor-autoritativa (valida preço, desconta gold, grava item).
+  if (req.method === "POST" && path === "/api/shop/buy") {
+    try {
+      const account = verifyToken(bearerToken(req));
+      if (!account) {
+        sendJson(res, 401, { error: "Não autenticado." });
+        return true;
+      }
+      const body = await readJson(req);
+      const result = await purchaseItem(account.id, body);
+      if (typeof result === "string") {
+        sendJson(res, 400, { error: result });
+        return true;
+      }
+      sendJson(res, 200, result);
+    } catch (err) {
+      console.error("[shop] buy:", err);
+      sendJson(res, 400, { error: "JSON inválido." });
+    }
+    return true;
+  }
+
+  // Inventário: migra itens locais (convidado/localStorage) para a conta.
+  if (req.method === "POST" && path === "/api/inventory/sync") {
+    try {
+      const account = verifyToken(bearerToken(req));
+      if (!account) {
+        sendJson(res, 401, { error: "Não autenticado." });
+        return true;
+      }
+      const body = await readJson(req);
+      const result = await mergeAccountInventory(account.id, body);
+      if (typeof result === "string") {
+        sendJson(res, 400, { error: result });
+        return true;
+      }
+      sendJson(res, 200, { inventory: result });
+    } catch (err) {
+      console.error("[inventory] sync:", err);
+      sendJson(res, 400, { error: "JSON inválido." });
+    }
+    return true;
+  }
+
   return false;
 }
 
@@ -137,6 +211,9 @@ const httpServer = createServer((req, res) => {
 
 const gameServer = new Server({ server: httpServer });
 gameServer.define("deathmatch", DeathmatchRoom);
+// Sala global do Social: presença, amigos e convites (clientes ficam
+// conectados nela o tempo todo, mesmo dentro de uma partida).
+gameServer.define("social", SocialRoom);
 
 async function boot(): Promise<void> {
   if (isAuthEnabled()) {

@@ -189,7 +189,13 @@
             <h1>FPS Web 3D</h1>
             <p class="subtitle">Lobby</p>
           </div>
-          <button type="button" id="logoutButton" class="secondary">Sair</button>
+          <div class="home-top-actions">
+            <button type="button" id="shopButton" class="social-btn shop-btn">Loja</button>
+            <button type="button" id="socialButton" class="social-btn">
+              Social <span class="social-badge hidden" id="socialBadge">0</span>
+            </button>
+            <button type="button" id="logoutButton" class="secondary">Sair</button>
+          </div>
         </header>
 
         <div class="home-layout">
@@ -197,50 +203,57 @@
             <h2>Jogador</h2>
             <p class="profile-name" data-pf="name">—</p>
             <p class="profile-meta" data-pf="meta"></p>
-            <div class="rank-panel">
-              <img class="rank-insignia" data-rk="icon" src="/ranks/recruta.svg" alt="Patente" />
-              <div class="rank-info">
-                <span class="rank-name" data-rk="name">Recruta</span>
-                <div class="rank-xpbar"><div class="rank-xpfill" data-rk="fill"></div></div>
-                <span class="rank-xptext" data-rk="text">0 XP</span>
+            <div class="profile-body">
+              <div class="profile-left">
+                <div class="home-3d-view">
+                  <canvas id="homeProfilePreviewCanvas"></canvas>
+                  <span class="preview-360-badge">Arraste para girar</span>
+                </div>
+                <div class="rank-panel">
+                  <img class="rank-insignia" data-rk="icon" src="/ranks/recruta.svg" alt="Patente" />
+                  <div class="rank-info">
+                    <span class="rank-name" data-rk="name">Recruta</span>
+                    <div class="rank-xpbar"><div class="rank-xpfill" data-rk="fill"></div></div>
+                    <span class="rank-xptext" data-rk="text">0 XP</span>
+                  </div>
+                </div>
+              </div>
+              <div class="profile-right">
+                <div class="stats-grid">
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="kills">0</span>
+                    <span class="stat-label">Kills</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="deaths">0</span>
+                    <span class="stat-label">Deaths</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="wins">0</span>
+                    <span class="stat-label">Vitórias</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="matches">0</span>
+                    <span class="stat-label">Partidas</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="kd">0.00</span>
+                    <span class="stat-label">K/D</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="winRate">0%</span>
+                    <span class="stat-label">Win rate</span>
+                  </div>
+                  <div class="stat-cell gold-cell">
+                    <span class="stat-value" data-pf="gold">0</span>
+                    <span class="stat-label">Gold</span>
+                  </div>
+                </div>
+                <div class="profile-actions">
+                  <button type="button" id="openInventoryButton" class="skins-btn">Inventário</button>
+                </div>
               </div>
             </div>
-            <div class="stats-grid">
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="kills">0</span>
-                <span class="stat-label">Kills</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="deaths">0</span>
-                <span class="stat-label">Deaths</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="wins">0</span>
-                <span class="stat-label">Vitórias</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="matches">0</span>
-                <span class="stat-label">Partidas</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="kd">0.00</span>
-                <span class="stat-label">K/D</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="winRate">0%</span>
-                <span class="stat-label">Win rate</span>
-              </div>
-              <div class="stat-cell gold-cell">
-                <span class="stat-value" data-pf="gold">0</span>
-                <span class="stat-label">Gold</span>
-              </div>
-            </div>
-            <div class="profile-actions">
-              <button type="button" id="openSkinsButton" class="skins-btn">Skins & Loja</button>
-            </div>
-            <p class="info-text home-tip">
-              Loadout personalizado · 1 principal · 2 secundária · 3 melee · I troca as armas · Crie a sala e seja o líder · Kills para vencer configurável.
-            </p>
           </aside>
 
           <section class="home-lobbies">
@@ -343,7 +356,13 @@
             <h1 id="lobbyRoomName">Sala</h1>
             <p class="subtitle" id="lobbyStatus">Aguardando jogadores</p>
           </div>
-          <button type="button" id="lobbyLeaveButton" class="secondary">Sair da sala</button>
+          <div class="home-top-actions">
+            <button type="button" id="lobbyShopButton" class="social-btn shop-btn">Loja</button>
+            <button type="button" id="lobbySocialButton" class="social-btn">
+              Social <span class="social-badge hidden" id="lobbySocialBadge">0</span>
+            </button>
+            <button type="button" id="lobbyLeaveButton" class="secondary">Sair da sala</button>
+          </div>
         </header>
 
         <div class="lobby-layout">
@@ -351,42 +370,55 @@
             <h2>Jogador</h2>
             <p class="profile-name" data-pf="name">—</p>
             <p class="profile-meta" data-pf="meta"></p>
-            <div class="rank-panel">
-              <img class="rank-insignia" data-rk="icon" src="/ranks/recruta.svg" alt="Patente" />
-              <div class="rank-info">
-                <span class="rank-name" data-rk="name">Recruta</span>
-                <div class="rank-xpbar"><div class="rank-xpfill" data-rk="fill"></div></div>
-                <span class="rank-xptext" data-rk="text">0 XP</span>
+            <div class="profile-body">
+              <div class="profile-left">
+                <div class="home-3d-view">
+                  <canvas id="lobbyProfilePreviewCanvas"></canvas>
+                  <span class="preview-360-badge">Arraste para girar</span>
+                </div>
+                <div class="rank-panel">
+                  <img class="rank-insignia" data-rk="icon" src="/ranks/recruta.svg" alt="Patente" />
+                  <div class="rank-info">
+                    <span class="rank-name" data-rk="name">Recruta</span>
+                    <div class="rank-xpbar"><div class="rank-xpfill" data-rk="fill"></div></div>
+                    <span class="rank-xptext" data-rk="text">0 XP</span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="stats-grid">
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="kills">0</span>
-                <span class="stat-label">Kills</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="deaths">0</span>
-                <span class="stat-label">Deaths</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="wins">0</span>
-                <span class="stat-label">Vitórias</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="matches">0</span>
-                <span class="stat-label">Partidas</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="kd">0.00</span>
-                <span class="stat-label">K/D</span>
-              </div>
-              <div class="stat-cell">
-                <span class="stat-value" data-pf="winRate">0%</span>
-                <span class="stat-label">Win rate</span>
-              </div>
-              <div class="stat-cell gold-cell">
-                <span class="stat-value" data-pf="gold">0</span>
-                <span class="stat-label">Gold</span>
+              <div class="profile-right">
+                <div class="stats-grid">
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="kills">0</span>
+                    <span class="stat-label">Kills</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="deaths">0</span>
+                    <span class="stat-label">Deaths</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="wins">0</span>
+                    <span class="stat-label">Vitórias</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="matches">0</span>
+                    <span class="stat-label">Partidas</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="kd">0.00</span>
+                    <span class="stat-label">K/D</span>
+                  </div>
+                  <div class="stat-cell">
+                    <span class="stat-value" data-pf="winRate">0%</span>
+                    <span class="stat-label">Win rate</span>
+                  </div>
+                  <div class="stat-cell gold-cell">
+                    <span class="stat-value" data-pf="gold">0</span>
+                    <span class="stat-label">Gold</span>
+                  </div>
+                </div>
+                <div class="profile-actions">
+                  <button type="button" id="lobbyOpenInventoryButton" class="skins-btn">Inventário</button>
+                </div>
               </div>
             </div>
           </aside>
@@ -399,6 +431,7 @@
               </h2>
               <div id="lobbyPlayersList" class="lobby-players-list"></div>
               <p class="lobby-ready-count" id="lobbyReadyCount"></p>
+              <p class="lobby-hint">Botão direito num jogador para adicionar como amigo.</p>
             </section>
 
             <aside class="lobby-panel lobby-chat">
@@ -479,33 +512,76 @@
       </div>
     </div>
 
-    <!-- Modal de Vestiário & Loja de Skins (Acessível no Menu) -->
-    <div id="skinsModal" class="hidden">
-      <div class="modal-card skins-card">
+    <!-- Modal da Loja — só mostra o que você ainda NÃO possui -->
+    <div id="shopModal" class="hidden">
+      <div class="modal-card skins-card shop-card">
         <header class="skins-header">
           <div>
-            <h2>Vestiário & Loja de Skins</h2>
-            <p class="skins-hint">Gire o personagem em 360º arrastando com o mouse.</p>
+            <h2>Loja</h2>
+            <p class="skins-hint">Itens à venda — o que você já possui fica no Inventário.</p>
           </div>
           <div class="skins-user-gold">
             <span class="gold-icon">🪙</span>
-            <span id="skinsModalGold">0</span> Gold
+            <span id="shopModalGold">0</span> Gold
           </div>
         </header>
 
         <div class="skins-modal-body">
           <div class="skins-3d-view">
-            <canvas id="skinShopPreviewCanvas" width="280" height="360"></canvas>
+            <canvas id="shopPreviewCanvas" width="280" height="360"></canvas>
             <span class="preview-360-badge">🔄 360° Interativo</span>
           </div>
 
-          <div class="skins-catalog" id="skinsCatalog">
+          <div class="skins-catalog" id="shopCatalog">
             <!-- Renderizado dinamicamente via TypeScript -->
           </div>
         </div>
 
         <div class="modal-actions">
-          <button type="button" id="closeSkinsModalButton" class="secondary">Fechar</button>
+          <button type="button" id="closeShopModalButton" class="secondary">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Inventário (home/lobby) — suas armas e suas skins -->
+    <div id="inventoryModal" class="hidden">
+      <div class="modal-card skins-card inventory-card">
+        <header class="skins-header">
+          <div>
+            <h2>Inventário</h2>
+            <p class="skins-hint">Suas armas e skins — equipe o que vai para a partida.</p>
+          </div>
+          <div class="skins-user-gold">
+            <span class="gold-icon">🪙</span>
+            <span id="inventoryModalGold">0</span> Gold
+          </div>
+        </header>
+
+        <div class="inv-tabs">
+          <button type="button" class="inv-tab active" data-invtab="weapons">Armas</button>
+          <button type="button" class="inv-tab" data-invtab="skins">Skins</button>
+        </div>
+
+        <div class="skins-modal-body">
+          <div class="skins-3d-view">
+            <canvas id="inventoryPreviewCanvas"></canvas>
+            <span class="preview-360-badge">🔄 360° Interativo</span>
+          </div>
+
+          <div class="inv-content">
+            <div id="inventoryWeaponsTab" class="inv-tab-panel">
+              <p class="skins-hint inv-tab-hint">A arma principal aparece nas mãos do personagem.</p>
+              <div class="armory-options loadout-options" id="inventoryOptions"></div>
+            </div>
+            <div id="inventorySkinsTab" class="inv-tab-panel hidden">
+              <div class="skins-catalog inv-skins-grid" id="inventorySkinsGrid"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="inventoryConfirmButton">Confirmar</button>
+          <button type="button" id="inventoryCancelButton" class="secondary">Fechar</button>
         </div>
       </div>
     </div>
@@ -582,6 +658,123 @@
         </div>
       </div>
     </div>
+
+    <!-- Painel Social (home e pré-lobby) -->
+    <div id="socialModal" class="hidden social-overlay">
+      <div class="modal-card social-card">
+        <h2>Social</h2>
+        <p class="social-hint">
+          Clique num amigo para ver informações · Botão direito para opções.
+        </p>
+
+        <div id="socialGuest" class="social-guest hidden">
+          <p>Entre numa conta para usar o Social —<br />amigos ficam ligados ao seu usuário.</p>
+        </div>
+
+        <div id="socialContent">
+          <section id="socialRequestsSection" class="social-section hidden">
+            <h3>Pedidos de amizade</h3>
+            <div id="socialRequestsList" class="social-list"></div>
+          </section>
+
+          <section class="social-section">
+            <h3>Amigos <span id="socialFriendsCount" class="lobby-count"></span></h3>
+            <div id="socialFriendsList" class="social-list"></div>
+          </section>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="socialAddButton">Adicionar amigo</button>
+          <button type="button" id="socialCloseButton" class="secondary">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: adicionar amigo pelo nome -->
+    <div id="addFriendModal" class="hidden social-overlay">
+      <div class="modal-card add-friend-card">
+        <h2>Adicionar amigo</h2>
+        <form id="addFriendForm">
+          <input
+            id="addFriendInput"
+            type="text"
+            maxlength="16"
+            placeholder="Nome do jogador"
+            autocomplete="off"
+            required
+          />
+          <p id="addFriendStatus" class="add-friend-status"></p>
+          <div class="modal-actions">
+            <button type="submit">Adicionar</button>
+            <button type="button" id="addFriendCancel" class="secondary">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: informações do amigo (igual ao perfil da home) -->
+    <div id="friendInfoModal" class="hidden social-overlay">
+      <div class="modal-card friend-info-card">
+        <h2>Amigo</h2>
+        <p class="profile-name" id="friendInfoName">—</p>
+        <p class="profile-meta" id="friendInfoMeta"></p>
+        <div class="profile-body">
+          <div class="profile-left">
+            <div class="home-3d-view">
+              <canvas id="friendInfoCanvas"></canvas>
+              <span class="preview-360-badge">Arraste para girar</span>
+            </div>
+            <div class="rank-panel">
+              <img class="rank-insignia" id="friendInfoRankIcon" src="/ranks/recruta.svg" alt="Patente" />
+              <div class="rank-info">
+                <span class="rank-name" id="friendInfoRankName">Recruta</span>
+                <div class="rank-xpbar"><div class="rank-xpfill" id="friendInfoXpFill"></div></div>
+                <span class="rank-xptext" id="friendInfoXpText">0 XP</span>
+              </div>
+            </div>
+          </div>
+          <div class="profile-right">
+            <div class="stats-grid">
+              <div class="stat-cell">
+                <span class="stat-value" id="friendKills">0</span>
+                <span class="stat-label">Kills</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="friendDeaths">0</span>
+                <span class="stat-label">Deaths</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="friendWins">0</span>
+                <span class="stat-label">Vitórias</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="friendMatches">0</span>
+                <span class="stat-label">Partidas</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="friendKd">0.00</span>
+                <span class="stat-label">K/D</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-value" id="friendWinRate">0%</span>
+                <span class="stat-label">Win rate</span>
+              </div>
+              <div class="stat-cell gold-cell">
+                <span class="stat-value" id="friendGold">0</span>
+                <span class="stat-label">Gold</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="friendInfoClose" class="secondary">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Menu de contexto (botão direito) e notificações do Social -->
+    <div id="contextMenu" class="hidden"></div>
+    <div id="socialNotifications"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

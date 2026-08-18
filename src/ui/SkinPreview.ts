@@ -3,14 +3,20 @@ import { Scene } from "@babylonjs/core/scene";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color4, Color3 } from "@babylonjs/core/Maths/math.color";
-import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import "@babylonjs/loaders/glTF";
+
+import { WEAPON_ASSETS } from "../player/ViewModel";
+
+/** Ponto de encaixe da arma na mão direita do dummy (mesma pose do RemotePlayer). */
+const GUN_ATTACH_POS = new Vector3(0.32, 1.22, 0.3);
 
 export class SkinPreview {
   private engine: Engine;
@@ -20,6 +26,11 @@ export class SkinPreview {
   private skinMat: PBRMaterial | StandardMaterial | null = null;
   private isRunning = false;
   private currentSkin = "skin_default";
+
+  private gunRoot: TransformNode | null = null;
+  private readonly weaponNodes = new Map<string, TransformNode>();
+  private readonly loadingWeapons = new Set<string>();
+  private currentWeaponId: string | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, true, { preserveDrawingBuffer: false, antialias: true });
@@ -61,15 +72,24 @@ export class SkinPreview {
       const container = await SceneLoader.LoadAssetContainerAsync("", "/assets/player_dummy.glb", this.scene);
       const inst = container.instantiateModelsToScene();
       this.dummyMesh = inst.rootNodes[0] as TransformNode;
-      this.dummyMesh.position.y = 0; 
-      
+      this.dummyMesh.position.y = 0;
+
       this.dummyMesh.getChildMeshes().forEach(m => {
         if (m.material) {
           this.skinMat = m.material as PBRMaterial | StandardMaterial;
         }
       });
-      
+
+      this.gunRoot = new TransformNode("previewGunRoot", this.scene);
+      this.gunRoot.parent = this.dummyMesh;
+      this.gunRoot.position = GUN_ATTACH_POS.clone();
+      // Armas que terminaram de carregar antes do dummy precisam ser re-anexadas.
+      for (const node of this.weaponNodes.values()) {
+        node.parent = this.gunRoot;
+      }
+
       this.setSkin(this.currentSkin);
+      this.updateVisibleWeapon();
     } catch (e) {
       console.error("[SkinPreview] Falha ao carregar player_dummy.glb:", e);
     }
@@ -88,6 +108,49 @@ export class SkinPreview {
       mat.albedoTexture = tex;
     } else if (mat.diffuseTexture !== undefined) {
       mat.diffuseTexture = tex;
+    }
+  }
+
+  /** Mostra uma arma nas mãos do personagem (null = desarmado). */
+  public setWeapon(weaponId: string | null) {
+    this.currentWeaponId = weaponId;
+    if (weaponId && !this.weaponNodes.has(weaponId) && !this.loadingWeapons.has(weaponId)) {
+      const url = WEAPON_ASSETS[weaponId];
+      if (url) this.loadWeaponModel(weaponId, url);
+    }
+    this.updateVisibleWeapon();
+  }
+
+  private loadWeaponModel(id: string, url: string) {
+    this.loadingWeapons.add(id);
+
+    SceneLoader.LoadAssetContainerAsync("", url, this.scene)
+      .then((container) => {
+        const inst = container.instantiateModelsToScene();
+        const gunOffset = new TransformNode(`previewGunOffset_${id}`, this.scene);
+        // Mesma rotação usada no RemotePlayer/ViewModel para deitar o GLB para frente.
+        gunOffset.rotationQuaternion = Quaternion.FromEulerAngles(Math.PI / -2, 0, 0);
+        if (this.gunRoot) gunOffset.parent = this.gunRoot;
+
+        const model = inst.rootNodes[0] as Mesh;
+        model.parent = gunOffset;
+        model.getChildMeshes(false).forEach((m) => {
+          m.isPickable = false;
+        });
+
+        this.weaponNodes.set(id, gunOffset);
+        this.loadingWeapons.delete(id);
+        this.updateVisibleWeapon();
+      })
+      .catch((err) => {
+        console.warn(`[SkinPreview] Falha ao carregar arma ${id}:`, err);
+        this.loadingWeapons.delete(id);
+      });
+  }
+
+  private updateVisibleWeapon() {
+    for (const [id, node] of this.weaponNodes) {
+      node.setEnabled(id === this.currentWeaponId);
     }
   }
 

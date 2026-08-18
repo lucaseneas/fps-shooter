@@ -24,14 +24,23 @@ import {
 import {
   AuthSession,
   AuthUser,
+  buyShopItem,
   clearStoredToken,
   fetchAuthStatus,
   fetchProfile,
   loginAccount,
   registerAccount,
   restoreSession,
+  saveAccountPrefs,
+  syncAccountInventory,
 } from "./net/authApi";
 import { Minimap } from "./ui/Minimap";
+import { SocialPanel } from "./ui/Social";
+import {
+  PresencePayload,
+  isSocialConnected,
+  sendPresence,
+} from "./net/socialClient";
 import { CONFIG, GAME_MODES, KILLS_TO_WIN_OPTIONS, MAPS } from "../shared/config";
 import {
   DEFAULT_LOADOUT,
@@ -57,6 +66,17 @@ import {
   KILL_STREAK_KEY_CODES,
   KILL_STREAK_REWARDS,
 } from "../shared/killStreaks";
+import { SKINS } from "../shared/skins";
+import {
+  ITEM_TYPE_LABELS,
+  PlayerInventory,
+  SHOP_ITEMS,
+  ShopItemDef,
+  defaultInventory,
+  ownsItem,
+  sanitizeInventory,
+  withItem,
+} from "../shared/inventory";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const pageLogin = document.getElementById("pageLogin") as HTMLDivElement;
@@ -141,12 +161,26 @@ const authPassword = document.getElementById("authPassword") as HTMLInputElement
 const authSubmit = document.getElementById("authSubmit") as HTMLButtonElement;
 const authStatus = document.getElementById("authStatus") as HTMLParagraphElement;
 const logoutButton = document.getElementById("logoutButton") as HTMLButtonElement;
-const skinShopPreviewCanvas = document.getElementById("skinShopPreviewCanvas") as HTMLCanvasElement;
-const openSkinsButton = document.getElementById("openSkinsButton") as HTMLButtonElement;
-const skinsModal = document.getElementById("skinsModal") as HTMLDivElement;
-const closeSkinsModalButton = document.getElementById("closeSkinsModalButton") as HTMLButtonElement;
-const skinsCatalog = document.getElementById("skinsCatalog") as HTMLDivElement;
-const skinsModalGold = document.getElementById("skinsModalGold") as HTMLSpanElement;
+const shopPreviewCanvas = document.getElementById("shopPreviewCanvas") as HTMLCanvasElement;
+const shopButton = document.getElementById("shopButton") as HTMLButtonElement;
+const lobbyShopButton = document.getElementById("lobbyShopButton") as HTMLButtonElement;
+const shopModal = document.getElementById("shopModal") as HTMLDivElement;
+const closeShopModalButton = document.getElementById("closeShopModalButton") as HTMLButtonElement;
+const shopCatalog = document.getElementById("shopCatalog") as HTMLDivElement;
+const shopModalGold = document.getElementById("shopModalGold") as HTMLSpanElement;
+const homeProfilePreviewCanvas = document.getElementById("homeProfilePreviewCanvas") as HTMLCanvasElement;
+const lobbyProfilePreviewCanvas = document.getElementById("lobbyProfilePreviewCanvas") as HTMLCanvasElement;
+const lobbyOpenInventoryButton = document.getElementById("lobbyOpenInventoryButton") as HTMLButtonElement;
+const openInventoryButton = document.getElementById("openInventoryButton") as HTMLButtonElement;
+const inventoryModal = document.getElementById("inventoryModal") as HTMLDivElement;
+const inventoryOptions = document.getElementById("inventoryOptions") as HTMLDivElement;
+const inventorySkinsGrid = document.getElementById("inventorySkinsGrid") as HTMLDivElement;
+const inventoryPreviewCanvas = document.getElementById("inventoryPreviewCanvas") as HTMLCanvasElement;
+const inventoryModalGold = document.getElementById("inventoryModalGold") as HTMLSpanElement;
+const inventoryConfirmButton = document.getElementById("inventoryConfirmButton") as HTMLButtonElement;
+const inventoryCancelButton = document.getElementById("inventoryCancelButton") as HTMLButtonElement;
+const inventoryWeaponsTab = document.getElementById("inventoryWeaponsTab") as HTMLDivElement;
+const inventorySkinsTab = document.getElementById("inventorySkinsTab") as HTMLDivElement;
 
 const engine = new Engine(canvas, true, {
   preserveDrawingBuffer: false,
@@ -320,7 +354,12 @@ let preSpawnKitReady = false;
 let lastWeaponIndex = 1;
 let pingMs: number | null = null;
 let serverRttMs = 0;
-let skinPreview: SkinPreview | null = null;
+let shopPreview: SkinPreview | null = null;
+let homePreview: SkinPreview | null = null;
+let lobbyPreview: SkinPreview | null = null;
+let inventoryPreview: SkinPreview | null = null;
+let inventoryLoadout: LoadoutSlots = { ...DEFAULT_LOADOUT };
+let buyingItem = false;
 
 let authEnabled = false;
 let authMode: "login" | "register" = "login";
@@ -455,6 +494,7 @@ function applyRoute(route: AppRoute): void {
       );
       return;
     }
+    stopProfilePreviews();
     pageLogin.classList.add("hidden");
     pageHome.classList.add("hidden");
     pageLobby.classList.add("hidden");
@@ -470,9 +510,11 @@ function applyRoute(route: AppRoute): void {
       navigate("/play", true);
       return;
     }
+    stopProfilePreviews();
     pageLogin.classList.add("hidden");
     pageHome.classList.add("hidden");
     pageLobby.classList.remove("hidden");
+    startLobbyPreview();
     return;
   }
 
@@ -485,7 +527,9 @@ function applyRoute(route: AppRoute): void {
       navigate("/login", true);
       return;
     }
+    stopProfilePreviews();
     showPages("/home");
+    startHomePreview();
     void enterHome();
     return;
   }
@@ -494,6 +538,7 @@ function applyRoute(route: AppRoute): void {
     void room.leave();
     return;
   }
+  stopProfilePreviews();
   if (authEnabled && session) {
     navigate("/home", true);
     return;
@@ -532,6 +577,7 @@ authForm.addEventListener("submit", (e) => {
     guestAllowed = false;
     authPassword.value = "";
     setAuthMessage("");
+    applyAccountPrefs(session.user);
     navigate("/home");
   })();
 });
@@ -545,6 +591,8 @@ logoutButton.addEventListener("click", () => {
   clearStoredToken();
   session = null;
   guestAllowed = false;
+  inventorySyncedForUser = null;
+  socialPanel.disconnect();
   window.clearInterval(lobbyRefreshInterval);
   navigate("/login");
   setAuthMessage("Sessão terminada.");
@@ -558,6 +606,7 @@ async function initAuth(): Promise<void> {
 
   if (authEnabled) {
     session = await restoreSession();
+    if (session) applyAccountPrefs(session.user);
   } else {
     session = null;
   }
@@ -568,13 +617,85 @@ function playerName(): string {
   return nameInput.value.trim() || `Player${Math.floor(Math.random() * 900 + 100)}`;
 }
 
+// --- Sistema Social (amigos, presença, convites) ---
+
+/** Última presença enviada — patches a 30Hz não reenviam à toa. */
+let lastPresenceSig = "";
+
+function pushSocialPresence(): void {
+  if (!isSocialConnected()) return;
+  let payload: PresencePayload;
+  if (room) {
+    const snap = getMatchSnapshot(room);
+    let humans = 0;
+    forEachPlayer(room, (p) => {
+      if (!p.isBot) humans++;
+    });
+    payload = {
+      status: inGame ? "playing" : "lobby",
+      roomId: room.roomId,
+      roomName: snap.roomName,
+      roomClients: humans,
+      roomMax: snap.maxPlayers,
+      matchStarted: snap.matchStarted,
+      skinId: getActiveSkin(),
+    };
+  } else {
+    payload = {
+      status: "home",
+      roomId: "",
+      roomName: "",
+      roomClients: 0,
+      roomMax: 0,
+      matchStarted: false,
+      skinId: getActiveSkin(),
+    };
+  }
+  const sig = JSON.stringify(payload);
+  if (sig === lastPresenceSig) return;
+  lastPresenceSig = sig;
+  sendPresence(payload);
+}
+
+/** Entra na sala de um amigo ("Entrar na sala" / aceitar convite). */
+async function joinFriendRoom(roomId: string): Promise<void> {
+  if (!roomId || room?.roomId === roomId) return;
+  if (room) {
+    // Sair da sala atual dispara onLeave → resetToMenu → home; depois entra na nova.
+    await room.leave();
+  }
+  await joinLobbyRoom(roomId);
+}
+
+const socialPanel = new SocialPanel({
+  isLoggedIn: () => session !== null,
+  joinRoom: (roomId) => void joinFriendRoom(roomId),
+  myRoom: () => {
+    if (!room) return null;
+    const snap = getMatchSnapshot(room);
+    let humans = 0;
+    forEachPlayer(room, (p) => {
+      if (!p.isBot) humans++;
+    });
+    return {
+      roomId: room.roomId,
+      roomName: snap.roomName,
+      humans,
+      maxPlayers: snap.maxPlayers,
+    };
+  },
+  onConnected: () => pushSocialPresence(),
+});
+
 async function enterHome(): Promise<void> {
   window.clearInterval(lobbyRefreshInterval);
+  void socialPanel.connect();
   if (session) {
     const profile = await fetchProfile();
     if (profile) {
       session = { ...session, user: profile };
       renderProfile(profile);
+      applyAccountPrefs(profile);
     } else {
       renderProfile(session.user);
     }
@@ -848,9 +969,17 @@ function weaponOptionHtml(w: WeaponDef, selected: boolean): string {
   `;
 }
 
-function renderLoadoutOptions(): void {
-  const selected = weapons.loadout;
-  loadoutOptions.innerHTML = "";
+/**
+ * Monta os 3 dropdowns de slot (principal/secundária/melee) num container.
+ * `ownedIds` limita às armas do inventário (hoje todas são desbloqueadas).
+ */
+function buildWeaponSelects(
+  root: HTMLElement,
+  selected: LoadoutSlots,
+  onSelect: (container: HTMLElement, slot: keyof LoadoutSlots, id: WeaponId) => void,
+  ownedIds?: ReadonlySet<string>
+): void {
+  root.innerHTML = "";
 
   for (const def of SLOT_DEFS) {
     const current = getWeapon(selected[def.slot])!;
@@ -870,19 +999,20 @@ function renderLoadoutOptions(): void {
     panel.className = "weapon-select-panel hidden";
 
     for (const w of weaponsForCategory(def.category)) {
+      if (ownedIds && !ownedIds.has(w.id)) continue;
       const option = document.createElement("button");
       option.type = "button";
       option.className = `weapon-option${w.id === current.id ? " selected" : ""}`;
       option.innerHTML = weaponOptionHtml(w, w.id === current.id);
       option.addEventListener("click", () => {
-        selectSlotWeapon(container, def.slot, w.id);
+        onSelect(container, def.slot, w.id);
       });
       panel.appendChild(option);
     }
 
     currentBtn.addEventListener("click", () => {
       const willOpen = panel.classList.contains("hidden");
-      closeWeaponSelectPanels();
+      closeWeaponSelectPanels(root);
       if (willOpen) {
         panel.classList.remove("hidden");
         container.classList.add("open");
@@ -892,28 +1022,21 @@ function renderLoadoutOptions(): void {
     container.appendChild(label);
     container.appendChild(currentBtn);
     container.appendChild(panel);
-    loadoutOptions.appendChild(container);
+    root.appendChild(container);
   }
 }
 
-function closeWeaponSelectPanels(): void {
-  loadoutOptions
+function closeWeaponSelectPanels(root: ParentNode): void {
+  root
     .querySelectorAll(".weapon-select-panel")
     .forEach((el) => el.classList.add("hidden"));
-  loadoutOptions
+  root
     .querySelectorAll(".weapon-select.open")
     .forEach((el) => el.classList.remove("open"));
 }
 
-function selectSlotWeapon(
-  container: HTMLElement,
-  slot: keyof LoadoutSlots,
-  id: WeaponId
-): void {
-  applySelectedLoadout({ ...weapons.loadout, [slot]: id });
-  exitAds();
-
-  const w = getWeapon(id)!;
+/** Atualiza o dropdown após uma troca de arma (botão atual, check, fecha painel). */
+function refreshWeaponSelectUI(container: HTMLElement, w: WeaponDef): void {
   const currentBtn = container.querySelector(".weapon-select-current");
   if (currentBtn) currentBtn.innerHTML = weaponCurrentHtml(w);
   container.querySelectorAll(".weapon-option").forEach((el) => {
@@ -931,6 +1054,19 @@ function selectSlotWeapon(
   container.classList.remove("open");
 }
 
+function renderLoadoutOptions(): void {
+  buildWeaponSelects(
+    loadoutOptions,
+    weapons.loadout,
+    (container, slot, id) => {
+      applySelectedLoadout({ ...weapons.loadout, [slot]: id });
+      exitAds();
+      refreshWeaponSelectUI(container, getWeapon(id)!);
+    },
+    new Set(inventory.weapons)
+  );
+}
+
 function applySelectedLoadout(slots: LoadoutSlots): void {
   weapons.applyLoadout(slots, true);
   localStorage.setItem(LOADOUT_STORAGE_KEY, JSON.stringify(slots));
@@ -939,6 +1075,7 @@ function applySelectedLoadout(slots: LoadoutSlots): void {
   hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, weapons.isReloading);
   viewModel.setWeapon(weapons.weapon);
   player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
+  syncPrefsToAccount();
 }
 
 function enterPreSpawn(): void {
@@ -1004,8 +1141,6 @@ function openLoadoutModal(inMatch: boolean): void {
     }
   }
 
-  if (skinPreview) skinPreview.start();
-
   renderLoadoutOptions();
   loadoutModal.classList.remove("hidden");
 }
@@ -1019,8 +1154,6 @@ function closeLoadoutModal(relock: boolean): void {
   loadoutCancelButton.classList.add("hidden");
   spawnButton.classList.add("hidden");
   spectateButton.classList.add("hidden");
-
-  if (skinPreview) skinPreview.stop();
 
   if (freeSpectating) {
     player.setLookEnabled(true);
@@ -1075,8 +1208,6 @@ function enterFreeSpectate(): void {
   weapons.setEnabled(false);
   settingsModal.classList.add("hidden");
 
-  if (skinPreview) skinPreview.stop();
-
   player.enterFreeFlySpectator();
   player.requestPointerLock();
 }
@@ -1085,71 +1216,127 @@ loadoutCancelButton.addEventListener("click", () => cancelLoadoutPick());
 spawnButton.addEventListener("click", () => requestPlayerSpawn());
 spectateButton.addEventListener("click", () => enterFreeSpectate());
 
-// --- Loja e Vestiário de Skins ---
-interface SkinItem {
-  id: string;
-  name: string;
-  price: number;
-  desc: string;
-  isVip?: boolean;
-}
-
-const AVAILABLE_SKINS: SkinItem[] = [
-  {
-    id: "skin_default",
-    name: "Padrão",
-    price: 0,
-    desc: "Visual clássico do combatente.",
-  },
-  {
-    id: "skinvip1",
-    name: "Homem Aracnídeo",
-    price: 350,
-    desc: "Traje inspirado no herói aracnídeo.",
-  },
-  {
-    id: "skinbear",
-    name: "Urso",
-    price: 250,
-    desc: "Visual feroz e estiloso de urso pardo.",
-  },
-  {
-    id: "duckdoc",
-    name: "Pato Doutor",
-    price: 300,
-    desc: "Um pato elegante pronto para o combate.",
-  },
-];
-
-const OWNED_SKINS_KEY = "fps.ownedSkins";
+// --- Inventário do jogador + Loja ---
+// Modelo extensível (shared/inventory): hoje skins de personagem e armas;
+// no futuro skins de arma e equipamentos entram nas mesmas listas/fluxos.
+// Convidado: localStorage. Conta logada: o servidor (Postgres) é a autoridade.
+const INVENTORY_STORAGE_KEY = "fps.inventory";
+const LEGACY_OWNED_SKINS_KEY = "fps.ownedSkins";
 const ACTIVE_SKIN_KEY = "fps.activeSkin";
 
-function getOwnedSkins(): Set<string> {
+function loadLocalInventory(): PlayerInventory {
+  let raw: unknown = null;
   try {
-    const raw = localStorage.getItem(OWNED_SKINS_KEY);
-    if (raw) {
-      const list = JSON.parse(raw);
-      if (Array.isArray(list)) return new Set([...list, "skin_default"]);
-    }
+    raw = JSON.parse(localStorage.getItem(INVENTORY_STORAGE_KEY) ?? "null");
   } catch {}
-  return new Set(["skin_default"]);
+  // Migração: versões antigas guardavam apenas as skins nesta chave.
+  if (!raw) {
+    try {
+      const legacy = JSON.parse(
+        localStorage.getItem(LEGACY_OWNED_SKINS_KEY) ?? "null"
+      );
+      if (Array.isArray(legacy)) {
+        raw = { ...defaultInventory(), characterSkins: legacy };
+      }
+    } catch {}
+  }
+  return sanitizeInventory(raw);
 }
 
-function saveOwnedSkins(owned: Set<string>): void {
-  localStorage.setItem(OWNED_SKINS_KEY, JSON.stringify([...owned]));
+let inventory: PlayerInventory = loadLocalInventory();
+
+function saveLocalInventory(inv: PlayerInventory = inventory): void {
+  localStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(inv));
+}
+
+// Persiste a migração e aposenta a chave antiga (já copiada acima).
+saveLocalInventory();
+localStorage.removeItem(LEGACY_OWNED_SKINS_KEY);
+
+function ownsCharacterSkin(skinId: string): boolean {
+  return ownsItem(inventory, "character_skin", skinId);
 }
 
 function getActiveSkin(): string {
   const saved = localStorage.getItem(ACTIVE_SKIN_KEY);
-  const owned = getOwnedSkins();
-  if (saved && owned.has(saved)) return saved;
+  if (saved && ownsCharacterSkin(saved)) return saved;
   return "skin_default";
 }
 
 function setActiveSkin(skinId: string): void {
   localStorage.setItem(ACTIVE_SKIN_KEY, skinId);
   if (room) room.send("change_skin", skinId);
-  if (skinPreview) skinPreview.setSkin(skinId);
+  if (shopPreview) shopPreview.setSkin(skinId);
+  inventoryPreview?.setSkin(skinId);
+  homePreview?.setSkin(skinId);
+  lobbyPreview?.setSkin(skinId);
+  pushSocialPresence();
+  syncPrefsToAccount();
+}
+
+/** Evita reenviar prefs ao servidor enquanto aplicamos as prefs vindas da conta. */
+let applyingAccountPrefs = false;
+
+/** Migração local→conta roda uma vez por usuário logado. */
+let inventorySyncedForUser: number | null = null;
+
+/** Persiste skin ativa + loadout atuais na conta (apenas autenticado). */
+function syncPrefsToAccount(): void {
+  if (!session || applyingAccountPrefs) return;
+  void saveAccountPrefs({
+    activeSkin: getActiveSkin(),
+    loadout: { ...weapons.loadout },
+  });
+}
+
+/** Aplica as prefs salvas na conta ao estado local (chamado após login/restore). */
+function applyAccountPrefs(user: AuthUser): void {
+  applyingAccountPrefs = true;
+  try {
+    // Captura o inventário local ANTES de a conta sobrescrevê-lo — é ele
+    // que migra (skins compradas como convidado / localStorage antigo).
+    const localBefore = inventory;
+
+    // A conta é a autoridade do inventário.
+    inventory = sanitizeInventory(user.inventory);
+    saveLocalInventory(inventory);
+
+    // 1ª vez por login: une o inventário local ao da conta — o servidor
+    // só adiciona, nunca remove.
+    if (inventorySyncedForUser !== user.id) {
+      inventorySyncedForUser = user.id;
+      if (
+        user.activeSkin &&
+        !localBefore.characterSkins.includes(user.activeSkin)
+      ) {
+        localBefore.characterSkins.push(user.activeSkin);
+      }
+      void syncAccountInventory(localBefore).then((merged) => {
+        if (!merged || session?.user.id !== user.id) return;
+        inventory = merged;
+        session.user.inventory = merged;
+        saveLocalInventory(merged);
+        refreshShopAndInventoryUi();
+      });
+    }
+
+    if (user.activeSkin) {
+      setActiveSkin(
+        ownsCharacterSkin(user.activeSkin) ? user.activeSkin : "skin_default"
+      );
+    }
+    const lo = user.loadout;
+    if (
+      lo &&
+      getWeapon(lo.primary) &&
+      getWeapon(lo.secondary) &&
+      getWeapon(lo.melee)
+    ) {
+      applySelectedLoadout(lo as LoadoutSlots);
+    }
+  } finally {
+    applyingAccountPrefs = false;
+  }
 }
 
 function getUserCurrentGold(): number {
@@ -1174,105 +1361,327 @@ function deductUserGold(amount: number): boolean {
   return true;
 }
 
-function renderSkinsCatalog(): void {
-  if (!skinsCatalog) return;
-  skinsCatalog.innerHTML = "";
-  const owned = getOwnedSkins();
-  const active = getActiveSkin();
+// --- Loja: só lista itens que o jogador ainda NÃO possui ---
+
+function renderShopCatalog(): void {
+  if (!shopCatalog) return;
+  shopCatalog.innerHTML = "";
   const currentGold = getUserCurrentGold();
 
-  if (skinsModalGold) {
-    skinsModalGold.textContent = String(Math.max(0, Math.floor(currentGold)));
+  if (shopModalGold) {
+    shopModalGold.textContent = String(Math.max(0, Math.floor(currentGold)));
   }
 
-  for (const item of AVAILABLE_SKINS) {
-    const card = document.createElement("div");
-    card.className = `skin-card ${active === item.id ? "is-active" : ""}`;
+  // Agrupa por tipo (skins hoje; armas/equipamentos entram aqui no futuro).
+  const byType = new Map<string, ShopItemDef[]>();
+  for (const item of SHOP_ITEMS) {
+    if (ownsItem(inventory, item.type, item.id)) continue;
+    const list = byType.get(item.type) ?? [];
+    list.push(item);
+    byType.set(item.type, list);
+  }
 
-    const isOwned = owned.has(item.id);
+  if (byType.size === 0) {
+    shopCatalog.innerHTML = `<p class="shop-empty">Você já possui todos os itens da loja.<br />Novidades em breve!</p>`;
+    return;
+  }
+
+  for (const [type, items] of byType) {
+    const section = document.createElement("div");
+    section.className = "shop-section";
+
+    const title = document.createElement("h3");
+    title.className = "shop-section-title";
+    title.textContent = ITEM_TYPE_LABELS[type as keyof typeof ITEM_TYPE_LABELS] ?? type;
+    section.appendChild(title);
+
+    for (const item of items) {
+      const card = document.createElement("div");
+      card.className = "skin-card";
+
+      const info = document.createElement("div");
+      info.className = "skin-info";
+      info.innerHTML = `<h4>${item.name}</h4><p class="skin-desc">${item.desc}</p><div class="skin-price-wrap"><span class="skin-price-label">🪙 ${item.price} Gold</span></div>`;
+
+      const action = document.createElement("div");
+      action.className = "skin-action";
+
+      const btn = document.createElement("button");
+      btn.className = "btn-buy";
+      btn.innerHTML = `<span>Comprar</span> <span>(🪙 ${item.price})</span>`;
+      btn.disabled = currentGold < item.price || buyingItem;
+      btn.addEventListener("click", () => void buyItem(item));
+      action.appendChild(btn);
+
+      // Clique no card muda o preview 3D na hora para ver
+      card.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).tagName === "BUTTON") return;
+        if (item.type === "character_skin") shopPreview?.setSkin(item.id);
+      });
+
+      card.append(info, action);
+      section.appendChild(card);
+    }
+
+    shopCatalog.appendChild(section);
+  }
+}
+
+/** Compra: conta logada passa pelo servidor; convidado desconta local. */
+async function buyItem(item: ShopItemDef): Promise<void> {
+  if (buyingItem) return;
+  buyingItem = true;
+  renderShopCatalog();
+  try {
+    if (session) {
+      const res = await buyShopItem(item.type, item.id);
+      if (!res.ok) {
+        alert(res.error);
+        return;
+      }
+      session.user.gold = res.gold;
+      inventory = res.inventory;
+      saveLocalInventory(inventory);
+      renderGoldPanels(res.gold);
+    } else {
+      if (!deductUserGold(item.price)) {
+        alert("Gold insuficiente para comprar este item!");
+        return;
+      }
+      inventory = withItem(inventory, item.type, item.id);
+      saveLocalInventory(inventory);
+    }
+    // Skin de personagem comprada já vem equipada.
+    if (item.type === "character_skin") setActiveSkin(item.id);
+  } finally {
+    buyingItem = false;
+    refreshShopAndInventoryUi();
+  }
+}
+
+function openShopModal(): void {
+  if (!shopModal) return;
+  stopProfilePreviews();
+  renderShopCatalog();
+  shopModal.classList.remove("hidden");
+  if (shopPreview) {
+    shopPreview.setSkin(getActiveSkin());
+    shopPreview.start();
+    shopPreview.resize();
+  }
+}
+
+function closeShopModal(): void {
+  if (!shopModal) return;
+  shopModal.classList.add("hidden");
+  if (shopPreview) {
+    shopPreview.stop();
+  }
+  resumeProfilePreviewsIfVisible();
+}
+
+/** Re-renderiza loja/inventário abertos após compra ou sync da conta. */
+function refreshShopAndInventoryUi(): void {
+  if (!shopModal.classList.contains("hidden")) renderShopCatalog();
+  if (!inventoryModal.classList.contains("hidden")) {
+    renderInventorySkins();
+    renderInventoryWeapons();
+  }
+}
+
+shopButton?.addEventListener("click", openShopModal);
+lobbyShopButton?.addEventListener("click", openShopModal);
+closeShopModalButton?.addEventListener("click", closeShopModal);
+shopModal.addEventListener("click", (e) => {
+  if (e.target === shopModal) closeShopModal();
+});
+
+// --- Preview 3D do personagem na home ---
+
+function ensureHomePreview(): SkinPreview | null {
+  if (homePreview) return homePreview;
+  if (!homeProfilePreviewCanvas) return null;
+  homePreview = new SkinPreview(homeProfilePreviewCanvas);
+  return homePreview;
+}
+
+function startHomePreview(): void {
+  const p = ensureHomePreview();
+  if (!p) return;
+  p.setSkin(getActiveSkin());
+  p.setWeapon(savedLoadout().primary);
+  p.start();
+  p.resize();
+}
+
+// O painel de perfil do pré-lobby é igual ao da home: mesmo 3D e mesmos botões.
+
+function ensureLobbyPreview(): SkinPreview | null {
+  if (lobbyPreview) return lobbyPreview;
+  if (!lobbyProfilePreviewCanvas) return null;
+  lobbyPreview = new SkinPreview(lobbyProfilePreviewCanvas);
+  return lobbyPreview;
+}
+
+function startLobbyPreview(): void {
+  const p = ensureLobbyPreview();
+  if (!p) return;
+  p.setSkin(getActiveSkin());
+  p.setWeapon(savedLoadout().primary);
+  p.start();
+  p.resize();
+}
+
+function stopProfilePreviews(): void {
+  homePreview?.stop();
+  lobbyPreview?.stop();
+}
+
+/** Retoma o preview do painel de perfil da página que estiver visível. */
+function resumeProfilePreviewsIfVisible(): void {
+  if (!pageHome.classList.contains("hidden")) {
+    startHomePreview();
+  } else if (!pageLobby.classList.contains("hidden")) {
+    startLobbyPreview();
+  }
+}
+
+// --- Modal de Inventário (home/lobby): abas Armas + Skins ---
+
+function ensureInventoryPreview(): SkinPreview | null {
+  if (inventoryPreview) return inventoryPreview;
+  if (!inventoryPreviewCanvas) return null;
+  inventoryPreview = new SkinPreview(inventoryPreviewCanvas);
+  return inventoryPreview;
+}
+
+function renderInventoryWeapons(): void {
+  buildWeaponSelects(
+    inventoryOptions,
+    inventoryLoadout,
+    (container, slot, id) => {
+      inventoryLoadout = { ...inventoryLoadout, [slot]: id };
+      refreshWeaponSelectUI(container, getWeapon(id)!);
+      // A principal troca na hora no boneco do modal.
+      if (slot === "primary") inventoryPreview?.setWeapon(id);
+    },
+    new Set(inventory.weapons)
+  );
+}
+
+/** Aba Skins: apenas as skins que o jogador POSSUI (a loja vende o resto). */
+function renderInventorySkins(): void {
+  if (!inventorySkinsGrid) return;
+  inventorySkinsGrid.innerHTML = "";
+  const active = getActiveSkin();
+
+  if (inventoryModalGold) {
+    inventoryModalGold.textContent = String(
+      Math.max(0, Math.floor(getUserCurrentGold()))
+    );
+  }
+
+  for (const item of SKINS) {
+    if (!ownsCharacterSkin(item.id)) continue;
     const isEquipped = active === item.id;
+
+    const card = document.createElement("div");
+    card.className = `skin-card ${isEquipped ? "is-active" : ""}`;
 
     const info = document.createElement("div");
     info.className = "skin-info";
-
-    const priceText = item.price === 0
-      ? `<span class="skin-price-label">Incluído</span>`
-      : `<span class="skin-price-label">🪙 ${item.price} Gold</span>`;
-
-    info.innerHTML = `<h4>${item.name}</h4><p class="skin-desc">${item.desc}</p><div class="skin-price-wrap">${priceText}</div>`;
+    info.innerHTML = `<h4>${item.name}</h4><p class="skin-desc">${item.desc}</p>`;
 
     const action = document.createElement("div");
     action.className = "skin-action";
 
+    const btn = document.createElement("button");
     if (isEquipped) {
-      const btn = document.createElement("button");
       btn.className = "btn-equipped";
       btn.textContent = "Equipada ✓";
-      action.appendChild(btn);
-    } else if (isOwned) {
-      const btn = document.createElement("button");
+    } else {
       btn.className = "btn-equip";
       btn.textContent = "Equipar";
       btn.addEventListener("click", () => {
         setActiveSkin(item.id);
-        renderSkinsCatalog();
+        renderInventorySkins();
       });
-      action.appendChild(btn);
-    } else {
-      const btn = document.createElement("button");
-      btn.className = "btn-buy";
-      btn.innerHTML = `<span>Comprar</span> <span>(🪙 ${item.price})</span>`;
-      btn.disabled = currentGold < item.price;
-      btn.addEventListener("click", () => {
-        if (deductUserGold(item.price)) {
-          owned.add(item.id);
-          saveOwnedSkins(owned);
-          setActiveSkin(item.id);
-          renderSkinsCatalog();
-        } else {
-          alert("Gold insuficiente para comprar esta skin!");
-        }
-      });
-      action.appendChild(btn);
     }
+    action.appendChild(btn);
 
     // Clique no card muda o preview 3D na hora para ver
     card.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).tagName === "BUTTON") return;
-      if (skinPreview) skinPreview.setSkin(item.id);
+      inventoryPreview?.setSkin(item.id);
     });
 
     card.append(info, action);
-    skinsCatalog.appendChild(card);
+    inventorySkinsGrid.appendChild(card);
   }
 }
 
-function openSkinsModal(): void {
-  if (!skinsModal) return;
-  renderSkinsCatalog();
-  skinsModal.classList.remove("hidden");
-  if (skinPreview) {
-    skinPreview.setSkin(getActiveSkin());
-    skinPreview.start();
-    skinPreview.resize();
+function setInventoryTab(tab: "weapons" | "skins"): void {
+  for (const el of document.querySelectorAll<HTMLElement>("[data-invtab]")) {
+    el.classList.toggle("active", el.dataset.invtab === tab);
+  }
+  inventoryWeaponsTab.classList.toggle("hidden", tab !== "weapons");
+  inventorySkinsTab.classList.toggle("hidden", tab !== "skins");
+  inventoryPreview?.resize();
+}
+
+for (const el of document.querySelectorAll<HTMLElement>("[data-invtab]")) {
+  el.addEventListener("click", () =>
+    setInventoryTab(el.dataset.invtab as "weapons" | "skins")
+  );
+}
+
+function openInventoryModal(): void {
+  stopProfilePreviews();
+  inventoryLoadout = savedLoadout();
+  renderInventoryWeapons();
+  renderInventorySkins();
+  setInventoryTab("weapons");
+  inventoryModal.classList.remove("hidden");
+  const p = ensureInventoryPreview();
+  if (p) {
+    p.setSkin(getActiveSkin());
+    p.setWeapon(inventoryLoadout.primary);
+    p.start();
+    p.resize();
   }
 }
 
-function closeSkinsModal(): void {
-  if (!skinsModal) return;
-  skinsModal.classList.add("hidden");
-  if (skinPreview) {
-    skinPreview.stop();
-  }
+function closeInventoryModal(): void {
+  inventoryModal.classList.add("hidden");
+  inventoryPreview?.stop();
+  resumeProfilePreviewsIfVisible();
 }
 
-openSkinsButton?.addEventListener("click", openSkinsModal);
-closeSkinsModalButton?.addEventListener("click", closeSkinsModal);
+openInventoryButton?.addEventListener("click", openInventoryModal);
+lobbyOpenInventoryButton?.addEventListener("click", openInventoryModal);
+inventoryCancelButton.addEventListener("click", closeInventoryModal);
+inventoryConfirmButton.addEventListener("click", () => {
+  // Grava o loadout — é o que o pré-spawn aplica ao entrar na partida.
+  applySelectedLoadout(inventoryLoadout);
+  closeInventoryModal();
+});
+inventoryModal.addEventListener("click", (e) => {
+  if (e.target === inventoryModal) closeInventoryModal();
+});
 
 document.addEventListener("click", (e) => {
-  if (loadoutModal.classList.contains("hidden")) return;
-  if (!(e.target as HTMLElement).closest(".weapon-select")) {
-    closeWeaponSelectPanels();
+  const target = e.target as HTMLElement;
+  if (
+    !loadoutModal.classList.contains("hidden") &&
+    !target.closest(".weapon-select")
+  ) {
+    closeWeaponSelectPanels(loadoutOptions);
+  }
+  if (
+    !inventoryModal.classList.contains("hidden") &&
+    !target.closest(".weapon-select")
+  ) {
+    closeWeaponSelectPanels(inventoryOptions);
   }
 });
 
@@ -1304,6 +1713,7 @@ function enterLobby(r: Room): void {
 
   // Envia a skin atualmente equipada no menu
   r.send("change_skin", getActiveSkin());
+  pushSocialPresence();
 
   navigate("/lobby");
   showLobby();
@@ -1314,10 +1724,31 @@ function startMatchLocal(): void {
   if (!room || inGame) return;
   inGame = true;
   inLobby = false;
+  socialPanel.close();
   hideLobby();
   navigate("/play");
   audio.resume();
   enterPreSpawn();
+  pushSocialPresence();
+}
+
+/**
+ * Conta logada: recarrega o perfil do servidor ao voltar da partida.
+ * O banco já gravou XP/gold/stats do fim da partida, mas a sessão local
+ * (que a loja de skins usa em getUserCurrentGold) ficava com o saldo
+ * do login — sem isso o modal de skins mostrava gold desatualizado.
+ */
+function refreshSessionProfile(): void {
+  const token = session?.token;
+  if (!token) return;
+  void fetchProfile().then((profile) => {
+    if (!profile || session?.token !== token) return;
+    session = { ...session, user: profile };
+    inventory = sanitizeInventory(profile.inventory);
+    saveLocalInventory(inventory);
+    // Loja/inventário abertos no retorno: refletem saldo e itens novos na hora.
+    refreshShopAndInventoryUi();
+  });
 }
 
 /** Partida encerrada: limpa o estado local de combate e volta ao pré-lobby. */
@@ -1326,8 +1757,10 @@ function returnToLobby(): void {
   cleanupMatchLocal();
   inGame = false;
   inLobby = true;
+  pushSocialPresence();
   navigate("/lobby");
   showLobby();
+  refreshSessionProfile();
 }
 
 function showLobby(): void {
@@ -1399,6 +1832,7 @@ function resetToMenu(errorMsg?: string): void {
   lobbyChatLog.replaceChildren();
   hideLobby();
   syncRoomSettingsUi();
+  pushSocialPresence();
 
   if (errorMsg) {
     statusEl.classList.add("error");
@@ -1575,6 +2009,8 @@ lobbyChatForm.addEventListener("submit", (e) => {
 
 interface LobbyPlayerRow {
   id: string;
+  /** Id da conta (0 = convidado) — usado no menu de amizade. */
+  userId: number;
   name: string;
   isHost: boolean;
   isSelf: boolean;
@@ -1636,6 +2072,18 @@ function renderLobbyPlayers(
       el.appendChild(kick);
     }
 
+    // Botão direito: adicionar como amigo (ou menu de amigo, se já for).
+    if (!row.isSelf) {
+      el.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        socialPanel.openLobbyPlayerMenu(
+          { userId: row.userId, name: row.name },
+          e.clientX,
+          e.clientY
+        );
+      });
+    }
+
     lobbyPlayersList.appendChild(el);
   }
 }
@@ -1656,6 +2104,7 @@ function updateLobbyUi(): void {
     if (p.isBot === true) return;
     rows.push({
       id,
+      userId: p.userId ?? 0,
       name: p.name,
       isHost: id === snap.hostId,
       isSelf: id === myId,
@@ -1759,6 +2208,7 @@ function setupRoom(r: Room): void {
   r.onStateChange(() => {
     if (inGame) reconcile(r);
     if (inLobby) updateLobbyUi();
+    pushSocialPresence();
 
     // Convidado: quando o servidor atualiza o XP/gold (fim de partida),
     // grava os novos totais no navegador.
@@ -2472,14 +2922,32 @@ document.addEventListener("pointerlockchange", () => {
   }
 });
 
-window.addEventListener(
+  window.addEventListener(
   "keydown",
   (e) => {
     if (e.code !== "Escape" || endScreenShown) return;
 
+    // Overlays do Social têm prioridade sobre o menu de pausa.
+    if (socialPanel.handleEscape()) {
+      e.preventDefault();
+      return;
+    }
+
     if (!inGame && !createRoomModal.classList.contains("hidden")) {
       e.preventDefault();
       closeCreateRoomModal();
+      return;
+    }
+
+    if (!inGame && !inventoryModal.classList.contains("hidden")) {
+      e.preventDefault();
+      closeInventoryModal();
+      return;
+    }
+
+    if (!inGame && !shopModal.classList.contains("hidden")) {
+      e.preventDefault();
+      closeShopModal();
       return;
     }
 
@@ -2547,9 +3015,9 @@ hud.setLoadoutWeapons(weapons.loadoutWeapons, weapons.weaponIndex);
 hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, false);
 hud.setKills(0);
 
-if (skinShopPreviewCanvas) {
-  skinPreview = new SkinPreview(skinShopPreviewCanvas);
-  skinPreview.setSkin(getActiveSkin());
+if (shopPreviewCanvas) {
+  shopPreview = new SkinPreview(shopPreviewCanvas);
+  shopPreview.setSkin(getActiveSkin());
 }
 
 engine.runRenderLoop(() => {
@@ -2640,6 +3108,11 @@ engine.runRenderLoop(() => {
 
 window.addEventListener("resize", () => {
   engine.resize();
+  if (!pageHome.classList.contains("hidden")) homePreview?.resize();
+  if (!pageLobby.classList.contains("hidden")) lobbyPreview?.resize();
+  if (!inventoryModal.classList.contains("hidden")) inventoryPreview?.resize();
+  if (!shopModal.classList.contains("hidden")) shopPreview?.resize();
+  socialPanel.resizeFriendPreview();
   paintScopeOverlay();
 });
 

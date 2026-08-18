@@ -1,6 +1,18 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getPool, isAuthEnabled } from "./db";
+import { getWeapon, weaponCategory, DEFAULT_LOADOUT, type LoadoutSlots, type WeaponId } from "../shared/weapons";
+import { isValidSkin, DEFAULT_SKIN } from "../shared/skins";
+import {
+  mergeInventories,
+  ownsItem,
+  sanitizeInventory,
+  withItem,
+  getShopItem,
+  ITEM_TYPE_LABELS,
+  type ItemType,
+  type PlayerInventory,
+} from "../shared/inventory";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,16}$/;
 const BCRYPT_ROUNDS = 10;
@@ -17,6 +29,12 @@ export interface AuthUser {
   xp: number;
   /** Gold acumulado — moeda de recompensa (shared/gold). */
   gold: number;
+  /** Skin ativa persistida (shared/skins). */
+  activeSkin: string;
+  /** Loadout equipado persistido (shared/weapons). */
+  loadout: LoadoutSlots;
+  /** Inventário persistido: skins, armas e (futuro) skins de arma/equipamentos. */
+  inventory: PlayerInventory;
   createdAt: string;
 }
 
@@ -41,7 +59,29 @@ interface UserRow {
   matches_played: number;
   xp: number;
   gold: number;
+  active_skin: string;
+  loadout: unknown;
+  inventory: unknown;
   created_at: Date | string;
+}
+
+function parseLoadout(raw: unknown): LoadoutSlots {
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    const pick = (slot: keyof LoadoutSlots, fallback: WeaponId): WeaponId => {
+      const v = o[slot];
+      if (typeof v === "string" && getWeapon(v) && weaponCategory(v as WeaponId) === slot) {
+        return v as WeaponId;
+      }
+      return fallback;
+    };
+    return {
+      primary: pick("primary", DEFAULT_LOADOUT.primary),
+      secondary: pick("secondary", DEFAULT_LOADOUT.secondary),
+      melee: pick("melee", DEFAULT_LOADOUT.melee),
+    };
+  }
+  return { ...DEFAULT_LOADOUT };
 }
 
 function jwtSecret(): string {
@@ -66,6 +106,9 @@ function mapUser(row: UserRow): AuthUser {
     matches: row.matches_played,
     xp: row.xp,
     gold: row.gold,
+    activeSkin: isValidSkin(row.active_skin) ? row.active_skin : DEFAULT_SKIN,
+    loadout: parseLoadout(row.loadout),
+    inventory: sanitizeInventory(row.inventory),
     createdAt: created,
   };
 }
@@ -96,7 +139,7 @@ function validateCredentials(
 }
 
 const USER_SELECT = `
-  id, username, total_kills, total_deaths, wins, matches_played, xp, gold, created_at
+  id, username, total_kills, total_deaths, wins, matches_played, xp, gold, active_skin, loadout, inventory, created_at
 `;
 
 export async function register(
@@ -233,8 +276,149 @@ export async function recordMatchStats(
        gold = gold + $6
      WHERE id = $1
      RETURNING xp, gold`,
-    [userId, kills, deaths, stats.won ? 1 : 0, xp, gold]
+      [userId, kills, deaths, stats.won ? 1 : 0, xp, gold]
   );
   const row = result.rows[0];
   return row ? { xp: row.xp, gold: row.gold } : null;
+}
+
+export interface AccountPrefs {
+  activeSkin: string;
+  loadout: LoadoutSlots;
+}
+
+/** Valida e persiste skin ativa + loadout da conta. Retorna as prefs efetivamente salvas. */
+export async function saveAccountPrefs(
+  userId: number,
+  body: unknown
+): Promise<AccountPrefs | string> {
+  if (!isAuthEnabled()) return "Auth desativada (sem DATABASE_URL).";
+  if (!body || typeof body !== "object") return "Payload inválido.";
+  const o = body as Record<string, unknown>;
+
+  const skin = typeof o.activeSkin === "string" ? o.activeSkin : "";
+  if (!isValidSkin(skin)) return "Skin inválida.";
+
+  // Só permite equipar skin que consta no inventário da conta.
+  const invRow = await getPool().query<{ inventory: unknown }>(
+    `SELECT inventory FROM users WHERE id = $1`,
+    [userId]
+  );
+  const currentInv = sanitizeInventory(invRow.rows[0]?.inventory);
+  if (!ownsItem(currentInv, "character_skin", skin)) {
+    return "Você não possui esta skin.";
+  }
+
+  const rawLoadout = o.loadout;
+  if (!rawLoadout || typeof rawLoadout !== "object") return "Loadout inválido.";
+  const lo = rawLoadout as Record<string, unknown>;
+  const slots: Array<keyof LoadoutSlots> = ["primary", "secondary", "melee"];
+  const loadout = {} as LoadoutSlots;
+  for (const slot of slots) {
+    const v = lo[slot];
+    if (typeof v !== "string" || !getWeapon(v) || weaponCategory(v as WeaponId) !== slot) {
+      return `Arma inválida no slot ${slot}.`;
+    }
+    loadout[slot] = v as WeaponId;
+  }
+
+  await getPool().query(
+    `UPDATE users SET active_skin = $2, loadout = $3 WHERE id = $1`,
+    [userId, skin, JSON.stringify(loadout)]
+  );
+  return { activeSkin: skin, loadout };
+}
+
+// --- Loja / Inventário ---
+
+export interface PurchaseResult {
+  gold: number;
+  inventory: PlayerInventory;
+}
+
+/**
+ * Compra de item da loja: valida pelo catálogo compartilhado (SHOP_ITEMS),
+ * desconta o gold e grava o item no inventário — tudo numa transação com
+ * lock da linha, então o cliente não consegue comprar sem saldo ou em
+ * duplicidade.
+ */
+export async function purchaseItem(
+  userId: number,
+  body: unknown
+): Promise<PurchaseResult | string> {
+  if (!isAuthEnabled()) return "Auth desativada (sem DATABASE_URL).";
+  if (!body || typeof body !== "object") return "Payload inválido.";
+  const o = body as Record<string, unknown>;
+  const type = o.type;
+  const itemId = typeof o.itemId === "string" ? o.itemId.slice(0, 64) : "";
+  if (
+    typeof type !== "string" ||
+    !(type in ITEM_TYPE_LABELS) ||
+    !itemId
+  ) {
+    return "Item inválido.";
+  }
+  const item = getShopItem(type as ItemType, itemId);
+  if (!item) return "Este item não está à venda.";
+
+  const db = getPool();
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const r = await client.query<{ gold: number; inventory: unknown }>(
+      `SELECT gold, inventory FROM users WHERE id = $1 FOR UPDATE`,
+      [userId]
+    );
+    const row = r.rows[0];
+    if (!row) {
+      await client.query("ROLLBACK");
+      return "Conta não encontrada.";
+    }
+    const inventory = sanitizeInventory(row.inventory);
+    if (ownsItem(inventory, item.type, item.id)) {
+      await client.query("ROLLBACK");
+      return "Você já possui este item.";
+    }
+    if (row.gold < item.price) {
+      await client.query("ROLLBACK");
+      return "Gold insuficiente.";
+    }
+    const nextInv = withItem(inventory, item.type, item.id);
+    const upd = await client.query<{ gold: number }>(
+      `UPDATE users SET gold = gold - $2, inventory = $3 WHERE id = $1 RETURNING gold`,
+      [userId, item.price, JSON.stringify(nextInv)]
+    );
+    await client.query("COMMIT");
+    return { gold: upd.rows[0].gold, inventory: nextInv };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("[shop] purchase:", err);
+    return "Erro ao concluir a compra.";
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Une itens enviados pelo cliente ao inventário da conta (só adiciona, nunca
+ * remove) — migra skins compradas como convidado / em localStorage antigo.
+ */
+export async function mergeAccountInventory(
+  userId: number,
+  body: unknown
+): Promise<PlayerInventory | string> {
+  if (!isAuthEnabled()) return "Auth desativada (sem DATABASE_URL).";
+  const incoming = sanitizeInventory(body);
+  const r = await getPool().query<{ inventory: unknown }>(
+    `SELECT inventory FROM users WHERE id = $1`,
+    [userId]
+  );
+  const row = r.rows[0];
+  if (!row) return "Conta não encontrada.";
+  const merged = mergeInventories(sanitizeInventory(row.inventory), incoming);
+  await getPool().query(`UPDATE users SET inventory = $2 WHERE id = $1`, [
+    userId,
+    JSON.stringify(merged),
+  ]);
+  return merged;
 }
