@@ -1,0 +1,65 @@
+[
+  {
+    "id": "wskin_msz80grl_frio9t",
+    "weaponId": "mp5",
+    "name": "MP5Teste",
+    "price": 500,
+    "parts": {
+      "Clone of Cube.003": [
+        0.21176470588235294,
+        0.21176470588235294,
+        0.21176470588235294
+      ],
+      "Clone of Cube": [
+        0.1803921568627451,
+        0.1803921568627451,
+        0.1803921568627451
+      ],
+      "Clone of Cylinder.001": [
+        0.1803921568627451,
+        0.1803921568627451,
+        0.1803921568627451
+      ],
+      "Clone of Cube.005": [
+        1,
+        0.8666666666666667,
+        0
+      ],
+      "Clone of Cube.001": [
+        1,
+        0.9176470588235294,
+        0
+      ],
+      "Clone of Cube.004": [
+        1,
+        0.7843137254901961,
+        0
+      ],
+      "Clone of Cube.002": [
+        1,
+        0.9176470588235294,
+        0
+      ]
+    },
+    "custom": true
+  },
+  {
+    "id": "wskin_msz83611_m7kyrk",
+    "weaponId": "knife",
+    "name": "GoldKnife",
+    "price": 500,
+    "parts": {
+      "Clone of knife_primitive1": [
+        1,
+        0.7843137254901961,
+        0
+      ],
+      "Clone of knife_primitive2": [
+        1,
+        0.9686274509803922,
+        0
+      ]
+    },
+    "custom": true
+  }
+]

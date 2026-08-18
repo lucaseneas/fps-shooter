@@ -14,6 +14,10 @@ import {
   purchaseItem,
   mergeAccountInventory,
 } from "./auth";
+import {
+  loadCustomWeaponSkins,
+  saveCustomWeaponSkin,
+} from "./weaponSkinsStore";
 
 const port = Number(process.env.PORT) || CONFIG.serverPort;
 /** Render (e outros PaaS) exigem escutar em 0.0.0.0, não só localhost. */
@@ -167,6 +171,37 @@ async function handleApi(
     return true;
   }
 
+  // Skins de arma custom (criadas pela ferramenta in-game).
+  // TODO(admin): restringir o POST para administradores quando houver papel
+  // de admin na conta — hoje qualquer cliente pode publicar na loja.
+  //
+  if (req.method === "GET" && path === "/api/weapon-skins") {
+    try {
+      const skins = await loadCustomWeaponSkins();
+      sendJson(res, 200, { skins });
+    } catch (err) {
+      console.error("[weapon-skins] list:", err);
+      sendJson(res, 500, { error: "Falha ao listar skins." });
+    }
+    return true;
+  }
+
+  if (req.method === "POST" && path === "/api/weapon-skins") {
+    try {
+      const body = await readJson(req);
+      const result = await saveCustomWeaponSkin(body);
+      if (typeof result === "string") {
+        sendJson(res, 400, { error: result });
+        return true;
+      }
+      sendJson(res, 200, { skin: result });
+    } catch (err) {
+      console.error("[weapon-skins] save:", err);
+      sendJson(res, 400, { error: "JSON inválido." });
+    }
+    return true;
+  }
+
   // Inventário: migra itens locais (convidado/localStorage) para a conta.
   if (req.method === "POST" && path === "/api/inventory/sync") {
     try {
@@ -216,6 +251,10 @@ gameServer.define("deathmatch", DeathmatchRoom);
 gameServer.define("social", SocialRoom);
 
 async function boot(): Promise<void> {
+  // Carrega as skins custom ANTES de aceitar conexões: o sanitizeInventory
+  // (auth) descartaria ids de skins que ainda não foram registrados.
+  await loadCustomWeaponSkins();
+
   if (isAuthEnabled()) {
     if (!process.env.JWT_SECRET?.trim()) {
       console.error("[auth] DATABASE_URL definida mas JWT_SECRET em falta — a abortar.");

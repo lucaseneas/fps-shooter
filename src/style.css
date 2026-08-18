@@ -1912,6 +1912,41 @@ kbd {
   position: relative;
 }
 
+.weapon-select-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.weapon-select-row .weapon-select-current {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.weapon-skin-btn {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(28, 34, 44, 0.95);
+  color: #e8eef4;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.weapon-skin-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.inv-skin-back {
+  align-self: flex-start;
+  margin-bottom: 10px;
+}
+
 .weapon-select-label {
   display: block;
   margin-bottom: 6px;
@@ -2853,7 +2888,8 @@ kbd {
 
 /* ---------- Modais de Loja / Inventário ---------- */
 #shopModal,
-#inventoryModal {
+#inventoryModal,
+#skinStudioModal {
   position: absolute;
   inset: 0;
   z-index: 30;
@@ -2866,13 +2902,14 @@ kbd {
 }
 
 #shopModal.hidden,
-#inventoryModal.hidden {
+#inventoryModal.hidden,
+#skinStudioModal.hidden {
   display: none;
 }
 
 /* Inventário: mesma casca da loja, com abas e selects de arma à direita. */
 .inventory-card {
-  width: 640px;
+  width: 720px;
 }
 
 .armory-options {
@@ -2928,7 +2965,9 @@ kbd {
   flex-direction: column;
 }
 
-.inv-tab-panel.hidden {
+.inv-tab-panel.hidden,
+#inventoryWeaponsMain.hidden,
+#inventoryWeaponSkinPicker.hidden {
   display: none;
 }
 
@@ -3031,13 +3070,131 @@ kbd {
   overflow: hidden;
 }
 
-#shopPreviewCanvas {
+#shopPreviewCanvas,
+#inventoryPreviewCanvas,
+#inventoryWeaponPreviewCanvas {
   width: 100%;
   height: 100%;
   display: block;
   outline: none;
   touch-action: none;
   user-select: none;
+}
+
+/* --- Estúdio de Skins --- */
+
+.studio-card {
+  width: 860px;
+}
+
+.studio-body {
+  display: flex;
+  gap: 18px;
+  min-height: 380px;
+}
+
+.studio-view {
+  flex: 1;
+  background: rgba(10, 14, 20, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#skinStudioCanvas {
+  flex: 1;
+  width: 100%;
+  display: block;
+  outline: none;
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+}
+
+.studio-hint {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.studio-side {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.studio-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 6px;
+}
+
+.studio-side select,
+.studio-side input[type="text"],
+.studio-side input[type="number"] {
+  background: rgba(10, 14, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #fff;
+  padding: 9px 12px;
+  font-size: 14px;
+  outline: none;
+}
+
+.studio-side select:focus,
+.studio-side input:focus {
+  border-color: var(--accent, #ff9d2f);
+}
+
+.studio-part-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.studio-part-name {
+  flex: 1;
+  font-family: monospace;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(10, 14, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#skinStudioColor {
+  width: 48px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(10, 14, 20, 0.7);
+  cursor: pointer;
+}
+
+.studio-part-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.studio-part-actions button {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .skins-catalog {

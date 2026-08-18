@@ -27,8 +27,10 @@ import {
   buyShopItem,
   clearStoredToken,
   fetchAuthStatus,
+  fetchCustomWeaponSkins,
   fetchProfile,
   loginAccount,
+  publishWeaponSkin,
   registerAccount,
   restoreSession,
   saveAccountPrefs,
@@ -45,6 +47,7 @@ import { CONFIG, GAME_MODES, KILLS_TO_WIN_OPTIONS, MAPS } from "../shared/config
 import {
   DEFAULT_LOADOUT,
   LoadoutSlots,
+  WEAPONS,
   WeaponCategory,
   WeaponDef,
   WeaponId,
@@ -53,6 +56,14 @@ import {
   weaponMoveSpeedMult,
   weaponsForCategory,
 } from "../shared/weapons";
+import {
+  WeaponSkinDef,
+  getWeaponSkin,
+  registerCustomWeaponSkins,
+  sanitizeWeaponSkin,
+  weaponSkinsFor,
+} from "../shared/weaponSkins";
+import { WeaponSkinStudio, hexToRgb, rgbToHex } from "./ui/WeaponSkinStudio";
 import { AppRoute, navigate, onRouteChange } from "./app/router";
 import {
   MAX_XP,
@@ -68,11 +79,10 @@ import {
 } from "../shared/killStreaks";
 import { SKINS } from "../shared/skins";
 import {
-  ITEM_TYPE_LABELS,
   PlayerInventory,
-  SHOP_ITEMS,
   ShopItemDef,
   defaultInventory,
+  getShopItems,
   ownsItem,
   sanitizeInventory,
   withItem,
@@ -181,6 +191,11 @@ const inventoryConfirmButton = document.getElementById("inventoryConfirmButton")
 const inventoryCancelButton = document.getElementById("inventoryCancelButton") as HTMLButtonElement;
 const inventoryWeaponsTab = document.getElementById("inventoryWeaponsTab") as HTMLDivElement;
 const inventorySkinsTab = document.getElementById("inventorySkinsTab") as HTMLDivElement;
+const inventoryWeaponsMain = document.getElementById("inventoryWeaponsMain") as HTMLDivElement;
+const inventoryWeaponSkinPicker = document.getElementById("inventoryWeaponSkinPicker") as HTMLDivElement;
+const inventoryWeaponPreviewCanvas = document.getElementById("inventoryWeaponPreviewCanvas") as HTMLCanvasElement;
+const inventoryWeaponSkinList = document.getElementById("inventoryWeaponSkinList") as HTMLDivElement;
+const inventoryWeaponSkinBack = document.getElementById("inventoryWeaponSkinBack") as HTMLButtonElement;
 
 const engine = new Engine(canvas, true, {
   preserveDrawingBuffer: false,
@@ -358,8 +373,11 @@ let shopPreview: SkinPreview | null = null;
 let homePreview: SkinPreview | null = null;
 let lobbyPreview: SkinPreview | null = null;
 let inventoryPreview: SkinPreview | null = null;
+let inventoryWeaponPreview: SkinPreview | null = null;
 let inventoryLoadout: LoadoutSlots = { ...DEFAULT_LOADOUT };
 let buyingItem = false;
+let shopTab: "character" | "weapon" = "character";
+let weaponSkinPickerWeapon: WeaponId | null = null;
 
 let authEnabled = false;
 let authMode: "login" | "register" = "login";
@@ -599,6 +617,9 @@ logoutButton.addEventListener("click", () => {
 });
 
 async function initAuth(): Promise<void> {
+  // As skins custom precisam estar registradas antes de qualquer
+  // sanitizeInventory sobre dados da conta (senão seriam descartadas).
+  await weaponSkinsReady;
   authEnabled = await fetchAuthStatus();
   guestPanel.classList.toggle("hidden", authEnabled);
   authForm.classList.toggle("hidden", !authEnabled);
@@ -978,7 +999,8 @@ function buildWeaponSelects(
   root: HTMLElement,
   selected: LoadoutSlots,
   onSelect: (container: HTMLElement, slot: keyof LoadoutSlots, id: WeaponId) => void,
-  ownedIds?: ReadonlySet<string>
+  ownedIds?: ReadonlySet<string>,
+  onPickSkin?: (slot: keyof LoadoutSlots) => void
 ): void {
   root.innerHTML = "";
 
@@ -1021,7 +1043,23 @@ function buildWeaponSelects(
     });
 
     container.appendChild(label);
-    container.appendChild(currentBtn);
+    if (onPickSkin) {
+      const row = document.createElement("div");
+      row.className = "weapon-select-row";
+      const skinBtn = document.createElement("button");
+      skinBtn.type = "button";
+      skinBtn.className = "weapon-skin-btn";
+      skinBtn.textContent = "Selecionar skin";
+      skinBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeWeaponSelectPanels(root);
+        onPickSkin(def.slot);
+      });
+      row.append(currentBtn, skinBtn);
+      container.appendChild(row);
+    } else {
+      container.appendChild(currentBtn);
+    }
     container.appendChild(panel);
     root.appendChild(container);
   }
@@ -1075,6 +1113,7 @@ function applySelectedLoadout(slots: LoadoutSlots): void {
   hud.setLoadoutWeapons(weapons.loadoutWeapons, weapons.weaponIndex);
   hud.setAmmo(weapons.magAmmo, weapons.reserveAmmo, weapons.isReloading);
   viewModel.setWeapon(weapons.weapon);
+  applyEquippedSkinToViewModel(weapons.weapon.id);
   player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
   syncPrefsToAccount();
 }
@@ -1108,6 +1147,7 @@ function exitPreSpawn(): void {
   player.exitSpectatorOverview();
   viewModel.setVisible(true);
   viewModel.setWeapon(weapons.weapon);
+  applyEquippedSkinToViewModel(weapons.weapon.id);
 }
 
 function openLoadoutModal(inMatch: boolean): void {
@@ -1224,6 +1264,7 @@ spectateButton.addEventListener("click", () => enterFreeSpectate());
 const INVENTORY_STORAGE_KEY = "fps.inventory";
 const LEGACY_OWNED_SKINS_KEY = "fps.ownedSkins";
 const ACTIVE_SKIN_KEY = "fps.activeSkin";
+const ACTIVE_WEAPON_SKINS_KEY = "fps.activeWeaponSkins";
 
 function loadLocalInventory(): PlayerInventory {
   let raw: unknown = null;
@@ -1244,6 +1285,10 @@ function loadLocalInventory(): PlayerInventory {
   return sanitizeInventory(raw);
 }
 
+// Raw antes da 1ª sanitização — ids de skins custom ainda desconhecidos
+// seriam descartados; após o fetch das skins re-sanitizamos a partir dele.
+const rawInventorySnapshot = localStorage.getItem(INVENTORY_STORAGE_KEY);
+
 let inventory: PlayerInventory = loadLocalInventory();
 
 function saveLocalInventory(inv: PlayerInventory = inventory): void {
@@ -1253,6 +1298,32 @@ function saveLocalInventory(inv: PlayerInventory = inventory): void {
 // Persiste a migração e aposenta a chave antiga (já copiada acima).
 saveLocalInventory();
 localStorage.removeItem(LEGACY_OWNED_SKINS_KEY);
+
+/**
+ * Carrega as skins de arma custom do servidor e registra no catálogo local.
+ * Deve completar antes de sanitizar inventários com skins custom —
+ * initAuth aguarda esta promise.
+ */
+const weaponSkinsReady: Promise<void> = (async () => {
+  try {
+    const raw = await fetchCustomWeaponSkins();
+    const defs = raw
+      .map((s) => sanitizeWeaponSkin(s))
+      .filter((s): s is WeaponSkinDef => s !== null);
+    if (!defs.length) return;
+    registerCustomWeaponSkins(defs);
+    // Re-sanitiza o inventário local (agora os ids de skins são válidos).
+    try {
+      const rawInv = rawInventorySnapshot ? JSON.parse(rawInventorySnapshot) : null;
+      inventory = sanitizeInventory(rawInv);
+      saveLocalInventory(inventory);
+    } catch {}
+    syncAllViewModelSkins();
+    refreshShopAndInventoryUi();
+  } catch (err) {
+    console.warn("[weapon-skins] falha ao carregar:", err);
+  }
+})();
 
 function ownsCharacterSkin(skinId: string): boolean {
   return ownsItem(inventory, "character_skin", skinId);
@@ -1273,6 +1344,42 @@ function setActiveSkin(skinId: string): void {
   lobbyPreview?.setSkin(skinId);
   pushSocialPresence();
   syncPrefsToAccount();
+}
+
+function loadEquippedWeaponSkins(): Partial<Record<WeaponId, string>> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ACTIVE_WEAPON_SKINS_KEY) ?? "{}");
+    if (!raw || typeof raw !== "object") return {};
+    return raw as Partial<Record<WeaponId, string>>;
+  } catch {
+    return {};
+  }
+}
+
+function getEquippedWeaponSkinId(weaponId: WeaponId): string | null {
+  const id = loadEquippedWeaponSkins()[weaponId];
+  if (!id) return null;
+  if (!ownsItem(inventory, "weapon_skin", id)) return null;
+  const def = getWeaponSkin(id);
+  return def && def.weaponId === weaponId ? id : null;
+}
+
+function setEquippedWeaponSkin(weaponId: WeaponId, skinId: string | null): void {
+  const next = { ...loadEquippedWeaponSkins() };
+  if (skinId) next[weaponId] = skinId;
+  else delete next[weaponId];
+  localStorage.setItem(ACTIVE_WEAPON_SKINS_KEY, JSON.stringify(next));
+  applyEquippedSkinToViewModel(weaponId);
+}
+
+function applyEquippedSkinToViewModel(weaponId: WeaponId): void {
+  const id = getEquippedWeaponSkinId(weaponId);
+  const skin = id ? getWeaponSkin(id) : undefined;
+  viewModel.setWeaponSkin(weaponId, skin?.parts ?? null);
+}
+
+function syncAllViewModelSkins(): void {
+  for (const w of WEAPONS) applyEquippedSkinToViewModel(w.id);
 }
 
 /** Evita reenviar prefs ao servidor enquanto aplicamos as prefs vindas da conta. */
@@ -1364,6 +1471,28 @@ function deductUserGold(amount: number): boolean {
 
 // --- Loja: só lista itens que o jogador ainda NÃO possui ---
 
+function shopItemsForTab(): ShopItemDef[] {
+  const type = shopTab === "character" ? "character_skin" : "weapon_skin";
+  return getShopItems().filter(
+    (item) => item.type === type && !ownsItem(inventory, item.type, item.id)
+  );
+}
+
+function applyShopPreviewForTab(): void {
+  if (!shopPreview) return;
+  if (shopTab === "character") {
+    shopPreview.setMode("character");
+    shopPreview.setSkin(getActiveSkin());
+  } else {
+    shopPreview.setMode("weapon");
+    const first = shopItemsForTab()[0];
+    const skin = first ? getWeaponSkin(first.id) : undefined;
+    const weaponId = skin?.weaponId ?? "mp5";
+    shopPreview.setWeapon(weaponId);
+    shopPreview.setWeaponSkin(skin ?? null);
+  }
+}
+
 function renderShopCatalog(): void {
   if (!shopCatalog) return;
   shopCatalog.innerHTML = "";
@@ -1373,59 +1502,67 @@ function renderShopCatalog(): void {
     shopModalGold.textContent = String(Math.max(0, Math.floor(currentGold)));
   }
 
-  // Agrupa por tipo (skins hoje; armas/equipamentos entram aqui no futuro).
-  const byType = new Map<string, ShopItemDef[]>();
-  for (const item of SHOP_ITEMS) {
-    if (ownsItem(inventory, item.type, item.id)) continue;
-    const list = byType.get(item.type) ?? [];
-    list.push(item);
-    byType.set(item.type, list);
-  }
-
-  if (byType.size === 0) {
-    shopCatalog.innerHTML = `<p class="shop-empty">Você já possui todos os itens da loja.<br />Novidades em breve!</p>`;
+  const items = shopItemsForTab();
+  if (items.length === 0) {
+    shopCatalog.innerHTML = `<p class="shop-empty">${
+      shopTab === "character"
+        ? "Você já possui todas as skins de personagem."
+        : "Nenhuma skin de arma à venda agora."
+    }</p>`;
     return;
   }
 
-  for (const [type, items] of byType) {
-    const section = document.createElement("div");
-    section.className = "shop-section";
+  for (const item of items) {
+    const card = document.createElement("div");
+    card.className = "skin-card";
 
-    const title = document.createElement("h3");
-    title.className = "shop-section-title";
-    title.textContent = ITEM_TYPE_LABELS[type as keyof typeof ITEM_TYPE_LABELS] ?? type;
-    section.appendChild(title);
+    const info = document.createElement("div");
+    info.className = "skin-info";
+    info.innerHTML = `<h4>${item.name}</h4><p class="skin-desc">${item.desc}</p><div class="skin-price-wrap"><span class="skin-price-label">🪙 ${item.price} Gold</span></div>`;
 
-    for (const item of items) {
-      const card = document.createElement("div");
-      card.className = "skin-card";
+    const action = document.createElement("div");
+    action.className = "skin-action";
 
-      const info = document.createElement("div");
-      info.className = "skin-info";
-      info.innerHTML = `<h4>${item.name}</h4><p class="skin-desc">${item.desc}</p><div class="skin-price-wrap"><span class="skin-price-label">🪙 ${item.price} Gold</span></div>`;
+    const btn = document.createElement("button");
+    btn.className = "btn-buy";
+    btn.innerHTML = `<span>Comprar</span> <span>(🪙 ${item.price})</span>`;
+    btn.disabled = currentGold < item.price || buyingItem;
+    btn.addEventListener("click", () => void buyItem(item));
+    action.appendChild(btn);
 
-      const action = document.createElement("div");
-      action.className = "skin-action";
+    card.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).tagName === "BUTTON") return;
+      if (item.type === "character_skin") {
+        shopPreview?.setMode("character");
+        shopPreview?.setSkin(item.id);
+      } else {
+        const skin = getWeaponSkin(item.id);
+        if (!skin) return;
+        shopPreview?.setMode("weapon");
+        shopPreview?.setWeapon(skin.weaponId);
+        shopPreview?.setWeaponSkin(skin);
+      }
+    });
 
-      const btn = document.createElement("button");
-      btn.className = "btn-buy";
-      btn.innerHTML = `<span>Comprar</span> <span>(🪙 ${item.price})</span>`;
-      btn.disabled = currentGold < item.price || buyingItem;
-      btn.addEventListener("click", () => void buyItem(item));
-      action.appendChild(btn);
-
-      // Clique no card muda o preview 3D na hora para ver
-      card.addEventListener("click", (e) => {
-        if ((e.target as HTMLElement).tagName === "BUTTON") return;
-        if (item.type === "character_skin") shopPreview?.setSkin(item.id);
-      });
-
-      card.append(info, action);
-      section.appendChild(card);
-    }
-
-    shopCatalog.appendChild(section);
+    card.append(info, action);
+    shopCatalog.appendChild(card);
   }
+}
+
+function setShopTab(tab: "character" | "weapon"): void {
+  shopTab = tab;
+  for (const el of document.querySelectorAll<HTMLElement>("[data-shoptab]")) {
+    el.classList.toggle("active", el.dataset.shoptab === tab);
+  }
+  renderShopCatalog();
+  applyShopPreviewForTab();
+  shopPreview?.resize();
+}
+
+for (const el of document.querySelectorAll<HTMLElement>("[data-shoptab]")) {
+  el.addEventListener("click", () =>
+    setShopTab(el.dataset.shoptab as "character" | "weapon")
+  );
 }
 
 /** Compra: conta logada passa pelo servidor; convidado desconta local. */
@@ -1463,10 +1600,9 @@ async function buyItem(item: ShopItemDef): Promise<void> {
 function openShopModal(): void {
   if (!shopModal) return;
   stopProfilePreviews();
-  renderShopCatalog();
   shopModal.classList.remove("hidden");
+  setShopTab(shopTab);
   if (shopPreview) {
-    shopPreview.setSkin(getActiveSkin());
     shopPreview.start();
     shopPreview.resize();
   }
@@ -1483,10 +1619,14 @@ function closeShopModal(): void {
 
 /** Re-renderiza loja/inventário abertos após compra ou sync da conta. */
 function refreshShopAndInventoryUi(): void {
-  if (!shopModal.classList.contains("hidden")) renderShopCatalog();
+  if (!shopModal.classList.contains("hidden")) {
+    renderShopCatalog();
+    applyShopPreviewForTab();
+  }
   if (!inventoryModal.classList.contains("hidden")) {
     renderInventorySkins();
     renderInventoryWeapons();
+    if (weaponSkinPickerWeapon) renderWeaponSkinPickerList(weaponSkinPickerWeapon);
   }
 }
 
@@ -1509,8 +1649,12 @@ function ensureHomePreview(): SkinPreview | null {
 function startHomePreview(): void {
   const p = ensureHomePreview();
   if (!p) return;
+  p.setMode("loadout");
   p.setSkin(getActiveSkin());
-  p.setWeapon(savedLoadout().primary);
+  const primary = savedLoadout().primary;
+  p.setWeapon(primary);
+  const equipped = getEquippedWeaponSkinId(primary);
+  p.setWeaponSkin(equipped ? getWeaponSkin(equipped) ?? null : null);
   p.start();
   p.resize();
 }
@@ -1527,8 +1671,12 @@ function ensureLobbyPreview(): SkinPreview | null {
 function startLobbyPreview(): void {
   const p = ensureLobbyPreview();
   if (!p) return;
+  p.setMode("loadout");
   p.setSkin(getActiveSkin());
-  p.setWeapon(savedLoadout().primary);
+  const primary = savedLoadout().primary;
+  p.setWeapon(primary);
+  const equipped = getEquippedWeaponSkinId(primary);
+  p.setWeaponSkin(equipped ? getWeaponSkin(equipped) ?? null : null);
   p.start();
   p.resize();
 }
@@ -1556,6 +1704,112 @@ function ensureInventoryPreview(): SkinPreview | null {
   return inventoryPreview;
 }
 
+function ensureInventoryWeaponPreview(): SkinPreview | null {
+  if (inventoryWeaponPreview) return inventoryWeaponPreview;
+  if (!inventoryWeaponPreviewCanvas) return null;
+  inventoryWeaponPreview = new SkinPreview(inventoryWeaponPreviewCanvas);
+  return inventoryWeaponPreview;
+}
+
+function renderWeaponSkinPickerList(weaponId: WeaponId): void {
+  if (!inventoryWeaponSkinList) return;
+  inventoryWeaponSkinList.innerHTML = "";
+  const equipped = getEquippedWeaponSkinId(weaponId);
+  const owned = weaponSkinsFor(weaponId).filter((s) =>
+    ownsItem(inventory, "weapon_skin", s.id)
+  );
+
+  const addCard = (
+    title: string,
+    desc: string,
+    isActive: boolean,
+    onEquip: () => void,
+    onPreview: () => void
+  ) => {
+    const card = document.createElement("div");
+    card.className = `skin-card ${isActive ? "is-active" : ""}`;
+    const info = document.createElement("div");
+    info.className = "skin-info";
+    info.innerHTML = `<h4>${title}</h4><p class="skin-desc">${desc}</p>`;
+    const action = document.createElement("div");
+    action.className = "skin-action";
+    const btn = document.createElement("button");
+    if (isActive) {
+      btn.className = "btn-equipped";
+      btn.textContent = "Equipada ✓";
+    } else {
+      btn.className = "btn-equip";
+      btn.textContent = "Equipar";
+      btn.addEventListener("click", onEquip);
+    }
+    action.appendChild(btn);
+    card.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).tagName === "BUTTON") return;
+      onPreview();
+    });
+    card.append(info, action);
+    inventoryWeaponSkinList.appendChild(card);
+  };
+
+  const preview = ensureInventoryWeaponPreview();
+  addCard(
+    "Padrão",
+    "Cores originais do modelo.",
+    !equipped,
+    () => {
+      setEquippedWeaponSkin(weaponId, null);
+      preview?.setWeaponSkin(null);
+      renderWeaponSkinPickerList(weaponId);
+    },
+    () => preview?.setWeaponSkin(null)
+  );
+
+  if (owned.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "shop-empty";
+    empty.textContent = "Você ainda não tem skins desta arma. Compra na Loja.";
+    inventoryWeaponSkinList.appendChild(empty);
+    return;
+  }
+
+  for (const skin of owned) {
+    addCard(
+      skin.name,
+      `Skin para ${getWeapon(skin.weaponId)?.name ?? skin.weaponId}`,
+      equipped === skin.id,
+      () => {
+        setEquippedWeaponSkin(weaponId, skin.id);
+        preview?.setWeaponSkin(skin);
+        renderWeaponSkinPickerList(weaponId);
+      },
+      () => preview?.setWeaponSkin(skin)
+    );
+  }
+}
+
+function openWeaponSkinPicker(weaponId: WeaponId): void {
+  weaponSkinPickerWeapon = weaponId;
+  inventoryWeaponsMain.classList.add("hidden");
+  inventoryWeaponSkinPicker.classList.remove("hidden");
+  const p = ensureInventoryWeaponPreview();
+  if (p) {
+    p.setMode("weapon");
+    p.setWeapon(weaponId);
+    const equipped = getEquippedWeaponSkinId(weaponId);
+    p.setWeaponSkin(equipped ? getWeaponSkin(equipped) ?? null : null);
+    p.start();
+    p.resize();
+  }
+  renderWeaponSkinPickerList(weaponId);
+}
+
+function closeWeaponSkinPicker(): void {
+  weaponSkinPickerWeapon = null;
+  inventoryWeaponSkinPicker.classList.add("hidden");
+  inventoryWeaponsMain.classList.remove("hidden");
+  inventoryWeaponPreview?.stop();
+}
+
 function renderInventoryWeapons(): void {
   buildWeaponSelects(
     inventoryOptions,
@@ -1563,10 +1817,9 @@ function renderInventoryWeapons(): void {
     (container, slot, id) => {
       inventoryLoadout = { ...inventoryLoadout, [slot]: id };
       refreshWeaponSelectUI(container, getWeapon(id)!);
-      // A principal troca na hora no boneco do modal.
-      if (slot === "primary") inventoryPreview?.setWeapon(id);
     },
-    new Set(inventory.weapons)
+    new Set(inventory.weapons),
+    (slot) => openWeaponSkinPicker(inventoryLoadout[slot])
   );
 }
 
@@ -1613,6 +1866,7 @@ function renderInventorySkins(): void {
     // Clique no card muda o preview 3D na hora para ver
     card.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).tagName === "BUTTON") return;
+      inventoryPreview?.setMode("character");
       inventoryPreview?.setSkin(item.id);
     });
 
@@ -1627,7 +1881,19 @@ function setInventoryTab(tab: "weapons" | "skins"): void {
   }
   inventoryWeaponsTab.classList.toggle("hidden", tab !== "weapons");
   inventorySkinsTab.classList.toggle("hidden", tab !== "skins");
-  inventoryPreview?.resize();
+  if (tab === "weapons") {
+    closeWeaponSkinPicker();
+    inventoryPreview?.stop();
+  } else {
+    closeWeaponSkinPicker();
+    const p = ensureInventoryPreview();
+    if (p) {
+      p.setMode("character");
+      p.setSkin(getActiveSkin());
+      p.start();
+      p.resize();
+    }
+  }
 }
 
 for (const el of document.querySelectorAll<HTMLElement>("[data-invtab]")) {
@@ -1641,19 +1907,13 @@ function openInventoryModal(): void {
   inventoryLoadout = savedLoadout();
   renderInventoryWeapons();
   renderInventorySkins();
-  setInventoryTab("weapons");
   inventoryModal.classList.remove("hidden");
-  const p = ensureInventoryPreview();
-  if (p) {
-    p.setSkin(getActiveSkin());
-    p.setWeapon(inventoryLoadout.primary);
-    p.start();
-    p.resize();
-  }
+  setInventoryTab("weapons");
 }
 
 function closeInventoryModal(): void {
   inventoryModal.classList.add("hidden");
+  closeWeaponSkinPicker();
   inventoryPreview?.stop();
   resumeProfilePreviewsIfVisible();
 }
@@ -1668,6 +1928,145 @@ inventoryConfirmButton.addEventListener("click", () => {
 });
 inventoryModal.addEventListener("click", (e) => {
   if (e.target === inventoryModal) closeInventoryModal();
+});
+inventoryWeaponSkinBack?.addEventListener("click", closeWeaponSkinPicker);
+
+// --- Estúdio de Skins (criação de skins de arma → loja) ---
+// TODO(admin): restringir o acesso a administradores quando o papel existir.
+
+const skinStudioModal = document.getElementById("skinStudioModal") as HTMLDivElement;
+const skinStudioCanvas = document.getElementById("skinStudioCanvas") as HTMLCanvasElement;
+const skinStudioWeapon = document.getElementById("skinStudioWeapon") as HTMLSelectElement;
+const skinStudioPartName = document.getElementById("skinStudioPartName") as HTMLSpanElement;
+const skinStudioColor = document.getElementById("skinStudioColor") as HTMLInputElement;
+const skinStudioClearPart = document.getElementById("skinStudioClearPart") as HTMLButtonElement;
+const skinStudioClearAll = document.getElementById("skinStudioClearAll") as HTMLButtonElement;
+const skinStudioPartsCount = document.getElementById("skinStudioPartsCount") as HTMLParagraphElement;
+const skinStudioName = document.getElementById("skinStudioName") as HTMLInputElement;
+const skinStudioPrice = document.getElementById("skinStudioPrice") as HTMLInputElement;
+const skinStudioSave = document.getElementById("skinStudioSave") as HTMLButtonElement;
+const skinStudioCancel = document.getElementById("skinStudioCancel") as HTMLButtonElement;
+
+let skinStudio: WeaponSkinStudio | null = null;
+let skinStudioSaving = false;
+
+function refreshStudioPartsCount(): void {
+  const n = skinStudio?.paintedCount ?? 0;
+  skinStudioPartsCount.textContent =
+    n === 0
+      ? "Nenhuma parte pintada."
+      : `${n} parte${n > 1 ? "s" : ""} pintada${n > 1 ? "s" : ""}.`;
+}
+
+function openSkinStudio(): void {
+  stopProfilePreviews();
+  // Mostra o overlay ANTES de criar o engine — o canvas precisa estar visível
+  // para o Babylon medir o tamanho.
+  skinStudioModal.classList.remove("hidden");
+
+  if (!skinStudio) {
+    skinStudio = new WeaponSkinStudio(skinStudioCanvas);
+    skinStudio.onPartSelected = (part) => {
+      skinStudioPartName.textContent = part ?? "(clique na arma)";
+      if (part) skinStudioColor.value = rgbToHex(skinStudio!.getPartColor(part));
+    };
+  }
+  // Popula o seletor de armas uma vez.
+  if (skinStudioWeapon.options.length === 0) {
+    for (const w of WEAPONS) {
+      const opt = document.createElement("option");
+      opt.value = w.id;
+      opt.textContent = w.name;
+      skinStudioWeapon.appendChild(opt);
+    }
+  }
+  skinStudio.start();
+  skinStudio.resize();
+  refreshStudioPartsCount();
+  void skinStudio.setWeapon(skinStudioWeapon.value as WeaponId);
+}
+
+function closeSkinStudio(): void {
+  skinStudioModal.classList.add("hidden");
+  skinStudio?.stop();
+  resumeProfilePreviewsIfVisible();
+}
+
+document.getElementById("skinStudioButton")?.addEventListener("click", openSkinStudio);
+skinStudioCancel.addEventListener("click", closeSkinStudio);
+skinStudioModal.addEventListener("click", (e) => {
+  if (e.target === skinStudioModal) closeSkinStudio();
+});
+
+skinStudioWeapon.addEventListener("change", () => {
+  skinStudioPartName.textContent = "(clique na arma)";
+  refreshStudioPartsCount();
+  void skinStudio?.setWeapon(skinStudioWeapon.value as WeaponId);
+});
+
+skinStudioColor.addEventListener("input", () => {
+  const part = skinStudio?.selectedPartName;
+  if (!part) return;
+  skinStudio!.setPartColor(part, hexToRgb(skinStudioColor.value));
+  refreshStudioPartsCount();
+});
+
+skinStudioClearPart.addEventListener("click", () => {
+  const part = skinStudio?.selectedPartName;
+  if (!part) return;
+  skinStudio!.clearPart(part);
+  refreshStudioPartsCount();
+});
+
+skinStudioClearAll.addEventListener("click", () => {
+  skinStudio?.clearAllParts();
+  refreshStudioPartsCount();
+});
+
+skinStudioSave.addEventListener("click", () => {
+  if (skinStudioSaving || !skinStudio) return;
+
+  const name = skinStudioName.value.trim();
+  const price = Math.max(0, Math.round(Number(skinStudioPrice.value) || 0));
+  const parts = skinStudio.getParts();
+  const weaponId = skinStudioWeapon.value as WeaponId;
+
+  if (!name) {
+    alert("Dê um nome para a skin.");
+    return;
+  }
+  if (Object.keys(parts).length === 0) {
+    alert("Pinte pelo menos uma parte da arma antes de salvar.");
+    return;
+  }
+
+  const def = {
+    id: `wskin_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    weaponId,
+    name,
+    price,
+    parts,
+  };
+
+  skinStudioSaving = true;
+  skinStudioSave.disabled = true;
+  void (async () => {
+    try {
+      const res = await publishWeaponSkin(def);
+      if (!res.ok) {
+        alert(res.error);
+        return;
+      }
+      const saved = sanitizeWeaponSkin(res.skin);
+      if (saved) registerCustomWeaponSkins([saved]);
+      alert(`Skin "${name}" publicada na loja por ${price} Gold!`);
+      refreshShopAndInventoryUi();
+      closeSkinStudio();
+    } finally {
+      skinStudioSaving = false;
+      skinStudioSave.disabled = false;
+    }
+  })();
 });
 
 document.addEventListener("click", (e) => {
@@ -2872,6 +3271,7 @@ function rememberWeaponSwitch(fromIndex: number): void {
   if (weapons.weaponIndex === fromIndex) return;
   lastWeaponIndex = fromIndex;
   viewModel.setWeapon(weapons.weapon);
+  applyEquippedSkinToViewModel(weapons.weapon.id);
   player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
   exitAds();
 }
@@ -3111,7 +3511,10 @@ window.addEventListener("resize", () => {
   engine.resize();
   if (!pageHome.classList.contains("hidden")) homePreview?.resize();
   if (!pageLobby.classList.contains("hidden")) lobbyPreview?.resize();
-  if (!inventoryModal.classList.contains("hidden")) inventoryPreview?.resize();
+  if (!inventoryModal.classList.contains("hidden")) {
+    inventoryPreview?.resize();
+    inventoryWeaponPreview?.resize();
+  }
   if (!shopModal.classList.contains("hidden")) shopPreview?.resize();
   socialPanel.resizeFriendPreview();
   paintScopeOverlay();

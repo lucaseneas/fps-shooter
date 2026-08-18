@@ -6,6 +6,7 @@
  */
 import { SKINS, DEFAULT_SKIN } from "./skins";
 import { WEAPONS } from "./weapons";
+import { allWeaponSkins, weaponSkinIds } from "./weaponSkins";
 
 export type ItemType = "character_skin" | "weapon" | "weapon_skin" | "equipment";
 
@@ -37,12 +38,12 @@ export function defaultInventory(): PlayerInventory {
   };
 }
 
-const VALID_IDS: Record<keyof PlayerInventory, ReadonlySet<string>> = {
-  characterSkins: new Set(SKINS.map((s) => s.id)),
-  weapons: new Set(WEAPONS.map((w) => w.id)),
-  // Catálogos ainda não existem — qualquer id é descartado até existirem.
-  weaponSkins: new Set(),
-  equipment: new Set(),
+const VALID_IDS: Record<keyof PlayerInventory, () => ReadonlySet<string>> = {
+  characterSkins: () => new Set(SKINS.map((s) => s.id)),
+  weapons: () => new Set(WEAPONS.map((w) => w.id)),
+  // Dinâmico: inclui skins custom registradas em runtime (servidor as serve).
+  weaponSkins: () => new Set(weaponSkinIds()),
+  equipment: () => new Set(),
 };
 
 /** Mapeia o tipo de item para a lista correspondente no inventário. */
@@ -89,12 +90,12 @@ export function sanitizeInventory(raw: unknown): PlayerInventory {
   return {
     characterSkins: sanitizeIdList(
       o.characterSkins,
-      VALID_IDS.characterSkins,
+      VALID_IDS.characterSkins(),
       defaults.characterSkins
     ),
-    weapons: sanitizeIdList(o.weapons, VALID_IDS.weapons, defaults.weapons),
-    weaponSkins: sanitizeIdList(o.weaponSkins, VALID_IDS.weaponSkins, []),
-    equipment: sanitizeIdList(o.equipment, VALID_IDS.equipment, []),
+    weapons: sanitizeIdList(o.weapons, VALID_IDS.weapons(), defaults.weapons),
+    weaponSkins: sanitizeIdList(o.weaponSkins, VALID_IDS.weaponSkins(), []),
+    equipment: sanitizeIdList(o.equipment, VALID_IDS.equipment(), []),
   };
 }
 
@@ -147,6 +148,23 @@ export const SHOP_ITEMS: ShopItemDef[] = SKINS.filter((s) => s.price > 0).map(
   })
 );
 
+/**
+ * Catálogo completo da loja: itens estáticos + skins de arma (oficiais e
+ * custom registradas em runtime). Dinâmico — chame a cada render.
+ */
+export function getShopItems(): ShopItemDef[] {
+  const weaponSkinItems: ShopItemDef[] = allWeaponSkins()
+    .filter((s) => s.price > 0)
+    .map((s) => ({
+      type: "weapon_skin",
+      id: s.id,
+      name: s.name,
+      price: s.price,
+      desc: `Skin para ${WEAPONS.find((w) => w.id === s.weaponId)?.name ?? s.weaponId}`,
+    }));
+  return [...SHOP_ITEMS, ...weaponSkinItems];
+}
+
 export function getShopItem(type: ItemType, id: string): ShopItemDef | undefined {
-  return SHOP_ITEMS.find((i) => i.type === type && i.id === id);
+  return getShopItems().find((i) => i.type === type && i.id === id);
 }

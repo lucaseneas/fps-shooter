@@ -208,3 +208,28 @@ export async function syncAccountInventory(
   );
   return result.ok ? result.data.inventory : null;
 }
+
+// --- Skins de arma custom (estúdio in-game) ---
+
+/** Lista as skins custom publicadas no servidor (loja dinâmica). */
+export async function fetchCustomWeaponSkins(): Promise<unknown[]> {
+  const result = await api<{ skins: unknown[] }>("/api/weapon-skins");
+  if (!result.ok || !Array.isArray(result.data.skins)) return [];
+  return result.data.skins;
+}
+
+export type PublishSkinResult =
+  | { ok: true; skin: unknown }
+  | { ok: false; error: string };
+
+/** Publica uma skin criada no estúdio (vai direto para a loja). */
+export async function publishWeaponSkin(
+  def: unknown
+): Promise<PublishSkinResult> {
+  const result = await api<{ skin: unknown }>("/api/weapon-skins", {
+    method: "POST",
+    body: JSON.stringify(def),
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+  return { ok: true, skin: result.data.skin };
+}

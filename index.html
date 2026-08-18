@@ -191,6 +191,7 @@
           </div>
           <div class="home-top-actions">
             <button type="button" id="shopButton" class="social-btn shop-btn">Loja</button>
+            <button type="button" id="skinStudioButton" class="social-btn">🎨 Estúdio</button>
             <button type="button" id="socialButton" class="social-btn">
               Social <span class="social-badge hidden" id="socialBadge">0</span>
             </button>
@@ -525,6 +526,11 @@
           </div>
         </header>
 
+        <div class="inv-tabs">
+          <button type="button" class="inv-tab active" data-shoptab="character">Personagem</button>
+          <button type="button" class="inv-tab" data-shoptab="weapon">Armas</button>
+        </div>
+
         <div class="skins-modal-body">
           <div class="skins-3d-view">
             <canvas id="shopPreviewCanvas" width="280" height="360"></canvas>
@@ -557,20 +563,32 @@
 
         <div class="inv-tabs">
           <button type="button" class="inv-tab active" data-invtab="weapons">Armas</button>
-          <button type="button" class="inv-tab" data-invtab="skins">Skins</button>
+          <button type="button" class="inv-tab" data-invtab="skins">Personagem</button>
         </div>
 
-        <div class="skins-modal-body">
-          <div class="skins-3d-view">
-            <canvas id="inventoryPreviewCanvas"></canvas>
+        <div id="inventoryWeaponsTab" class="inv-tab-panel">
+          <div id="inventoryWeaponsMain">
+            <p class="skins-hint inv-tab-hint">Escolhe o loadout. Em cada slot podes selecionar uma skin da arma.</p>
+            <div class="armory-options loadout-options" id="inventoryOptions"></div>
           </div>
 
-          <div class="inv-content">
-            <div id="inventoryWeaponsTab" class="inv-tab-panel">
-              <p class="skins-hint inv-tab-hint">A arma principal aparece nas mãos do personagem.</p>
-              <div class="armory-options loadout-options" id="inventoryOptions"></div>
+          <div id="inventoryWeaponSkinPicker" class="hidden">
+            <button type="button" id="inventoryWeaponSkinBack" class="secondary inv-skin-back">← Voltar às armas</button>
+            <div class="skins-modal-body">
+              <div class="skins-3d-view">
+                <canvas id="inventoryWeaponPreviewCanvas"></canvas>
+              </div>
+              <div class="skins-catalog inv-skins-grid" id="inventoryWeaponSkinList"></div>
             </div>
-            <div id="inventorySkinsTab" class="inv-tab-panel hidden">
+          </div>
+        </div>
+
+        <div id="inventorySkinsTab" class="inv-tab-panel hidden">
+          <div class="skins-modal-body">
+            <div class="skins-3d-view">
+              <canvas id="inventoryPreviewCanvas"></canvas>
+            </div>
+            <div class="inv-content">
               <div class="skins-catalog inv-skins-grid" id="inventorySkinsGrid"></div>
             </div>
           </div>
@@ -579,6 +597,55 @@
         <div class="modal-actions">
           <button type="button" id="inventoryConfirmButton">Confirmar</button>
           <button type="button" id="inventoryCancelButton" class="secondary">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Estúdio de Skins — criação de skins de arma (pintar partes do modelo) -->
+    <div id="skinStudioModal" class="hidden">
+      <div class="modal-card skins-card studio-card">
+        <header class="skins-header">
+          <div>
+            <h2>🎨 Estúdio de Skins</h2>
+            <p class="skins-hint">
+              Escolha a arma, clique numa parte do modelo e pinte. Ao salvar,
+              a skin é publicada na loja com o preço definido.
+            </p>
+          </div>
+        </header>
+
+        <div class="studio-body">
+          <div class="studio-view">
+            <canvas id="skinStudioCanvas"></canvas>
+            <p class="studio-hint">Arraste para girar · clique numa parte para selecionar</p>
+          </div>
+
+          <div class="studio-side">
+            <label class="studio-label" for="skinStudioWeapon">Arma</label>
+            <select id="skinStudioWeapon"></select>
+
+            <label class="studio-label">Parte selecionada</label>
+            <div class="studio-part-row">
+              <span id="skinStudioPartName" class="studio-part-name">(clique na arma)</span>
+              <input type="color" id="skinStudioColor" value="#c0392b" />
+            </div>
+            <div class="studio-part-actions">
+              <button type="button" id="skinStudioClearPart" class="secondary">Limpar parte</button>
+              <button type="button" id="skinStudioClearAll" class="secondary">Limpar tudo</button>
+            </div>
+            <p id="skinStudioPartsCount" class="skins-hint">Nenhuma parte pintada.</p>
+
+            <label class="studio-label" for="skinStudioName">Nome da skin</label>
+            <input type="text" id="skinStudioName" maxlength="32" placeholder="Ex.: MP5 Carmesim" />
+
+            <label class="studio-label" for="skinStudioPrice">Preço na loja (Gold)</label>
+            <input type="number" id="skinStudioPrice" min="0" max="1000000" step="50" value="500" />
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="skinStudioSave">Salvar e publicar</button>
+          <button type="button" id="skinStudioCancel" class="secondary">Fechar</button>
         </div>
       </div>
     </div>

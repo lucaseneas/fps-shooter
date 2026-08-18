@@ -6,6 +6,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 
 import { WeaponDef } from "../../shared/weapons";
 
@@ -41,6 +42,8 @@ interface WeaponViewModelConfig {
    * para esse tamanho — permite usar GLBs de qualquer escala de origem.
    */
   targetLength?: number;
+  /** Cor RGB (0–1) aplicada sobre os materiais do modelo (base para skins). */
+  tint?: [number, number, number];
 }
 
 const DEFAULT_CONFIG: WeaponViewModelConfig = {
@@ -142,6 +145,57 @@ export function weaponModelTransform(
   return { rotation: cfg.rotation ?? DEFAULT_MODEL_ROTATION, scale };
 }
 
+/** Cor de tingimento configurada para a arma (undefined = cor original do GLB). */
+export function weaponTint(id: string): [number, number, number] | undefined {
+  return (WEAPON_CONFIGS[id] ?? DEFAULT_CONFIG).tint;
+}
+
+/**
+ * Tingi o modelo de uma arma com uma cor (base do sistema de skins).
+ * Meshes com material PBR/Standard têm a cor ajustada mantendo o material;
+ * meshes sem material (comum em GLBs simples como a MP5) recebem um
+ * StandardMaterial compartilhado com a cor.
+ */
+export function applyWeaponTint(
+  scene: Scene,
+  model: Mesh,
+  rgb: [number, number, number]
+): void {
+  applyWeaponSkinParts(scene, model, { "*": rgb });
+}
+
+/** Aplica cores por nome de mesh. Chave `"*"` pinta todas as partes. */
+export function applyWeaponSkinParts(
+  scene: Scene,
+  model: Mesh,
+  parts: Record<string, [number, number, number]>
+): void {
+  let fallbackMat: StandardMaterial | null = null;
+  const tintMesh = (m: AbstractMesh, rgb: [number, number, number]) => {
+    const color = new Color3(rgb[0], rgb[1], rgb[2]);
+    const mat = m.material as unknown as {
+      albedoColor?: Color3;
+      diffuseColor?: Color3;
+    } | null;
+    if (mat && mat.albedoColor !== undefined) {
+      mat.albedoColor = color;
+    } else if (mat && mat.diffuseColor !== undefined) {
+      mat.diffuseColor = color;
+    } else {
+      fallbackMat ??= new StandardMaterial(`vmTint_${model.name}`, scene);
+      fallbackMat.diffuseColor = color;
+      fallbackMat.specularColor = new Color3(0.05, 0.05, 0.05);
+      m.material = fallbackMat;
+    }
+  };
+
+  const wildcard = parts["*"];
+  for (const m of model.getChildMeshes()) {
+    const rgb = parts[m.name] ?? wildcard;
+    if (rgb) tintMesh(m, rgb);
+  }
+}
+
 export const WEAPON_ASSETS: Record<string, string> = {
   rifle: "/assets/rifle_v2.glb",
   ak47: "/assets/ak47.glb",
@@ -159,6 +213,10 @@ export class ViewModel {
   private readonly fallbackRoot: TransformNode;
   private readonly modelsRoot: TransformNode;
   private readonly weaponNodes = new Map<string, TransformNode>();
+  private readonly weaponModels = new Map<string, Mesh>();
+  private readonly originalColors = new Map<string, Map<string, Color3>>();
+  /** Skin equipada por arma (null = cores originais / tint padrão). */
+  private readonly equippedParts = new Map<string, Record<string, [number, number, number]> | null>();
   private readonly loadingWeapons = new Set<string>();
 
   private readonly bodyMat: StandardMaterial;
@@ -263,13 +321,26 @@ export class ViewModel {
 
         model.parent = gunOffset;
 
+        const originals = new Map<string, Color3>();
         for (const m of model.getChildMeshes()) {
           m.isPickable = false;
-          m.renderingGroupId = 2; // Renderizar por cima de tudo no HUD
+          m.renderingGroupId = 2;
+          if (m.material) {
+            m.material = m.material.clone(`vmMat_${id}_${m.name}`);
+          } else {
+            const mat = new StandardMaterial(`vmMat_${id}_${m.name}`, this.scene);
+            mat.diffuseColor = new Color3(0.55, 0.55, 0.58);
+            mat.specularColor = new Color3(0.05, 0.05, 0.05);
+            m.material = mat;
+          }
+          originals.set(m.name, this.readMeshColor(m).clone());
           if (m.material && this.isInvincible) {
             m.material.alpha = 0.6;
           }
         }
+        this.originalColors.set(id, originals);
+        this.weaponModels.set(id, model);
+        this.applyStoredSkin(id);
 
         this.weaponNodes.set(id, gunOffset);
         this.loadingWeapons.delete(id);
@@ -329,6 +400,53 @@ export class ViewModel {
 
     this.updateVisibleWeapon();
     this.startDraw(weapon.drawTime);
+    this.applyStoredSkin(weapon.id);
+  }
+
+  /**
+   * Aplica (ou limpa) a skin de uma arma. Se o modelo ainda estiver a
+   * carregar, a skin fica pendente e entra quando o GLB terminar.
+   */
+  setWeaponSkin(
+    weaponId: string,
+    parts: Record<string, [number, number, number]> | null
+  ): void {
+    this.equippedParts.set(weaponId, parts);
+    this.applyStoredSkin(weaponId);
+  }
+
+  private applyStoredSkin(weaponId: string): void {
+    const model = this.weaponModels.get(weaponId);
+    if (!model) return;
+    this.restoreOriginalColors(weaponId);
+    const cfg = WEAPON_CONFIGS[weaponId] ?? DEFAULT_CONFIG;
+    if (cfg.tint) applyWeaponTint(this.scene, model, cfg.tint);
+    const parts = this.equippedParts.get(weaponId);
+    if (parts) applyWeaponSkinParts(this.scene, model, parts);
+  }
+
+  private readMeshColor(m: AbstractMesh): Color3 {
+    const mat = m.material as unknown as {
+      albedoColor?: Color3;
+      diffuseColor?: Color3;
+    } | null;
+    return mat?.albedoColor?.clone() ?? mat?.diffuseColor?.clone() ?? new Color3(0.55, 0.55, 0.58);
+  }
+
+  private restoreOriginalColors(weaponId: string): void {
+    const model = this.weaponModels.get(weaponId);
+    const originals = this.originalColors.get(weaponId);
+    if (!model || !originals) return;
+    for (const m of model.getChildMeshes()) {
+      const c = originals.get(m.name);
+      if (!c) continue;
+      const mat = m.material as unknown as {
+        albedoColor?: Color3;
+        diffuseColor?: Color3;
+      } | null;
+      if (mat?.albedoColor !== undefined) mat.albedoColor = c.clone();
+      else if (mat?.diffuseColor !== undefined) mat.diffuseColor = c.clone();
+    }
   }
 
   startDraw(duration: number): void {
