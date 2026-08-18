@@ -12,6 +12,7 @@ import {
   inviteFriend,
   isSocialConnected,
   presenceFor,
+  refreshSocialLists,
   removeFriend,
   requestFriend,
   requestFriendByName,
@@ -46,6 +47,9 @@ interface CtxItem {
 const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 
+/** Intervalo do watchdog que ressincroniza as listas e detecta socket morto. */
+const WATCHDOG_MS = 15000;
+
 function formatMemberSince(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -72,6 +76,10 @@ export class SocialPanel {
   private lastInfoRequest = 0;
   private friendPreview: SkinPreview | null = null;
   private reconnectTimer = 0;
+  /** True enquanto um pedido de listas do watchdog aguarda resposta. */
+  private awaitingLists = false;
+  /** Assinatura das últimas listas — evita re-render sem mudança. */
+  private lastListsSig = "";
 
   constructor(hooks: SocialHooks) {
     this.hooks = hooks;
@@ -109,6 +117,35 @@ export class SocialPanel {
     window.addEventListener("resize", () => this.hideContextMenu());
     document.addEventListener("scroll", () => this.hideContextMenu(), true);
     // ESC é tratado pelo handler central do main.ts (chama handleEscape).
+
+    // Watchdog: ressincroniza as listas periodicamente. Se uma mensagem em
+    // tempo real se perder (aba suspensa, socket meio-morto, restart do
+    // servidor), a lista se cura sozinha sem precisar dar refresh na página.
+    window.setInterval(() => this.tickSocialWatchdog(), WATCHDOG_MS);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") this.tickSocialWatchdog();
+    });
+    window.addEventListener("focus", () => this.tickSocialWatchdog());
+  }
+
+  /**
+   * Pede as listas ao servidor. Se o pedido anterior ficou sem resposta,
+   * o socket está provavelmente morto: derruba e reconecta.
+   */
+  private tickSocialWatchdog(): void {
+    if (!this.hooks.isLoggedIn()) return;
+    if (!isSocialConnected()) {
+      void this.connect();
+      return;
+    }
+    if (this.awaitingLists) {
+      this.awaitingLists = false;
+      disconnectSocial();
+      void this.connect();
+      return;
+    }
+    this.awaitingLists = true;
+    refreshSocialLists();
   }
 
   // --- Conexão ---
@@ -118,11 +155,15 @@ export class SocialPanel {
     if (!this.hooks.isLoggedIn()) return false;
     const ok = await connectSocial({
       onLists: (friends, requests, outgoing) => {
+        this.awaitingLists = false;
+        const sig = JSON.stringify([friends, requests, outgoing]);
+        const changed = sig !== this.lastListsSig;
+        this.lastListsSig = sig;
         this.friends = friends;
         this.requests = requests;
         this.outgoing = new Set(outgoing.map((o) => o.userId));
         this.updateBadges();
-        this.render();
+        if (changed) this.render();
       },
       onRequest: (from) => this.pushRequestCard(from),
       onInvite: (invite) => this.pushInviteCard(invite),
@@ -159,6 +200,8 @@ export class SocialPanel {
     this.friends = [];
     this.requests = [];
     this.outgoing.clear();
+    this.awaitingLists = false;
+    this.lastListsSig = "";
     this.updateBadges();
     this.close();
   }
@@ -169,6 +212,8 @@ export class SocialPanel {
     $("socialModal").classList.remove("hidden");
     if (this.hooks.isLoggedIn()) {
       void this.connect();
+      // Já conectado: força um refresh das listas ao abrir o painel.
+      if (isSocialConnected()) refreshSocialLists();
     }
     this.render();
   }
@@ -433,12 +478,18 @@ export class SocialPanel {
     const presence = presenceFor(friend.userId);
     const myRoom = this.hooks.myRoom();
 
-    // "Entrar na sala": amigo em partida, com vaga, e não é a minha sala.
+    // Sala cheia só faz sentido quando o limite é conhecido (roomMax > 0).
+    const friendRoomFull =
+      presence !== null &&
+      presence.roomMax > 0 &&
+      presence.roomClients >= presence.roomMax;
+
+    // "Entrar na sala": amigo numa sala (lobby ou partida), com vaga,
+    // e não é a minha sala.
     const canJoin =
       presence !== null &&
       presence.roomId !== "" &&
-      presence.matchStarted &&
-      presence.roomClients < presence.roomMax &&
+      !friendRoomFull &&
       presence.roomId !== myRoom?.roomId;
 
     // "Convidar jogador": eu estou numa sala com vaga e o amigo não está nela.
@@ -450,11 +501,13 @@ export class SocialPanel {
 
     const joinHint = !presence
       ? "Entrar na sala (offline)"
-      : !presence.roomId || !presence.matchStarted
-        ? "Entrar na sala (não está em partida)"
-        : presence.roomClients >= presence.roomMax
-          ? "Entrar na sala (sala cheia)"
-          : "Entrar na sala";
+      : !presence.roomId
+        ? "Entrar na sala (não está em sala)"
+        : presence.roomId === myRoom?.roomId
+          ? "Entrar na sala (já está na sua sala)"
+          : friendRoomFull
+            ? "Entrar na sala (sala cheia)"
+            : "Entrar na sala";
 
     const inviteHint = !myRoom
       ? "Convidar jogador (você não está em sala)"

@@ -151,6 +151,14 @@ export function disconnectSocial(): void {
   if (r) void r.leave();
 }
 
+/**
+ * Pede ao servidor um reenvio das listas (a resposta chega em onLists).
+ * Usado pelo watchdog do painel para se curar de mensagens perdidas.
+ */
+export function refreshSocialLists(): void {
+  room?.send("socialReady");
+}
+
 export function sendPresence(p: PresencePayload): void {
   room?.send("presence", p);
 }

@@ -25,6 +25,7 @@ import { verifyToken, recordMatchStats, getUserProgress } from "./auth";
 import { isAuthEnabled } from "./db";
 import { XP_RULES, MAX_XP, MULTIKILL_WINDOW_MS } from "../shared/ranks";
 import { MAX_GOLD, matchGoldFor } from "../shared/gold";
+import { DEFAULT_SKIN } from "../shared/skins";
 
 const HISTORY_WINDOW_MS = 1000;
 /** Quantos inputs processar por jogador a cada tick (anti-speedhack). */
@@ -294,13 +295,6 @@ export class DeathmatchRoom extends Room<MatchState> {
       const p = this.state.players.get(client.sessionId);
       if (p) {
         p.skinId = skinId.slice(0, 32);
-        // Se for o líder, atualiza a skin de todos os bots
-        if (client.sessionId === this.state.hostId) {
-          for (const botId of this.bots.keys()) {
-            const botPlayer = this.state.players.get(botId);
-            if (botPlayer) botPlayer.skinId = p.skinId;
-          }
-        }
       }
     });
 
@@ -1133,9 +1127,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     // Bots nunca ficam no pré-lobby: entram em toda partida.
     p.inMatch = true;
 
-    // O bot clona a skin do líder, se não achar usa a default
-    const host = this.state.hostId ? this.state.players.get(this.state.hostId) : null;
-    p.skinId = host ? host.skinId : "skin_default";
+    // Bots sempre usam a skin Padrão
+    p.skinId = DEFAULT_SKIN;
 
     const spawn = randomSpawn();
     p.x = spawn.x;

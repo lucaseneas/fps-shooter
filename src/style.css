@@ -3040,22 +3040,6 @@ kbd {
   user-select: none;
 }
 
-.preview-360-badge {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(10, 14, 20, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 10px;
-  font-weight: 600;
-  color: #aab6c2;
-  pointer-events: none;
-  letter-spacing: 0.5px;
-}
-
 .skins-catalog {
   flex: 1;
   display: flex;
