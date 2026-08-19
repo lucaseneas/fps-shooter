@@ -17,6 +17,7 @@ import {
 import {
   loadCustomWeaponSkins,
   saveCustomWeaponSkin,
+  deleteCustomWeaponSkin,
 } from "./weaponSkinsStore";
 
 const port = Number(process.env.PORT) || CONFIG.serverPort;
@@ -25,7 +26,7 @@ const host = process.env.HOST || "0.0.0.0";
 
 function setCors(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization"
@@ -202,6 +203,22 @@ async function handleApi(
     return true;
   }
 
+  if (req.method === "DELETE" && path === "/api/weapon-skins") {
+    try {
+      const body = (await readJson(req)) as { id?: unknown };
+      const result = await deleteCustomWeaponSkin(body.id);
+      if (result !== true) {
+        sendJson(res, 400, { error: result });
+        return true;
+      }
+      sendJson(res, 200, { ok: true });
+    } catch (err) {
+      console.error("[weapon-skins] delete:", err);
+      sendJson(res, 400, { error: "JSON inválido." });
+    }
+    return true;
+  }
+
   // Inventário: migra itens locais (convidado/localStorage) para a conta.
   if (req.method === "POST" && path === "/api/inventory/sync") {
     try {
@@ -251,10 +268,6 @@ gameServer.define("deathmatch", DeathmatchRoom);
 gameServer.define("social", SocialRoom);
 
 async function boot(): Promise<void> {
-  // Carrega as skins custom ANTES de aceitar conexões: o sanitizeInventory
-  // (auth) descartaria ids de skins que ainda não foram registrados.
-  await loadCustomWeaponSkins();
-
   if (isAuthEnabled()) {
     if (!process.env.JWT_SECRET?.trim()) {
       console.error("[auth] DATABASE_URL definida mas JWT_SECRET em falta — a abortar.");
@@ -264,6 +277,10 @@ async function boot(): Promise<void> {
   } else {
     console.log("[auth] DATABASE_URL ausente — modo convidado (sem contas).");
   }
+
+  // Catálogo de skins (Postgres ou JSON) ANTES de aceitar conexões:
+  // o sanitizeInventory descarta ids que ainda não foram registrados.
+  await loadCustomWeaponSkins();
 
   await gameServer.listen(port, host);
   console.log(`[fps-shooter] Colyseus ouvindo em http://${host}:${port}`);

@@ -64,7 +64,7 @@ async function main(): Promise<void> {
     const len = Math.hypot(dx, dy, dz);
     const before = bot.health;
     room.send("fire", {
-      weaponId: "rifle",
+      weaponId: "m4a1",
       ox, oy, oz,
       dirs: [{ x: dx / len, y: dy / len, z: dz / len }],
     });
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
     const before = bot.health;
     // Origem a 30m do jogador real — o servidor deve rejeitar.
     room.send("fire", {
-      weaponId: "pistol",
+      weaponId: "usp",
       ox: bot.x, oy: bot.y + 1.7, oz: bot.z - 2,
       dirs: [{ x: 0, y: 0, z: 1 }],
     });

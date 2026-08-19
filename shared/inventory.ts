@@ -5,7 +5,7 @@
  * novas listas, sem mudar o formato salvo.
  */
 import { SKINS, DEFAULT_SKIN } from "./skins";
-import { WEAPONS } from "./weapons";
+import { WEAPONS, resolveWeaponId } from "./weapons";
 import { allWeaponSkins, weaponSkinIds } from "./weaponSkins";
 
 export type ItemType = "character_skin" | "weapon" | "weapon_skin" | "equipment";
@@ -40,7 +40,12 @@ export function defaultInventory(): PlayerInventory {
 
 const VALID_IDS: Record<keyof PlayerInventory, () => ReadonlySet<string>> = {
   characterSkins: () => new Set(SKINS.map((s) => s.id)),
-  weapons: () => new Set(WEAPONS.map((w) => w.id)),
+  weapons: () => new Set([
+    ...WEAPONS.map((w) => w.id),
+    "rifle",
+    "pistol",
+    "sniper",
+  ]),
   // Dinâmico: inclui skins custom registradas em runtime (servidor as serve).
   weaponSkins: () => new Set(weaponSkinIds()),
   equipment: () => new Set(),
@@ -58,6 +63,15 @@ export function inventoryKeyOf(type: ItemType): keyof PlayerInventory {
     case "equipment":
       return "equipment";
   }
+}
+
+function remapWeaponIds(ids: string[]): string[] {
+  const out: string[] = [];
+  for (const id of ids) {
+    const resolved = resolveWeaponId(id);
+    if (resolved && !out.includes(resolved)) out.push(resolved);
+  }
+  return out;
 }
 
 function sanitizeIdList(
@@ -93,7 +107,9 @@ export function sanitizeInventory(raw: unknown): PlayerInventory {
       VALID_IDS.characterSkins(),
       defaults.characterSkins
     ),
-    weapons: sanitizeIdList(o.weapons, VALID_IDS.weapons(), defaults.weapons),
+    weapons: remapWeaponIds(
+      sanitizeIdList(o.weapons, VALID_IDS.weapons(), defaults.weapons)
+    ),
     weaponSkins: sanitizeIdList(o.weaponSkins, VALID_IDS.weaponSkins(), []),
     equipment: sanitizeIdList(o.equipment, VALID_IDS.equipment(), []),
   };

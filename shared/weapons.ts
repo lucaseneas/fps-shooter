@@ -1,12 +1,20 @@
 export type WeaponId =
-  | "pistol"
+  | "usp"
   | "magnum"
-  | "rifle"
+  | "m4a1"
   | "ak47"
+  | "scarh"
   | "mp5"
   | "shotgun"
-  | "sniper"
+  | "awp"
   | "knife";
+
+/** Ids antigos → ids atuais (loadouts/inventários persistidos). */
+const LEGACY_WEAPON_IDS: Record<string, WeaponId> = {
+  pistol: "usp",
+  rifle: "m4a1",
+  sniper: "awp",
+};
 
 /** Slot de equipamento no loadout (teclas 1 / 2 / 3). */
 export type WeaponCategory = "primary" | "secondary" | "melee";
@@ -19,8 +27,8 @@ export interface LoadoutSlots {
 }
 
 export const DEFAULT_LOADOUT: LoadoutSlots = {
-  primary: "rifle",
-  secondary: "pistol",
+  primary: "m4a1",
+  secondary: "usp",
   melee: "knife",
 };
 
@@ -76,7 +84,7 @@ export const MIN_MOVE_SPEED_MULT = 0.8;
 /** Categoria da arma no inventário do loadout. */
 export function weaponCategory(id: WeaponId): WeaponCategory {
   if (id === "knife") return "melee";
-  if (id === "pistol" || id === "magnum") return "secondary";
+  if (id === "usp" || id === "magnum") return "secondary";
   return "primary";
 }
 
@@ -88,8 +96,8 @@ export function weaponsForCategory(category: WeaponCategory): WeaponDef[] {
 /** Catálogo de armas (defs). O inventário do jogador vem do loadout. */
 export const WEAPONS: WeaponDef[] = [
   {
-    id: "pistol",
-    name: "Pistola",
+    id: "usp",
+    name: "USP",
     desc: "Secundária fiável, saque rápido.",
     auto: false,
     fireInterval: 0.28,
@@ -136,7 +144,7 @@ export const WEAPONS: WeaponDef[] = [
     moveSpeedMult: 1.2,
   },
   {
-    id: "rifle",
+    id: "m4a1",
     name: "M4A1",
     desc: "Automático equilibrado para qualquer distância.",
     auto: true,
@@ -180,6 +188,30 @@ export const WEAPONS: WeaponDef[] = [
     sprayBloomMax: 2.2,
     sprayBloomRamp: 7,
     drawTime: 0.75,
+  },
+  {
+    id: "scarh",
+    name: "SCAR-H",
+    desc: "Rifle pesado: dano sólido e recuo controlável, mas você se move mais devagar.",
+    auto: true,
+    fireInterval: 0.105,
+    damageBody: 27,
+    damageHead: 70,
+    pellets: 1,
+    pelletPattern: [[0, 0]],
+    magSize: 20,
+    reserveAmmo: 60,
+    reloadTime: 2.35,
+    recoilPattern: [[0.21, 0.42], [-0.27, 0.52], [0.34, 0.61], [-0.4, 0.7], [0.3, 0.78], [-0.23, 0.85], [0.17, 0.91], [-0.35, 0.95]],
+    falloffStart: 24,
+    falloffEnd: 58,
+    falloffMin: 0.68,
+    viewColor: [0.38, 0.32, 0.22],
+    baseSpread: 0.42,
+    sprayBloomMax: 1.85,
+    sprayBloomRamp: 6,
+    drawTime: 0.78,
+    moveSpeedMult: 0.92,
   },
   {
     id: "mp5",
@@ -230,7 +262,7 @@ export const WEAPONS: WeaponDef[] = [
     moveSpeedMult: 1.1,
   },
   {
-    id: "sniper",
+    id: "awp",
     name: "AWP",
     desc: "Um tiro, uma kill. Mira telescópica precisa.",
     auto: false,
@@ -280,8 +312,14 @@ export const WEAPONS: WeaponDef[] = [
   },
 ];
 
+export function resolveWeaponId(id: string): WeaponId | undefined {
+  if (WEAPONS.some((w) => w.id === id)) return id as WeaponId;
+  return LEGACY_WEAPON_IDS[id];
+}
+
 export function getWeapon(id: string): WeaponDef | undefined {
-  return WEAPONS.find((w) => w.id === id);
+  const resolved = resolveWeaponId(id);
+  return resolved ? WEAPONS.find((w) => w.id === resolved) : undefined;
 }
 
 export function isMeleeWeapon(weapon: WeaponDef): boolean {

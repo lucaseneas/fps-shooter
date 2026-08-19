@@ -59,17 +59,30 @@ const DEFAULT_CONFIG: WeaponViewModelConfig = {
 const DEFAULT_MODEL_ROTATION = new Vector3(Math.PI / -2, 0, 0);
 
 const WEAPON_CONFIGS: Record<string, WeaponViewModelConfig> = {
-  rifle: {
-    offset: new Vector3(-0.1, 0.05, -0.35),
-    muzzle: new Vector3(-0.1, 0.05, 0.45),
-    sprintPitch: -0.80,
-    sprintPosOffset: new Vector3(-0.08, -0.04, -0.08),
+  m4a1: {
+    offset: new Vector3(-0.15, 0.08, -0.32),
+    muzzle: new Vector3(-0.15, 0.08, 0.43),
+    sprintPitch: -0.6,
+    sprintPosOffset: new Vector3(-0.08, 0.06, -0.02),
+    rotation: new Vector3(0, 0, 0),
+    targetLength: 0.82,
   },
   ak47: {
-    offset: new Vector3(-0.1, 0.05, -0.35),
-    muzzle: new Vector3(-0.1, 0.05, 0.48),
-    sprintPitch: -0.80,
-    sprintPosOffset: new Vector3(-0.08, -0.04, -0.08),
+    offset: new Vector3(-0.15, 0.08, -0.32),
+    muzzle: new Vector3(-0.15, 0.08, 0.43),
+    // Modelo novo (ak47_v1): eixo longo em Z e centrado no pivô, como a MP5.
+    sprintPitch: -0.6,
+    sprintPosOffset: new Vector3(-0.08, 0.06, -0.02),
+    rotation: new Vector3(0, Math.PI, 0),
+    targetLength: 0.82,
+  },
+  scarh: {
+    offset: new Vector3(-0.15, 0.08, -0.32),
+    muzzle: new Vector3(-0.15, 0.08, 0.43),
+    sprintPitch: -0.6,
+    sprintPosOffset: new Vector3(-0.08, 0.06, -0.02),
+    rotation: new Vector3(0, 0, 0),
+    targetLength: 0.82,
   },
   mp5: {
     offset: new Vector3(-0.1, 0.05, -0.32),
@@ -84,24 +97,29 @@ const WEAPON_CONFIGS: Record<string, WeaponViewModelConfig> = {
     rotation: new Vector3(0, 0, 0),
     targetLength: 0.62,
   },
-  sniper: {
-    offset: new Vector3(-0.1, 0.05, -0.35),
-    muzzle: new Vector3(-0.1, 0.05, 0.72),
-    sprintPitch: -0.75,
-    sprintPosOffset: new Vector3(-0.08, -0.04, -0.08),
+  awp: {
+    offset: new Vector3(-0.15, 0.10, -0.32),
+    muzzle: new Vector3(-0.15, 0.10, 0.58),
+    sprintPitch: -0.6,
+    sprintPosOffset: new Vector3(-0.08, 0.06, -0.02),
+    rotation: new Vector3(0, 0, 0),
+    targetLength: 1.02,
   },
   shotgun: {
-    offset: new Vector3(-0.1, 0.05, -0.35),
-    muzzle: new Vector3(-0.1, 0.05, 0.42),
-    sprintPitch: -0.75,
-    sprintPosOffset: new Vector3(-0.08, -0.04, -0.08),
+    offset: new Vector3(-0.1, 0.05, -0.32),
+    muzzle: new Vector3(-0.1, 0.05, 0.36),
+    sprintPitch: -0.6,
+    sprintPosOffset: new Vector3(-0.08, 0.06, -0.02),
+    rotation: new Vector3(0, 0, 0),
+    targetLength: 0.68,
   },
-  pistol: {
-    // Pistola: trazida mais para a frente para não clipar na câmera
+  usp: {
     offset: new Vector3(-0.07, 0.02, -0.18),
-    muzzle: new Vector3(-0.07, 0.04, 0.18),
+    muzzle: new Vector3(-0.07, 0.04, 0.16),
     sprintPitch: -0.45,
-    sprintPosOffset: new Vector3(-0.04, -0.02, -0.03),
+    sprintPosOffset: new Vector3(-0.04, 0.04, -0.02),
+    rotation: new Vector3(0, Math.PI, 0),
+    targetLength: 0.32,
   },
   magnum: {
     // Magnum: ligeiramente mais à frente que armas longas
@@ -197,13 +215,14 @@ export function applyWeaponSkinParts(
 }
 
 export const WEAPON_ASSETS: Record<string, string> = {
-  rifle: "/assets/rifle_v2.glb",
-  ak47: "/assets/ak47.glb",
+  m4a1: "/assets/weapons/m4a1_v1.glb",
+  ak47: "/assets/weapons/ak47_v1.glb",
+  scarh: "/assets/weapons/scar-h_v1.glb",
   mp5: "/assets/MP5.glb",
-  pistol: "/assets/pistol.glb",
+  usp: "/assets/weapons/usp_v1.glb",
   magnum: "/assets/magnum.glb",
-  shotgun: "/assets/shotgun.glb",
-  sniper: "/assets/sniper.glb",
+  shotgun: "/assets/weapons/pump-shotgun_v1.glb",
+  awp: "/assets/weapons/awp_v1.glb",
   knife: "/assets/knife.glb",
 };
 
@@ -225,7 +244,7 @@ export class ViewModel {
   private readonly flash: Mesh;
   private flashTimeout = 0;
   private melee = false;
-  private currentWeaponId = "rifle";
+  private currentWeaponId = "m4a1";
   private isInvincible = false;
 
   private kick = 0;
@@ -376,11 +395,11 @@ export class ViewModel {
         this.fallbackRoot.scaling.set(1, 1, 1);
         this.barrel.setEnabled(true);
         this.barrel.scaling.y =
-          this.currentWeaponId === "pistol"
+          this.currentWeaponId === "usp"
             ? 0.6
             : this.currentWeaponId === "magnum"
               ? 0.85
-              : this.currentWeaponId === "sniper"
+              : this.currentWeaponId === "awp"
                 ? 1.85
                 : 1.2;
       }

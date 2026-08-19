@@ -31,6 +31,7 @@ import {
   fetchProfile,
   loginAccount,
   publishWeaponSkin,
+  deleteWeaponSkin,
   registerAccount,
   restoreSession,
   saveAccountPrefs,
@@ -53,14 +54,17 @@ import {
   WeaponId,
   getWeapon,
   isMeleeWeapon,
+  resolveWeaponId,
   weaponMoveSpeedMult,
   weaponsForCategory,
 } from "../shared/weapons";
 import {
   WeaponSkinDef,
+  allWeaponSkins,
   getWeaponSkin,
   registerCustomWeaponSkins,
   sanitizeWeaponSkin,
+  unregisterCustomWeaponSkin,
   weaponSkinsFor,
 } from "../shared/weaponSkins";
 import { WeaponSkinStudio, hexToRgb, rgbToHex } from "./ui/WeaponSkinStudio";
@@ -920,9 +924,9 @@ function savedLoadout(): LoadoutSlots {
     try {
       const parsed = JSON.parse(saved) as Partial<LoadoutSlots>;
       const slots: LoadoutSlots = {
-        primary: parsed.primary ?? DEFAULT_LOADOUT.primary,
-        secondary: parsed.secondary ?? DEFAULT_LOADOUT.secondary,
-        melee: parsed.melee ?? DEFAULT_LOADOUT.melee,
+        primary: resolveWeaponId(parsed.primary ?? "") ?? DEFAULT_LOADOUT.primary,
+        secondary: resolveWeaponId(parsed.secondary ?? "") ?? DEFAULT_LOADOUT.secondary,
+        melee: resolveWeaponId(parsed.melee ?? "") ?? DEFAULT_LOADOUT.melee,
       };
       if (
         getWeapon(slots.primary) &&
@@ -933,7 +937,7 @@ function savedLoadout(): LoadoutSlots {
       }
     } catch {
       const legacy: Record<string, LoadoutSlots["primary"]> = {
-        recon: "sniper",
+        recon: "awp",
         rusher: "shotgun",
       };
       return {
@@ -1944,6 +1948,8 @@ const skinStudioClearAll = document.getElementById("skinStudioClearAll") as HTML
 const skinStudioPartsCount = document.getElementById("skinStudioPartsCount") as HTMLParagraphElement;
 const skinStudioName = document.getElementById("skinStudioName") as HTMLInputElement;
 const skinStudioPrice = document.getElementById("skinStudioPrice") as HTMLInputElement;
+const skinStudioPublished = document.getElementById("skinStudioPublished") as HTMLSelectElement;
+const skinStudioDelete = document.getElementById("skinStudioDelete") as HTMLButtonElement;
 const skinStudioSave = document.getElementById("skinStudioSave") as HTMLButtonElement;
 const skinStudioCancel = document.getElementById("skinStudioCancel") as HTMLButtonElement;
 
@@ -1956,6 +1962,32 @@ function refreshStudioPartsCount(): void {
     n === 0
       ? "Nenhuma parte pintada."
       : `${n} parte${n > 1 ? "s" : ""} pintada${n > 1 ? "s" : ""}.`;
+}
+
+function refreshStudioPublishedList(): void {
+  if (!skinStudioPublished) return;
+  const skins = allWeaponSkins().filter((s) => s.custom);
+  const prev = skinStudioPublished.value;
+  skinStudioPublished.innerHTML = "";
+  if (skins.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.disabled = true;
+    opt.selected = true;
+    opt.textContent = "Nenhuma skin publicada";
+    skinStudioPublished.appendChild(opt);
+    return;
+  }
+  for (const s of skins) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    const weaponName = getWeapon(s.weaponId)?.name ?? s.weaponId;
+    opt.textContent = `${s.name} · ${weaponName} · ${s.price} Gold`;
+    skinStudioPublished.appendChild(opt);
+  }
+  if (prev && skins.some((s) => s.id === prev)) {
+    skinStudioPublished.value = prev;
+  }
 }
 
 function openSkinStudio(): void {
@@ -1980,6 +2012,7 @@ function openSkinStudio(): void {
       skinStudioWeapon.appendChild(opt);
     }
   }
+  refreshStudioPublishedList();
   skinStudio.start();
   skinStudio.resize();
   refreshStudioPartsCount();
@@ -2060,11 +2093,54 @@ skinStudioSave.addEventListener("click", () => {
       const saved = sanitizeWeaponSkin(res.skin);
       if (saved) registerCustomWeaponSkins([saved]);
       alert(`Skin "${name}" publicada na loja por ${price} Gold!`);
+      refreshStudioPublishedList();
       refreshShopAndInventoryUi();
-      closeSkinStudio();
+      if (saved) skinStudioPublished.value = saved.id;
     } finally {
       skinStudioSaving = false;
       skinStudioSave.disabled = false;
+    }
+  })();
+});
+
+skinStudioDelete.addEventListener("click", () => {
+  const id = skinStudioPublished.value;
+  if (!id) {
+    alert("Selecione uma skin publicada para excluir.");
+    return;
+  }
+  const def = getWeaponSkin(id);
+  const label = def ? `"${def.name}"` : "esta skin";
+  if (!confirm(`Excluir ${label} da loja? Os jogadores deixam de poder comprá-la.`)) {
+    return;
+  }
+
+  skinStudioDelete.disabled = true;
+  void (async () => {
+    try {
+      const res = await deleteWeaponSkin(id);
+      if (!res.ok) {
+        alert(res.error);
+        return;
+      }
+      unregisterCustomWeaponSkin(id);
+      const equipped = loadEquippedWeaponSkins();
+      let changed = false;
+      const next = { ...equipped };
+      for (const [weaponId, skinId] of Object.entries(next)) {
+        if (skinId === id) {
+          delete next[weaponId as WeaponId];
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem(ACTIVE_WEAPON_SKINS_KEY, JSON.stringify(next));
+        syncAllViewModelSkins();
+      }
+      refreshStudioPublishedList();
+      refreshShopAndInventoryUi();
+    } finally {
+      skinStudioDelete.disabled = false;
     }
   })();
 });
@@ -3074,7 +3150,7 @@ let lastAdsFov = HIP_FOV;
 function canAds(): boolean {
   return (
     player.isPointerLocked &&
-    weapons.weapon.id === "sniper" &&
+    weapons.weapon.id === "awp" &&
     !playerDead &&
     // Correndo (mesmo no ar) o scope fica bloqueado — arma está levantada.
     !(player.isRunning && player.isMoving)

@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getPool, isAuthEnabled } from "./db";
-import { getWeapon, weaponCategory, DEFAULT_LOADOUT, type LoadoutSlots, type WeaponId } from "../shared/weapons";
+import { getWeapon, weaponCategory, resolveWeaponId, DEFAULT_LOADOUT, type LoadoutSlots, type WeaponId } from "../shared/weapons";
 import { isValidSkin, DEFAULT_SKIN } from "../shared/skins";
 import {
   mergeInventories,
@@ -70,8 +70,9 @@ function parseLoadout(raw: unknown): LoadoutSlots {
     const o = raw as Record<string, unknown>;
     const pick = (slot: keyof LoadoutSlots, fallback: WeaponId): WeaponId => {
       const v = o[slot];
-      if (typeof v === "string" && getWeapon(v) && weaponCategory(v as WeaponId) === slot) {
-        return v as WeaponId;
+      if (typeof v === "string") {
+        const resolved = resolveWeaponId(v);
+        if (resolved && weaponCategory(resolved) === slot) return resolved;
       }
       return fallback;
     };
@@ -316,10 +317,11 @@ export async function saveAccountPrefs(
   const loadout = {} as LoadoutSlots;
   for (const slot of slots) {
     const v = lo[slot];
-    if (typeof v !== "string" || !getWeapon(v) || weaponCategory(v as WeaponId) !== slot) {
+    const resolved = typeof v === "string" ? resolveWeaponId(v) : undefined;
+    if (!resolved || weaponCategory(resolved) !== slot) {
       return `Arma inválida no slot ${slot}.`;
     }
-    loadout[slot] = v as WeaponId;
+    loadout[slot] = resolved;
   }
 
   await getPool().query(

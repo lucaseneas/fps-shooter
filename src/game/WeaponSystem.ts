@@ -55,7 +55,7 @@ export class WeaponSystem {
 
   /** Slot ativo: 0 principal, 1 secundária, 2 melee. */
   private currentSlot = 0;
-  private slotIds: [WeaponId, WeaponId, WeaponId] = ["rifle", "pistol", "knife"];
+  private slotIds: [WeaponId, WeaponId, WeaponId] = ["m4a1", "usp", "knife"];
   private readonly ammo = new Map<string, AmmoState>();
 
   private triggerHeld = false;
@@ -169,8 +169,8 @@ export class WeaponSystem {
    */
   private spreadMultiplier(): number {
     const id = this.weapon.id;
-    const isRifle = id === "rifle" || id === "ak47";
-    const isSniper = id === "sniper";
+    const isRifle = id === "m4a1" || id === "ak47" || id === "scarh";
+    const isSniper = id === "awp";
     const isMagnum = id === "magnum";
 
     if (isSniper && this.aiming) {

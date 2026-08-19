@@ -213,7 +213,7 @@ export class BotAi {
 
     if (!hit) return;
 
-    const rifle = getWeapon("rifle")!;
+    const rifle = getWeapon("m4a1")!;
     const part = Math.random() < HEADSHOT_CHANCE ? "head" : "body";
     const base = part === "head" ? rifle.damageHead : rifle.damageBody;
     const damage = base * damageFalloff(dist, rifle) * BOT_DAMAGE_SCALE;

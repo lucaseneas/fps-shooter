@@ -6,7 +6,7 @@
  * dos meshes do modelo (ex.: MP5 tem "Cube", "Cylinder"...). O tint é
  * aplicado no carregamento do modelo (ViewModel.applyWeaponSkinParts).
  */
-import { WEAPONS, type WeaponId } from "./weapons";
+import { resolveWeaponId, type WeaponId } from "./weapons";
 
 export interface WeaponSkinDef {
   id: string;
@@ -48,10 +48,10 @@ export function sanitizeWeaponSkin(raw: unknown): WeaponSkinDef | null {
   const price = typeof o.price === "number" && Number.isFinite(o.price)
     ? Math.max(0, Math.min(1_000_000, Math.round(o.price)))
     : -1;
-  const weaponId = o.weaponId;
+  const weaponId = resolveWeaponId(String(o.weaponId ?? ""));
 
   if (!id || !name || price < 0) return null;
-  if (!WEAPONS.some((w) => w.id === weaponId)) return null;
+  if (!weaponId) return null;
 
   const parts: Record<string, [number, number, number]> = {};
   if (o.parts && typeof o.parts === "object") {
@@ -63,7 +63,7 @@ export function sanitizeWeaponSkin(raw: unknown): WeaponSkinDef | null {
   }
   if (Object.keys(parts).length === 0) return null;
 
-  return { id, weaponId: weaponId as WeaponId, name, price, parts, custom: true };
+  return { id, weaponId, name, price, parts, custom: true };
 }
 
 /**
@@ -75,6 +75,16 @@ export function registerCustomWeaponSkins(defs: WeaponSkinDef[]): void {
   for (const def of defs) {
     if (def?.id) customSkins.set(def.id, def);
   }
+}
+
+/** Substitui o catálogo custom (reload do servidor). */
+export function setCustomWeaponSkins(defs: WeaponSkinDef[]): void {
+  customSkins.clear();
+  registerCustomWeaponSkins(defs);
+}
+
+export function unregisterCustomWeaponSkin(id: string): void {
+  customSkins.delete(id);
 }
 
 export function getWeaponSkin(id: string): WeaponSkinDef | undefined {

@@ -57,8 +57,8 @@ export async function migrate(): Promise<void> {
         ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS active_skin VARCHAR(32) NOT NULL DEFAULT 'skin_default',
-        ADD COLUMN IF NOT EXISTS loadout JSONB NOT NULL DEFAULT '{"primary":"rifle","secondary":"pistol","melee":"knife"}',
-        ADD COLUMN IF NOT EXISTS inventory JSONB NOT NULL DEFAULT '{"characterSkins":["skin_default"],"weapons":["rifle","ak47","mp5","shotgun","sniper","pistol","magnum","knife"],"weaponSkins":[],"equipment":[]}'
+        ADD COLUMN IF NOT EXISTS loadout JSONB NOT NULL DEFAULT '{"primary":"m4a1","secondary":"usp","melee":"knife"}',
+        ADD COLUMN IF NOT EXISTS inventory JSONB NOT NULL DEFAULT '{"characterSkins":["skin_default"],"weapons":["m4a1","ak47","scarh","mp5","shotgun","awp","usp","magnum","knife"],"weaponSkins":[],"equipment":[]}'
     `);
     console.log("[auth] tabela users pronta");
     // Sistema Social: pedidos pendentes e amizades (par normalizado a<b).
@@ -81,6 +81,20 @@ export async function migrate(): Promise<void> {
       )
     `);
     console.log("[social] tabelas de amizade prontas");
+
+    // Catálogo global de skins de arma (Estúdio → loja). Todos os jogadores
+    // vêem e podem comprar as mesmas skins.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS weapon_skins (
+        id VARCHAR(64) PRIMARY KEY,
+        weapon_id VARCHAR(32) NOT NULL,
+        name VARCHAR(32) NOT NULL,
+        price INTEGER NOT NULL DEFAULT 0,
+        parts JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    console.log("[weapon-skins] tabela weapon_skins pronta");
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code;
     if (code === "ENETUNREACH" || code === "ENOTFOUND" || code === "ETIMEDOUT") {

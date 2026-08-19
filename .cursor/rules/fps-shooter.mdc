@@ -1,0 +1,47 @@
+---
+description: Convenções do FPS (armas GLB, ids, skins) para o agente não repetir erros de orientação/escala.
+alwaysApply: true
+---
+
+# FPS Shooter — contexto persistente
+
+## Ids de arma (não usar os antigos no código novo)
+
+| Id atual | Nome | Alias antigo (loadout/inventário ainda aceitam) |
+|---|---|---|
+| `m4a1` | M4A1 | `rifle` |
+| `awp` | AWP | `sniper` |
+| `usp` | USP | `pistol` |
+| `ak47` | AK-47 | — |
+| `scarh` | SCAR-H | — |
+| `mp5` | MP5 | — |
+| `magnum` | Magnum .357 | — |
+| `shotgun` | Calibre .12 | — |
+| `knife` | Faca | — |
+
+`resolveWeaponId()` em `shared/weapons.ts` mapeia os aliases. Loadout padrão: m4a1 / usp / knife.
+
+## Modelos GLB
+
+Assets novos ficam em `public/assets/weapons/`. Mapa em `WEAPON_ASSETS` (`src/player/ViewModel.ts`).
+
+Dois padrões de eixo:
+
+1. **GLBs antigos** (magnum, knife): eixo longo em **Y** → rotação padrão `-90° X` (`DEFAULT_MODEL_ROTATION`). Exceção **MP5**: eixo em Z, `rotation: (0,0,0)`, `targetLength: 0.62`.
+2. **GLBs da pasta `weapons/`** (m4a1, ak47, scarh, awp, usp): eixo longo em **Z**, modelo grande → **sempre** `targetLength` (auto-escala). Rotação em Y:
+   - **0°** (apontam para frente): `m4a1`, `scarh`, `awp`, `mp5`, `shotgun` (pump-shotgun_v1)
+   - **180°** (`Math.PI` em Y): `ak47`, `usp`
+   - Se a ponta apontar para o jogador, inverter 0 ↔ 180 em Y. Não usar `-90° X` nestes.
+
+Config por arma: `WEAPON_CONFIGS` (offset, muzzle, sprint, rotation, targetLength). Sprint em modelos centrados no pivô: `sprintPosOffset.y` positivo (não negativo), senão a arma some para baixo ao correr.
+
+## Skins de arma
+
+- Catálogo global na tabela Postgres `weapon_skins` (não só JSON). Sem `DATABASE_URL` cai para `server/data/weapon-skins.json`.
+- Estúdio (`🎨 Estúdio`) cria/publica na loja e pode **excluir**.
+- Skin **equipada** por arma: `localStorage` `fps.activeWeaponSkins`. Aplicar no `ViewModel` via `setWeaponSkin` ao sacar/trocar arma.
+- Inventário: aba Armas sem 3D + botão “Selecionar skin”; aba Personagem = só o dummy.
+
+## Loja / inventário 3D
+
+`SkinPreview` tem modos: `character` (só dummy), `weapon` (só arma), `loadout` (dummy + arma, home/lobby).

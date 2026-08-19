@@ -13,6 +13,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { CONFIG } from "../../shared/config";
 import { HITBOX } from "../../shared/hitboxes";
 import { CROUCH_EYE_HEIGHT, EYE_HEIGHT } from "../../shared/movement";
+import { WEAPON_ASSETS, weaponModelTransform } from "../player/ViewModel";
 
 const STAND_HEIGHT = 1.8;
 const CROUCH_HEIGHT = 1.15;
@@ -235,18 +236,16 @@ export class RemotePlayer {
     gunBarrel.isPickable = false;
 
     // Carregar o modelo do rifle
-    SceneLoader.LoadAssetContainerAsync("", "/assets/rifle_v2.glb", scene).then((container) => {
+    SceneLoader.LoadAssetContainerAsync("", WEAPON_ASSETS.m4a1, scene).then((container) => {
       const inst = container.instantiateModelsToScene();
       const gunOffset = new TransformNode(`${this.id}_gunOffset`, scene);
       gunOffset.parent = this.gun;
-      
-      gunOffset.rotationQuaternion = Quaternion.FromEulerAngles(
-        Math.PI / -2,
-        0,
-        0
-      );
 
       const model = inst.rootNodes[0] as Mesh;
+      const transform = weaponModelTransform("m4a1", model);
+      gunOffset.rotationQuaternion = Quaternion.FromEulerVector(transform.rotation);
+      gunOffset.scaling.setAll(transform.scale * 0.85);
+
       model.parent = gunOffset;
       
       fallbackGun.setEnabled(false);

@@ -3151,9 +3151,14 @@ kbd {
   outline: none;
 }
 
-.studio-side select:focus,
-.studio-side input:focus {
-  border-color: var(--accent, #ff9d2f);
+.studio-published {
+  min-height: 110px;
+  max-height: 140px;
+}
+
+#skinStudioDelete {
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .studio-part-row {

@@ -233,3 +233,15 @@ export async function publishWeaponSkin(
   if (!result.ok) return { ok: false, error: result.error };
   return { ok: true, skin: result.data.skin };
 }
+
+export type DeleteSkinResult = { ok: true } | { ok: false; error: string };
+
+/** Remove uma skin do catálogo global (some da loja). */
+export async function deleteWeaponSkin(id: string): Promise<DeleteSkinResult> {
+  const result = await api<{ ok: boolean }>("/api/weapon-skins", {
+    method: "DELETE",
+    body: JSON.stringify({ id }),
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+  return { ok: true };
+}
