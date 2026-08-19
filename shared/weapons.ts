@@ -279,7 +279,7 @@ export const WEAPONS: WeaponDef[] = [
     falloffEnd: 120,
     falloffMin: 1,
     viewColor: [0.18, 0.2, 0.24],
-    baseSpread: 6.5, // hipfire em movimento é bem imprecisa; parado o 1º tiro é reto
+    baseSpread: 6.5, // hipfire impreciso (parado sem mira ainda erra); ADS parado = 0
     sprayBloomMax: 0.6,
     sprayBloomRamp: 3,
     drawTime: 0.7,

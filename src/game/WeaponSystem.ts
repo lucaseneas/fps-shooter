@@ -144,11 +144,13 @@ export class WeaponSystem {
   /**
    * Spread aleatório (graus) do tiro `sprayShot` da rajada.
    * Parado: só o bloom da rajada — 1º tiro é sempre 0 (reto).
+   * AWP sem mira: hipfire impreciso mesmo parado.
    * Em movimento: spread base por postura + bloom da rajada.
    */
   private randomSpread(sprayShot: number): number {
     const bloom = sprayBloom(this.weapon, sprayShot);
-    if (!this.moving && !this.running && !this.airborne) return bloom;
+    const sniperHipfire = this.weapon.id === "awp" && !this.aiming;
+    if (!this.moving && !this.running && !this.airborne && !sniperHipfire) return bloom;
     return this.weapon.baseSpread * this.spreadMultiplier() + bloom;
   }
 
@@ -201,9 +203,14 @@ export class WeaponSystem {
       return isRifle ? 7.0 : 1.8;
     }
     // Escopeta: agachado = parado (sem bônus de precisão)
-    if (this.crouching) return id === "shotgun" ? 1.0 : 0.5;
+    if (this.crouching) {
+      if (isSniper) return 1.8;
+      return id === "shotgun" ? 1.0 : 0.5;
+    }
     // Magnum parado: mais preciso que as demais armas
     if (isMagnum) return 0.6;
+    // AWP hipfire parado: cone largo — só a mira telescópica é precisa
+    if (isSniper) return 2.4;
     return 1.0;
   }
 
