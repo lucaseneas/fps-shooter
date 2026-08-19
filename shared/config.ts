@@ -45,8 +45,10 @@ export const CONFIG = {
    * Folga no rewind do hitscan (ms), além de RTT/2.
    * Remotos no cliente amostram a mesma janela
    * (now - interpDelay + RTT/2) — boneco e hitbox colados nela.
+   * Precisa cobrir ≥2 ticks (66ms) + jitter depois de descontar o RTT/2,
+   * senão o cliente extrapola e o boneco dá mini-teleportes.
    */
-  interpDelayMs: 50,
+  interpDelayMs: 100,
   /** @deprecated Visual remoto segue a pose do hitscan. */
   remoteInterpSpeed: 20,
   /** @deprecated Visual remoto segue a pose do hitscan. */

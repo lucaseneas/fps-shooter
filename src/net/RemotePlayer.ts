@@ -19,10 +19,16 @@ const STAND_HEIGHT = 1.8;
 const CROUCH_HEIGHT = 1.15;
 const MAX_EXTRAP_SPEED = 10;
 const HISTORY_MS = 1000;
-/** Teto ao prever além do último patch (equivale ao rewind com ping alto). */
-const EXTRAP_CAP_MS = 350;
+/** Prever no máximo ~2 ticks: além disso segura a última pose (evita drift). */
+const EXTRAP_CAP_MS = 70;
+/** Janela para estimar velocidade a partir do histórico (ms). */
+const VEL_WINDOW_MS = 90;
+/** Pose idêntica abaixo disso = parado (não cria sample novo). */
+const REST_EPS = 0.002;
 /** Salto acima disso = teleporte/respawn: limpa histórico em vez de interpolar. */
 const TELEPORT_SNAP_DIST = 4;
+/** Correção máxima por segundo rumo à pose amostrada (além da vel. do alvo). */
+const CORRECTION_SPEED = 12;
 
 // Alturas/posições visuais derivadas do HITBOX (modelo player_dummy.glb: 1.0×2.0×0.5).
 const STAND_BODY_H = HITBOX.bodyHalf.y * 2;
@@ -39,6 +45,17 @@ interface PosSample {
   y: number;
   z: number;
   yaw: number;
+}
+
+function angleDelta(a: number, b: number): number {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+function lerpAngle(a: number, b: number, f: number): number {
+  return a + angleDelta(a, b) * f;
 }
 
 /**
@@ -75,14 +92,22 @@ export class RemotePlayer {
   private aliveVisible = true;
 
   private velocityX = 0;
+  private velocityY = 0;
   private velocityZ = 0;
   private lastServerX = 0;
+  private lastServerY = 0;
   private lastServerZ = 0;
   private lastPatchTime = 0;
   private lastYaw = 0;
   private hasPatch = false;
   private wasAlive = true;
   private readonly history: PosSample[] = [];
+  /** Pose visível (suaviza correções; o alvo continua sendo o sample do hitscan). */
+  private visX = 0;
+  private visY = 0;
+  private visZ = 0;
+  private visYaw = 0;
+  private hasVisual = false;
 
   constructor(scene: Scene, id: string, name: string) {
     this.id = id;
@@ -364,7 +389,7 @@ export class RemotePlayer {
       return {
         t: now,
         x: this.lastServerX,
-        y: 0,
+        y: this.lastServerY,
         z: this.lastServerZ,
         yaw: this.lastYaw,
       };
@@ -372,15 +397,12 @@ export class RemotePlayer {
 
     const last = this.history[this.history.length - 1];
     if (targetT >= last.t) {
-      // Ainda não chegou o patch desse instante — mesma ideia do
-      // servidor quando o alvo está “à frente” do histórico: segura no
-      // último ponto e projeta com a velocidade estimada.
       const aheadMs = Math.min(EXTRAP_CAP_MS, targetT - last.t);
       const s = aheadMs / 1000;
       return {
         t: targetT,
         x: last.x + this.velocityX * s,
-        y: last.y,
+        y: last.y + this.velocityY * s,
         z: last.z + this.velocityZ * s,
         yaw: last.yaw,
       };
@@ -399,7 +421,7 @@ export class RemotePlayer {
           x: a.x + (b.x - a.x) * f,
           y: a.y + (b.y - a.y) * f,
           z: a.z + (b.z - a.z) * f,
-          yaw: a.yaw,
+          yaw: lerpAngle(a.yaw, b.yaw, f),
         };
       }
     }
@@ -407,13 +429,96 @@ export class RemotePlayer {
     return { ...last };
   }
 
+  /**
+   * Rajadas de patch (jitter) comprimiam 33ms de movimento em 2–5ms.
+   * Espaça samples no mínimo ~meio tick.
+   */
+  private stampTime(now: number): number {
+    const minGap = CONFIG.simulationIntervalMs * 0.5;
+    if (this.history.length === 0) return now;
+    const lastT = this.history[this.history.length - 1].t;
+    if (now - lastT >= minGap) return now;
+    return Math.min(lastT + CONFIG.simulationIntervalMs, now + minGap);
+  }
+
+  /** Velocidade média na janela recente — ignora dt minúsculo de rajadas. */
+  private refreshKinematics(): void {
+    const n = this.history.length;
+    if (n < 2) {
+      this.velocityX = 0;
+      this.velocityY = 0;
+      this.velocityZ = 0;
+      return;
+    }
+    const last = this.history[n - 1];
+    let i = n - 2;
+    while (i > 0 && last.t - this.history[i].t < VEL_WINDOW_MS) i--;
+    const a = this.history[i];
+    const dt = (last.t - a.t) / 1000;
+    if (dt < 0.02) return;
+    const dx = last.x - a.x;
+    const dy = last.y - a.y;
+    const dz = last.z - a.z;
+    if (Math.hypot(dx, dz) < REST_EPS && Math.abs(dy) < REST_EPS) {
+      this.velocityX = 0;
+      this.velocityY = 0;
+      this.velocityZ = 0;
+      return;
+    }
+    this.velocityX = dx / dt;
+    this.velocityY = dy / dt;
+    this.velocityZ = dz / dt;
+    const speed = Math.hypot(this.velocityX, this.velocityY, this.velocityZ);
+    if (speed > MAX_EXTRAP_SPEED) {
+      const scale = MAX_EXTRAP_SPEED / speed;
+      this.velocityX *= scale;
+      this.velocityY *= scale;
+      this.velocityZ *= scale;
+    }
+  }
+
   /** Aplica pés do hitscan no modelo + AABB debug (geometria do servidor). */
-  private applyHitscanPose(feet: PosSample): void {
+  private applyHitscanPose(feet: PosSample, dt = 0, snap = false): void {
     this.crouchT = this.crouching ? 1 : 0;
     this.applyCrouchPose();
 
-    this.root.position.set(feet.x, feet.y + this.height() / 2, feet.z);
-    this.root.rotation.y = feet.yaw;
+    if (!this.hasVisual || snap) {
+      this.visX = feet.x;
+      this.visY = feet.y;
+      this.visZ = feet.z;
+      this.visYaw = feet.yaw;
+      this.hasVisual = true;
+    } else {
+      const dx = feet.x - this.visX;
+      const dy = feet.y - this.visY;
+      const dz = feet.z - this.visZ;
+      const err = Math.hypot(dx, dy, dz);
+      if (err > TELEPORT_SNAP_DIST) {
+        this.visX = feet.x;
+        this.visY = feet.y;
+        this.visZ = feet.z;
+        this.visYaw = feet.yaw;
+      } else {
+        // Segue a pose interpolada 1:1; só limita o passo se houver um
+        // snap residual (pacote atrasado / correção de extrapolação).
+        const maxStep = (MAX_EXTRAP_SPEED + CORRECTION_SPEED) * Math.max(dt, 0) + 0.02;
+        if (err > maxStep && dt > 0) {
+          const k = maxStep / err;
+          this.visX += dx * k;
+          this.visY += dy * k;
+          this.visZ += dz * k;
+          this.visYaw = lerpAngle(this.visYaw, feet.yaw, k);
+        } else {
+          this.visX = feet.x;
+          this.visY = feet.y;
+          this.visZ = feet.z;
+          this.visYaw = feet.yaw;
+        }
+      }
+    }
+
+    this.root.position.set(this.visX, this.visY + this.height() / 2, this.visZ);
+    this.root.rotation.y = this.visYaw;
 
     const bodyCy = this.crouching
       ? HITBOX.crouchBodyCenterY
@@ -426,8 +531,8 @@ export class RemotePlayer {
       : HITBOX.headCenterY;
 
     this.debugBodyHitbox.scaling.y = bodyHalfY / HITBOX.bodyHalf.y;
-    this.debugBodyHitbox.position.set(feet.x, feet.y + bodyCy, feet.z);
-    this.debugHeadHitbox.position.set(feet.x, feet.y + headCy, feet.z);
+    this.debugBodyHitbox.position.set(this.visX, this.visY + bodyCy, this.visZ);
+    this.debugHeadHitbox.position.set(this.visX, this.visY + headCy, this.visZ);
   }
 
   applyState(
@@ -442,38 +547,42 @@ export class RemotePlayer {
     const respawned = !this.wasAlive && alive;
     const died = this.wasAlive && !alive;
     const jumpDist = this.hasPatch
-      ? Math.hypot(x - this.lastServerX, z - this.lastServerZ)
+      ? Math.hypot(x - this.lastServerX, y - this.lastServerY, z - this.lastServerZ)
       : 0;
     const teleported = jumpDist > TELEPORT_SNAP_DIST;
+
+    const samePose =
+      this.hasPatch &&
+      !respawned &&
+      !teleported &&
+      !died &&
+      alive === this.wasAlive &&
+      Math.hypot(x - this.lastServerX, y - this.lastServerY, z - this.lastServerZ) < REST_EPS &&
+      Math.abs(angleDelta(this.lastYaw, yaw)) < 0.01;
+
+    // Patch sem pose nova (vida/streaks): heartbeat no buffer e zera vel.
+    if (samePose) {
+      this.crouching = crouch;
+      this.lastPatchTime = now;
+      this.velocityX = 0;
+      this.velocityY = 0;
+      this.velocityZ = 0;
+      if (alive) this.heartbeatRest(now, x, y, z, yaw);
+      return;
+    }
 
     // Respawn / teleporte: sem interpolar do ponto antigo até o novo.
     if (respawned || teleported || died) {
       this.history.length = 0;
       this.velocityX = 0;
+      this.velocityY = 0;
       this.velocityZ = 0;
-    } else if (this.hasPatch) {
-      const dt = (now - this.lastPatchTime) / 1000;
-      if (dt > 0.001 && dt < 0.5) {
-        const dx = x - this.lastServerX;
-        const dz = z - this.lastServerZ;
-        if (Math.hypot(dx, dz) > 0.001) {
-          this.velocityX = dx / dt;
-          this.velocityZ = dz / dt;
-          const speed = Math.hypot(this.velocityX, this.velocityZ);
-          if (speed > MAX_EXTRAP_SPEED) {
-            const scale = MAX_EXTRAP_SPEED / speed;
-            this.velocityX *= scale;
-            this.velocityZ *= scale;
-          }
-        }
-      }
-    } else {
-      this.velocityX = 0;
-      this.velocityZ = 0;
+      this.hasVisual = false;
     }
 
     this.hasPatch = true;
     this.lastServerX = x;
+    this.lastServerY = y;
     this.lastServerZ = z;
     this.lastPatchTime = now;
     this.lastYaw = yaw;
@@ -482,19 +591,51 @@ export class RemotePlayer {
 
     // Morto: não alimenta o buffer — evita “deslizar” até o spawn.
     if (alive) {
-      this.history.push({ t: now, x, y, z, yaw });
+      this.history.push({ t: this.stampTime(now), x, y, z, yaw });
       while (
         this.history.length > 0 &&
         now - this.history[0].t > HISTORY_MS
       ) {
         this.history.shift();
       }
+      if (!respawned && !teleported) this.refreshKinematics();
     }
 
     this.setVisible(alive);
 
     if (alive && (respawned || teleported)) {
       this.snapToTarget();
+    }
+  }
+
+  /**
+   * Parado: o primeiro sample no sítio é a chegada (não estica o último passo).
+   * Os seguintes só avançam o timestamp do hold.
+   */
+  private heartbeatRest(
+    now: number,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number
+  ): void {
+    const last = this.history[this.history.length - 1];
+    if (!last) {
+      this.history.push({ t: now, x, y, z, yaw });
+      return;
+    }
+    const prev = this.history.length >= 2 ? this.history[this.history.length - 2] : null;
+    const lastIsHold =
+      prev !== null &&
+      Math.hypot(prev.x - last.x, prev.y - last.y, prev.z - last.z) < REST_EPS;
+    if (lastIsHold) {
+      last.t = this.stampTime(now);
+      last.yaw = yaw;
+    } else {
+      this.history.push({ t: this.stampTime(now), x, y, z, yaw });
+    }
+    while (this.history.length > 0 && now - this.history[0].t > HISTORY_MS) {
+      this.history.shift();
     }
   }
 
@@ -551,17 +692,18 @@ export class RemotePlayer {
   }
 
   /** `rttMs` = RTT autoritativo do servidor (mesmo do rewind). */
-  update(_dt: number, rttMs = 0): void {
+  update(dt: number, rttMs = 0): void {
     if (!this.hasPatch) return;
-    this.applyHitscanPose(this.sampleHitscanFeet(rttMs));
+    this.applyHitscanPose(this.sampleHitscanFeet(rttMs), dt);
   }
 
   snapToTarget(): void {
     if (this.history.length === 0) return;
     const last = this.history[this.history.length - 1];
     this.velocityX = 0;
+    this.velocityY = 0;
     this.velocityZ = 0;
-    this.applyHitscanPose(last);
+    this.applyHitscanPose(last, 0, true);
   }
 
   getHead(): Vector3 {
