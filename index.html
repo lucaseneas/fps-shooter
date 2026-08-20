@@ -9,12 +9,18 @@
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='2' fill='%23ff9d2f'/><rect x='7' y='0' width='2' height='16' fill='%23ff9d2f'/><rect x='0' y='7' width='16' height='2' fill='%23ff9d2f'/></svg>"
     />
     <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      /* Evita flash do HUD antes do JS/CSS carregarem */
+      #hud.hidden {
+        display: none !important;
+      }
+    </style>
   </head>
   <body>
     <canvas id="renderCanvas" touch-action="none"></canvas>
 
-    <!-- HUD -->
-    <div id="hud">
+    <!-- HUD (oculto fora da partida) -->
+    <div id="hud" class="hidden">
       <div id="crosshair"></div>
       <div id="scopeOverlay" aria-hidden="true">
         <canvas id="scopeOverlayCanvas" aria-hidden="true"></canvas>
@@ -845,6 +851,15 @@
     <!-- Menu de contexto (botão direito) e notificações do Social -->
     <div id="contextMenu" class="hidden"></div>
     <div id="socialNotifications"></div>
+
+    <!-- Boot — visível até auth/rota inicial -->
+    <div id="appBoot" class="app-page app-boot">
+      <div class="boot-card">
+        <h1>FPS Web 3D</h1>
+        <p class="boot-status" id="bootStatus">A carregar…</p>
+        <div class="boot-spinner" aria-hidden="true"></div>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

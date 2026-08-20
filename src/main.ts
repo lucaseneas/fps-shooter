@@ -107,6 +107,8 @@ const spawnButton = document.getElementById("spawnButton") as HTMLButtonElement;
 const spectateButton = document.getElementById("spectateButton") as HTMLButtonElement;
 const spectateBanner = document.getElementById("spectateBanner") as HTMLDivElement;
 const hudRoot = document.getElementById("hud") as HTMLDivElement;
+const appBoot = document.getElementById("appBoot") as HTMLDivElement;
+const bootStatus = document.getElementById("bootStatus") as HTMLParagraphElement;
 const settingsButton = document.getElementById("settingsButton") as HTMLButtonElement;
 const homeSettingsButton = document.getElementById("homeSettingsButton") as HTMLButtonElement;
 const resumeButton = document.getElementById("resumeButton") as HTMLButtonElement;
@@ -529,6 +531,18 @@ function setAuthMode(mode: "login" | "register"): void {
   setAuthMessage("");
 }
 
+function setHudVisible(visible: boolean): void {
+  hudRoot.classList.toggle("hidden", !visible);
+}
+
+function setBootStatus(message: string): void {
+  bootStatus.textContent = message;
+}
+
+function finishAppBoot(): void {
+  appBoot.classList.add("hidden");
+}
+
 function showPages(route: AppRoute): void {
   const onLogin = route === "/login";
   const onHome = route === "/home";
@@ -537,6 +551,8 @@ function showPages(route: AppRoute): void {
 }
 
 function applyRoute(route: AppRoute): void {
+  setHudVisible(route === "/play" && inGame);
+
   if (route === "/play") {
     if (!inGame) {
       navigate(
@@ -656,7 +672,9 @@ logoutButton.addEventListener("click", () => {
 async function initAuth(): Promise<void> {
   // As skins custom precisam estar registradas antes de qualquer
   // sanitizeInventory sobre dados da conta (senão seriam descartadas).
+  setBootStatus("A carregar catálogo…");
   await weaponSkinsReady;
+  setBootStatus("A verificar sessão…");
   authEnabled = await fetchAuthStatus();
   guestPanel.classList.toggle("hidden", authEnabled);
   authForm.classList.toggle("hidden", !authEnabled);
@@ -3680,7 +3698,11 @@ paintScopeOverlay();
 requestAnimationFrame(() => paintScopeOverlay());
 
 void (async () => {
-  await initAuth();
-  if (session) navigate("/home", true);
-  else navigate("/login", true);
+  try {
+    await initAuth();
+    if (session) navigate("/home", true);
+    else navigate("/login", true);
+  } finally {
+    finishAppBoot();
+  }
 })();

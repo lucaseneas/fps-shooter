@@ -36,6 +36,10 @@ body {
   z-index: 10;
 }
 
+#hud.hidden {
+  display: none;
+}
+
 #crosshair {
   position: absolute;
   top: 50%;
@@ -1050,6 +1054,48 @@ body {
 
 .app-page.hidden {
   display: none;
+}
+
+/* ---------- Boot / carregamento inicial ---------- */
+.app-boot {
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.boot-card {
+  text-align: center;
+  padding: 28px 36px;
+}
+
+.boot-card h1 {
+  font-size: clamp(1.4rem, 3vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 10px;
+}
+
+.boot-status {
+  color: #9aa6b2;
+  font-size: 14px;
+  margin-bottom: 22px;
+}
+
+.boot-spinner {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto;
+  border: 3px solid rgba(255, 157, 47, 0.15);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: boot-spin 0.75s linear infinite;
+}
+
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 #pageLogin:not(.hidden) {
