@@ -16,6 +16,10 @@ export interface BoxDef {
   h: number;
   d: number;
   kind: "border" | "wall" | "building" | "box" | "platform" | "pillar";
+  /** Tint "#rrggbb" (mapa custom). */
+  color?: string;
+  /** Id de textura do editor (mapa custom). */
+  texture?: string;
 }
 
 export const MAP_SIZE = 80;

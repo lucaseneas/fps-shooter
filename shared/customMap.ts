@@ -19,6 +19,75 @@ export const MIN_SPAWNS = 1;
 
 export type EditorPieceKind = "wall" | "box" | "pillar" | "platform" | "stair";
 
+export type MapTextureId =
+  | "default"
+  | "none"
+  | "wall"
+  | "bg_wall"
+  | "floor"
+  | "crate"
+  | "post";
+
+export const MAP_TEXTURES: ReadonlyArray<{
+  id: MapTextureId;
+  label: string;
+  url: string | null;
+}> = [
+  { id: "default", label: "Padrão da peça", url: null },
+  { id: "none", label: "Só cor", url: null },
+  { id: "wall", label: "Parede", url: "/assets/textures/texture_wall.png" },
+  { id: "bg_wall", label: "Parede fundo", url: "/assets/textures/texture_bg_wall.png" },
+  { id: "floor", label: "Chão", url: "/assets/textures/texture_floor.png" },
+  { id: "crate", label: "Caixa", url: "/assets/textures/texture_crate.png" },
+  { id: "post", label: "Pilar", url: "/assets/textures/texture_post.png" },
+];
+
+const TEXTURE_IDS = new Set<string>(MAP_TEXTURES.map((t) => t.id));
+
+export const KIND_DEFAULT_TEXTURE: Record<EditorPieceKind | "border", MapTextureId> = {
+  wall: "wall",
+  box: "crate",
+  pillar: "post",
+  platform: "floor",
+  stair: "floor",
+  border: "bg_wall",
+};
+
+export const KIND_DEFAULT_HEX: Record<EditorPieceKind | "border" | "spawn", string> = {
+  wall: "#525f75",
+  box: "#b06a35",
+  pillar: "#9ea3b2",
+  platform: "#598c66",
+  stair: "#9e9480",
+  border: "#383d47",
+  spawn: "#40d96b",
+};
+
+export function textureUrlFor(
+  kind: EditorPieceKind | BoxDef["kind"],
+  texture?: string
+): string | null {
+  if (texture === "none") return null;
+  const id =
+    texture && texture !== "default" && TEXTURE_IDS.has(texture)
+      ? (texture as MapTextureId)
+      : kind === "building"
+        ? "none"
+        : KIND_DEFAULT_TEXTURE[kind === "border" ? "border" : (kind as EditorPieceKind)] ??
+          "wall";
+  return MAP_TEXTURES.find((t) => t.id === id)?.url ?? null;
+}
+
+export function sanitizeHexColor(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const m = /^#?([0-9a-f]{6})$/i.exec(v.trim());
+  return m ? `#${m[1].toLowerCase()}` : undefined;
+}
+
+export function sanitizeTextureId(v: unknown): MapTextureId {
+  return typeof v === "string" && TEXTURE_IDS.has(v) ? (v as MapTextureId) : "default";
+}
+
 export interface EditorPiece {
   id: string;
   kind: EditorPieceKind;
@@ -30,6 +99,8 @@ export interface EditorPiece {
   d: number;
   /** 0 / 90 / 180 / 270 — só muda o AABB em múltiplos de 90°. */
   yawDeg: number;
+  color?: string;
+  texture?: MapTextureId;
 }
 
 export interface CustomMapDef {
@@ -202,9 +273,17 @@ export function stairToBoxes(p: EditorPiece): BoxDef[] {
       h,
       d: swapped ? width : stepLen,
       kind: "platform",
+      ...lookFromPiece(p),
     });
   }
   return boxes;
+}
+
+function lookFromPiece(p: EditorPiece): Pick<BoxDef, "color" | "texture"> {
+  const look: Pick<BoxDef, "color" | "texture"> = {};
+  if (p.color) look.color = p.color;
+  if (p.texture && p.texture !== "default") look.texture = p.texture;
+  return look;
 }
 
 function pieceToBoxes(p: EditorPiece): BoxDef[] {
@@ -219,6 +298,7 @@ function pieceToBoxes(p: EditorPiece): BoxDef[] {
       h: p.h,
       d: dim.d,
       kind: p.kind,
+      ...lookFromPiece(p),
     },
   ];
 }
@@ -268,6 +348,8 @@ function sanitizePiece(raw: unknown): EditorPiece | null {
     h: num(o.h, preset.h, 0.2, 20),
     d: num(o.d, preset.d, 0.4, 80),
     yawDeg: yawTo90(num(o.yawDeg, 0, 0, 360)),
+    color: sanitizeHexColor(o.color),
+    texture: sanitizeTextureId(o.texture),
   };
 }
 

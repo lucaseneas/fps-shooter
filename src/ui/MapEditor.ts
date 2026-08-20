@@ -8,11 +8,13 @@ import { Vector3, Color3, Color4 } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { GridMaterial } from "@babylonjs/materials/grid/gridMaterial";
 import { PointerEventTypes } from "@babylonjs/core/Events/pointerEvents";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 
 import {
+  KIND_DEFAULT_HEX,
   PIECE_PRESETS,
   aabbAfterYaw,
   borderBoxes,
@@ -20,10 +22,12 @@ import {
   newPieceId,
   snapTo,
   stairToBoxes,
+  textureUrlFor,
   yawTo90,
   type CustomMapDef,
   type EditorPiece,
   type EditorPieceKind,
+  type MapTextureId,
 } from "../../shared/customMap";
 import type { SpawnPoint } from "../../shared/mapData";
 
@@ -51,6 +55,17 @@ const KIND_COLOR: Record<EditorPieceKind | "border" | "spawn", Color3> = {
   spawn: new Color3(0.25, 0.85, 0.42),
 };
 
+function hexToColor3(hex: string): Color3 {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return new Color3(1, 1, 1);
+  const v = parseInt(m[1], 16);
+  return new Color3(
+    ((v >> 16) & 255) / 255,
+    ((v >> 8) & 255) / 255,
+    (v & 255) / 255
+  );
+}
+
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
@@ -70,6 +85,9 @@ export class MapEditor {
   private tool: EditorTool = "select";
   private selection: EditorSelection = null;
   private brush: { w: number; h: number; d: number } = { ...PIECE_PRESETS.wall };
+  private brushColor: string | undefined;
+  private brushTexture: MapTextureId = "default";
+  private readonly textures = new Map<string, Texture>();
   private grid = 1;
   private running = false;
   private dragging = false;
@@ -217,6 +235,17 @@ export class MapEditor {
     this.updateGhost();
   }
 
+  setAppearance(color: string, texture: MapTextureId): void {
+    this.brushColor = color;
+    this.brushTexture = texture;
+    const piece = this.selectedPiece();
+    if (!piece) return;
+    piece.color = color;
+    piece.texture = texture;
+    this.rebuildPieces();
+    this.emitChange();
+  }
+
   commit(): void {
     this.markDirty();
   }
@@ -361,16 +390,33 @@ export class MapEditor {
     for (const m of leftovers) m.dispose();
   }
 
-  private mat(key: string, color: Color3, alpha = 1): StandardMaterial {
-    const cached = this.mats.get(key);
+  private mat(key: string, color: Color3, alpha = 1, texUrl: string | null = null): StandardMaterial {
+    const cacheKey = `${key}:${texUrl ?? ""}:${alpha}`;
+    const cached = this.mats.get(cacheKey);
     if (cached) return cached;
-    const mat = new StandardMaterial(`edmat_${key}`, this.scene);
+    const mat = new StandardMaterial(`edmat_${cacheKey}`, this.scene);
     mat.diffuseColor = color;
     mat.specularColor = new Color3(0.04, 0.04, 0.04);
     mat.alpha = alpha;
     if (alpha < 1) mat.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
-    this.mats.set(key, mat);
+    if (texUrl) mat.diffuseTexture = this.getTex(texUrl);
+    this.mats.set(cacheKey, mat);
     return mat;
+  }
+
+  private getTex(url: string): Texture {
+    let t = this.textures.get(url);
+    if (!t) {
+      t = new Texture(url, this.scene);
+      this.textures.set(url, t);
+    }
+    return t;
+  }
+
+  private pieceMat(p: EditorPiece): StandardMaterial {
+    const hex = p.color ?? KIND_DEFAULT_HEX[p.kind];
+    const url = textureUrlFor(p.kind, p.texture);
+    return this.mat(`piece:${p.kind}:${p.texture ?? "default"}:${hex}`, hexToColor3(hex), 1, url);
   }
 
   private buildGround(): void {
@@ -436,7 +482,7 @@ export class MapEditor {
         this.scene
       );
       mesh.position = new Vector3(b.x, b.y, b.z);
-      mesh.material = this.mat(p.kind, KIND_COLOR[p.kind]);
+      mesh.material = this.pieceMat(p);
       mesh.isPickable = true;
       mesh.metadata = { editor: "piece", id: p.id };
       meshes.push(mesh);
@@ -588,6 +634,8 @@ export class MapEditor {
       h: this.brush.h || preset.h,
       d: this.brush.d || preset.d,
       yawDeg: 0,
+      color: this.brushColor,
+      texture: this.brushTexture,
     };
     this.clampPiece(piece);
     this.def.pieces.push(piece);
@@ -717,7 +765,11 @@ export class MapEditor {
 
   private emitSelect(): void {
     const p = this.selectedPiece();
-    if (p) this.brush = { w: p.w, h: p.h, d: p.d };
+    if (p) {
+      this.brush = { w: p.w, h: p.h, d: p.d };
+      this.brushColor = p.color;
+      this.brushTexture = p.texture ?? "default";
+    }
     this.onSelect?.(this.selection);
   }
 }

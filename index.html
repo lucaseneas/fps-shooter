@@ -404,6 +404,13 @@
             <label>X <input id="mapEditorX" type="number" step="1" disabled /></label>
             <label>Z <input id="mapEditorZ" type="number" step="1" disabled /></label>
           </div>
+          <div id="mapEditorLook" class="map-look">
+            <label class="studio-label" for="mapEditorTexture">Aparência</label>
+            <div class="map-look-row">
+              <input type="color" id="mapEditorColor" value="#525f75" title="Cor" />
+              <select id="mapEditorTexture"></select>
+            </div>
+          </div>
           <div class="map-editor-actions">
             <button type="button" id="mapEditorRotate" class="secondary">Girar 90° (R)</button>
             <button type="button" id="mapEditorDelete" class="secondary">Apagar (Del)</button>

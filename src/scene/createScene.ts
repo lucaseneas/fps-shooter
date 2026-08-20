@@ -15,6 +15,7 @@ import "@babylonjs/core/Collisions/collisionCoordinator";
 import "@babylonjs/loaders/glTF";
 
 import { MAP_BOXES, MAP_SIZE, type BoxDef } from "../../shared/mapData";
+import { textureUrlFor } from "../../shared/customMap";
 
 /**
  * Constrói a cena a partir de `shared/mapData` — a MESMA geometria que o
@@ -99,50 +100,60 @@ function createGround(scene: Scene, mapSize: number): void {
   ground.freezeWorldMatrix();
 }
 
+function hexToColor3(hex: string): Color3 | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const v = parseInt(m[1], 16);
+  return new Color3(
+    ((v >> 16) & 255) / 255,
+    ((v >> 8) & 255) / 255,
+    (v & 255) / 255
+  );
+}
+
+function lookKey(b: BoxDef): string {
+  return `${b.kind}|${b.texture ?? ""}|${b.color ?? ""}`;
+}
+
+function kindDefaultColor(kind: BoxDef["kind"]): Color3 {
+  if (kind === "building") return new Color3(0.55, 0.48, 0.42);
+  if (kind === "platform") return new Color3(0.35, 0.55, 0.4);
+  if (kind === "pillar") return new Color3(0.6, 0.62, 0.68);
+  return new Color3(1, 1, 1);
+}
+
 /**
- * Uma caixa por peça no mapData, depois MergeMeshes por `kind`.
+ * Uma caixa por peça, depois MergeMeshes por aparência (kind + textura + cor).
  * Colisão do jogador usa as AABBs no sim compartilhado, não checkCollisions.
  */
 function createMapBoxes(scene: Scene, boxes: readonly BoxDef[]): void {
-  const materials: Record<BoxDef["kind"], StandardMaterial> = {
-    border: new StandardMaterial("borderMat", scene),
-    wall: new StandardMaterial("wallMat", scene),
-    building: new StandardMaterial("buildingMat", scene),
-    box: new StandardMaterial("boxMat", scene),
-    platform: new StandardMaterial("rampMat", scene),
-    pillar: new StandardMaterial("pillarMat", scene),
+  const textures = new Map<string, Texture>();
+  const getTex = (url: string): Texture => {
+    let t = textures.get(url);
+    if (!t) {
+      t = new Texture(url, scene);
+      textures.set(url, t);
+    }
+    return t;
   };
-  const wallTex = new Texture("/assets/textures/texture_wall.png", scene);
-  const platformTex = new Texture("/assets/textures/texture_floor.png", scene);
-  const bgWallTex = new Texture("/assets/textures/texture_bg_wall.png", scene);
-  const postTex = new Texture("/assets/textures/texture_post.png", scene);
-  const boxTex = new Texture("/assets/textures/texture_crate.png", scene);
 
-  materials.border.diffuseTexture = bgWallTex;
-  materials.wall.diffuseTexture = wallTex;
-  materials.building.diffuseColor = new Color3(0.55, 0.48, 0.42);
-  materials.box.diffuseTexture = boxTex;
-  materials.platform.diffuseTexture = platformTex;
-  materials.platform.diffuseColor = new Color3(0.35, 0.55, 0.4);
-  materials.pillar.diffuseTexture = postTex;
-  materials.pillar.diffuseColor = new Color3(0.6, 0.62, 0.68);
-
-  for (const mat of Object.values(materials)) {
-    mat.specularColor = new Color3(0.05, 0.05, 0.05);
-    mat.freeze();
-    tagMap(mat);
-  }
-
-  const byKind: Record<BoxDef["kind"], Mesh[]> = {
-    border: [],
-    wall: [],
-    building: [],
-    box: [],
-    platform: [],
-    pillar: [],
-  };
+  const materials = new Map<string, StandardMaterial>();
+  const byLook = new Map<string, Mesh[]>();
 
   boxes.forEach((b, i) => {
+    const key = lookKey(b);
+    let mat = materials.get(key);
+    if (!mat) {
+      mat = new StandardMaterial(`mapMat_${key}`, scene);
+      const url = textureUrlFor(b.kind, b.texture);
+      mat.diffuseTexture = url ? getTex(url) : null;
+      mat.diffuseColor = b.color ? hexToColor3(b.color) ?? kindDefaultColor(b.kind) : kindDefaultColor(b.kind);
+      mat.specularColor = new Color3(0.05, 0.05, 0.05);
+      mat.freeze();
+      tagMap(mat);
+      materials.set(key, mat);
+    }
+
     let wUV = 1,
       hUV = 1,
       dUV = 1;
@@ -168,28 +179,29 @@ function createMapBoxes(scene: Scene, boxes: readonly BoxDef[]): void {
       scene
     );
     mesh.position = new Vector3(b.x, b.y, b.z);
-    mesh.material = materials[b.kind];
+    mesh.material = mat;
     mesh.checkCollisions = false;
     tagMap(mesh);
     mesh.computeWorldMatrix(true);
-    byKind[b.kind].push(mesh);
+    const list = byLook.get(key) ?? [];
+    list.push(mesh);
+    byLook.set(key, list);
   });
 
-  for (const kind of Object.keys(byKind) as BoxDef["kind"][]) {
-    const meshes = byKind[kind];
+  let g = 0;
+  for (const [key, meshes] of byLook) {
     if (meshes.length === 0) continue;
-
+    const mat = materials.get(key);
     if (meshes.length === 1) {
       const only = meshes[0];
-      only.name = `map_${kind}`;
+      only.name = `map_${g++}`;
       only.freezeWorldMatrix();
       continue;
     }
-
     const merged = Mesh.MergeMeshes(meshes, true, true);
     if (!merged) continue;
-    merged.name = `map_${kind}`;
-    merged.material = materials[kind];
+    merged.name = `map_${g++}`;
+    if (mat) merged.material = mat;
     tagMap(merged);
     merged.checkCollisions = false;
     merged.isPickable = true;

@@ -4082,3 +4082,47 @@ kbd {
 .map-editor-head input {
   width: 100%;
 }
+
+.map-look {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.map-look-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#mapEditorColor {
+  width: 44px;
+  height: 38px;
+  padding: 2px;
+  background: rgba(10, 14, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#mapEditorColor:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+#mapEditorTexture {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  background: rgba(10, 14, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #e8ecf1;
+  padding: 9px 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+#mapEditorTexture:disabled {
+  opacity: 0.45;
+}

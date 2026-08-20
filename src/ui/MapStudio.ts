@@ -5,10 +5,13 @@ import {
   saveCustomMap,
 } from "./mapStorage";
 import {
+  KIND_DEFAULT_HEX,
   MAP_SIZE_OPTIONS,
+  MAP_TEXTURES,
   makeEmptyMap,
   pracaToCustomMap,
   type CustomMapDef,
+  type MapTextureId,
 } from "../../shared/customMap";
 import { PIECE_PRESETS } from "../../shared/customMap";
 
@@ -45,6 +48,8 @@ export class MapStudio {
   private readonly dInput: HTMLInputElement;
   private readonly xInput: HTMLInputElement;
   private readonly zInput: HTMLInputElement;
+  private readonly colorInput: HTMLInputElement;
+  private readonly textureSelect: HTMLSelectElement;
   private readonly canvas: HTMLCanvasElement;
   private editor: MapEditor | null = null;
   private savedSnapshot = "";
@@ -64,6 +69,8 @@ export class MapStudio {
     this.dInput = el("mapEditorD");
     this.xInput = el("mapEditorX");
     this.zInput = el("mapEditorZ");
+    this.colorInput = el("mapEditorColor");
+    this.textureSelect = el("mapEditorTexture");
     this.canvas = el("mapEditorCanvas");
 
     el<HTMLButtonElement>("mapStudioBack").addEventListener("click", () => {
@@ -137,6 +144,26 @@ export class MapStudio {
     };
     this.xInput.addEventListener("change", posHandler);
     this.zInput.addEventListener("change", posHandler);
+
+    this.textureSelect.replaceChildren();
+    for (const t of MAP_TEXTURES) {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.label;
+      this.textureSelect.appendChild(opt);
+    }
+    const applyLook = () => {
+      this.editor?.setAppearance(
+        this.colorInput.value,
+        this.textureSelect.value as MapTextureId
+      );
+    };
+    this.colorInput.addEventListener("input", applyLook);
+    this.textureSelect.addEventListener("change", () => {
+      applyLook();
+      this.editor?.commit();
+    });
+    this.colorInput.addEventListener("change", () => this.editor?.commit());
 
     window.addEventListener("resize", () => this.editor?.resize());
   }
@@ -299,6 +326,9 @@ export class MapStudio {
     this.hInput.value = String(brush.h);
     this.dInput.value = String(brush.d);
     const def = ed?.current;
+    const tool = ed?.currentTool ?? "select";
+    const placing =
+      tool !== "select" && tool !== "spawn";
     if (sel?.type === "piece" && def) {
       const p = def.pieces.find((x) => x.id === sel.id);
       this.selLabel.textContent = p
@@ -308,6 +338,7 @@ export class MapStudio {
       this.zInput.value = p ? String(p.z) : "0";
       this.xInput.disabled = !p;
       this.zInput.disabled = !p;
+      this.setLookEnabled(Boolean(p), p?.color ?? (p ? KIND_DEFAULT_HEX[p.kind] : "#888888"), p?.texture ?? "default");
     } else if (sel?.type === "spawn" && def) {
       const s = def.spawns[sel.index];
       this.selLabel.textContent = `Spawn ${sel.index + 1} · Del apaga`;
@@ -315,8 +346,8 @@ export class MapStudio {
       this.zInput.value = s ? String(s.z) : "0";
       this.xInput.disabled = !s;
       this.zInput.disabled = !s;
+      this.setLookEnabled(false);
     } else {
-      const tool = ed?.currentTool ?? "select";
       if (tool === "select") {
         this.selLabel.textContent = "Clique numa peça ou escolha uma ferramenta";
       } else if (tool === "spawn") {
@@ -328,7 +359,23 @@ export class MapStudio {
       this.zInput.value = "";
       this.xInput.disabled = true;
       this.zInput.disabled = true;
+      this.setLookEnabled(
+        placing,
+        placing ? KIND_DEFAULT_HEX[tool] : "#888888",
+        "default"
+      );
     }
+  }
+
+  private setLookEnabled(
+    on: boolean,
+    color?: string,
+    texture?: MapTextureId
+  ): void {
+    this.colorInput.disabled = !on;
+    this.textureSelect.disabled = !on;
+    if (color) this.colorInput.value = color;
+    if (texture) this.textureSelect.value = texture;
   }
 
   private syncStatus(): void {
