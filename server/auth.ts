@@ -1,6 +1,10 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getPool, isAuthEnabled } from "./db";
+import { disconnectAllForUser } from "./sessionRegistry";
+
+/** Código de erro HTTP/API quando o token foi invalidado por login noutro sítio. */
+export const AUTH_SESSION_REPLACED = "session_replaced";
 import { getWeapon, weaponCategory, resolveWeaponId, DEFAULT_LOADOUT, type LoadoutSlots, type WeaponId } from "../shared/weapons";
 import { isValidSkin, DEFAULT_SKIN } from "../shared/skins";
 import {
@@ -42,6 +46,8 @@ export interface AuthResult {
   ok: true;
   token: string;
   user: AuthUser;
+  /** True quando havia ligações activas expulsas por este login. */
+  sessionReplaced: boolean;
 }
 
 export interface AuthError {
@@ -114,12 +120,85 @@ function mapUser(row: UserRow): AuthUser {
   };
 }
 
-function signToken(user: Pick<AuthUser, "id" | "username">): string {
+function signToken(
+  user: Pick<AuthUser, "id" | "username">,
+  sessionVersion: number
+): string {
   return jwt.sign(
-    { sub: user.id, username: user.username },
+    { sub: user.id, username: user.username, sv: sessionVersion },
     jwtSecret(),
     { expiresIn: TOKEN_TTL }
   );
+}
+
+/** Incrementa a versão de sessão (invalida tokens antigos). */
+async function rotateSessionVersion(userId: number): Promise<number> {
+  const result = await getPool().query<{ session_version: number }>(
+    `UPDATE users SET session_version = session_version + 1 WHERE id = $1 RETURNING session_version`,
+    [userId]
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("user not found");
+  return row.session_version;
+}
+
+interface DecodedToken {
+  id: number;
+  username: string;
+  sessionVersion: number;
+}
+
+/** Valida assinatura/expiração do JWT (sem consultar a BD). */
+function decodeToken(token: unknown): DecodedToken | null {
+  if (!isAuthEnabled() || typeof token !== "string" || !token.trim()) {
+    return null;
+  }
+  try {
+    const payload = jwt.verify(token.trim(), jwtSecret()) as {
+      sub: number | string;
+      username: string;
+      sv?: number | string;
+    };
+    const id = Number(payload.sub);
+    const sessionVersion = Number(payload.sv ?? 0);
+    if (
+      !Number.isFinite(id) ||
+      typeof payload.username !== "string" ||
+      !Number.isFinite(sessionVersion)
+    ) {
+      return null;
+    }
+    return {
+      id,
+      username: payload.username.slice(0, 16),
+      sessionVersion,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export type AuthVerifyResult =
+  | { ok: true; account: { id: number; username: string } }
+  | { ok: false; reason: "invalid" | "session_replaced" };
+
+/** Valida JWT + versão de sessão na BD. */
+export async function authenticateToken(
+  token: unknown
+): Promise<AuthVerifyResult> {
+  const decoded = decodeToken(token);
+  if (!decoded) return { ok: false, reason: "invalid" };
+
+  const result = await getPool().query<{ session_version: number }>(
+    `SELECT session_version FROM users WHERE id = $1`,
+    [decoded.id]
+  );
+  const row = result.rows[0];
+  if (!row) return { ok: false, reason: "invalid" };
+  if (row.session_version !== decoded.sessionVersion) {
+    return { ok: false, reason: "session_replaced" };
+  }
+  return { ok: true, account: { id: decoded.id, username: decoded.username } };
 }
 
 function validateCredentials(
@@ -164,7 +243,13 @@ export async function register(
       [parsed.username, hash]
     );
     const user = mapUser(result.rows[0]);
-    return { ok: true, token: signToken(user), user };
+    const sessionVersion = await rotateSessionVersion(user.id);
+    return {
+      ok: true,
+      token: signToken(user, sessionVersion),
+      user,
+      sessionReplaced: false,
+    };
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code;
     if (code === "23505") {
@@ -198,41 +283,50 @@ export async function login(
   }
 
   const user = mapUser(row);
-  return { ok: true, token: signToken(user), user };
+  const sessionReplaced = disconnectAllForUser(user.id);
+  const sessionVersion = await rotateSessionVersion(user.id);
+  return {
+    ok: true,
+    token: signToken(user, sessionVersion),
+    user,
+    sessionReplaced,
+  };
 }
 
-/** Valida JWT e devolve id/username, ou null se inválido. */
+/** Valida JWT e devolve id/username, ou null se inválido (legado sync — preferir authenticateToken). */
 export function verifyToken(
   token: unknown
 ): { id: number; username: string } | null {
-  if (!isAuthEnabled() || typeof token !== "string" || !token.trim()) {
-    return null;
-  }
-  try {
-    const payload = jwt.verify(token.trim(), jwtSecret()) as {
-      sub: number | string;
-      username: string;
-    };
-    const id = Number(payload.sub);
-    if (!Number.isFinite(id) || typeof payload.username !== "string") {
-      return null;
-    }
-    return { id, username: payload.username.slice(0, 16) };
-  } catch {
-    return null;
-  }
+  return decodeToken(token);
 }
 
 /** Perfil completo a partir do token. */
 export async function getProfile(token: unknown): Promise<AuthUser | null> {
-  const account = verifyToken(token);
-  if (!account) return null;
+  const auth = await authenticateToken(token);
+  if (!auth.ok) return null;
+  return loadUserById(auth.account.id);
+}
+
+export type ProfileResult =
+  | { ok: true; user: AuthUser }
+  | { ok: false; reason: "invalid" | "session_replaced" };
+
+async function loadUserById(userId: number): Promise<AuthUser | null> {
   const result = await getPool().query<UserRow>(
     `SELECT ${USER_SELECT} FROM users WHERE id = $1`,
-    [account.id]
+    [userId]
   );
   const row = result.rows[0];
   return row ? mapUser(row) : null;
+}
+
+/** Perfil com motivo de falha (para /api/auth/me). */
+export async function getProfileResult(token: unknown): Promise<ProfileResult> {
+  const auth = await authenticateToken(token);
+  if (!auth.ok) return { ok: false, reason: auth.reason };
+  const user = await loadUserById(auth.account.id);
+  if (!user) return { ok: false, reason: "invalid" };
+  return { ok: true, user };
 }
 
 /** XP e gold de carreira de um usuário (para sincronizar na sala). */

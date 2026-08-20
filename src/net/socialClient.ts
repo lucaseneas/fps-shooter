@@ -2,7 +2,7 @@
 
 import type { Room } from "colyseus.js";
 import { getClient } from "./NetworkClient";
-import { loadStoredToken } from "./authApi";
+import { loadStoredToken, SESSION_REPLACED_LEAVE_CODE } from "./authApi";
 
 export interface FriendEntry {
   userId: number;
@@ -59,6 +59,8 @@ export interface SocialHandlers {
   /** Algo mudou na presença (alguém entrou/saiu/trocou de sala). */
   onPresence(): void;
   onDisconnect(): void;
+  /** Sessão expulsa — login noutro dispositivo ou separador. */
+  onSessionReplaced(message: string): void;
 }
 
 export interface PresencePayload {
@@ -101,6 +103,13 @@ function wireRoom(r: Room): void {
       handlers?.onToast(msg.message, msg.isError === true);
     }
   });
+  r.onMessage("sessionReplaced", (msg: { message?: string }) => {
+    handlers?.onSessionReplaced(
+      typeof msg?.message === "string"
+        ? msg.message
+        : "Você foi desconectado porque entrou em outro dispositivo."
+    );
+  });
   r.onMessage(
     "socialInfo",
     (msg: { userId: number; profile: FriendProfile; presence: PresenceInfo | null }) => {
@@ -108,8 +117,14 @@ function wireRoom(r: Room): void {
     }
   );
   r.onStateChange(() => handlers?.onPresence());
-  r.onLeave(() => {
+  r.onLeave((code) => {
     if (room === r) room = null;
+    if (code === SESSION_REPLACED_LEAVE_CODE) {
+      handlers?.onSessionReplaced(
+        "Você foi desconectado porque entrou em outro dispositivo."
+      );
+      return;
+    }
     handlers?.onDisconnect();
   });
 }
@@ -136,7 +151,13 @@ export function connectSocial(h: SocialHandlers): Promise<boolean> {
       // Só depois dos handlers registrados pedimos as listas iniciais.
       r.send("socialReady");
       return true;
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("session_replaced")) {
+        handlers?.onSessionReplaced(
+          "Você foi desconectado porque entrou em outro dispositivo."
+        );
+      }
       return false;
     } finally {
       connecting = null;

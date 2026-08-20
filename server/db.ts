@@ -58,7 +58,8 @@ export async function migrate(): Promise<void> {
         ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS active_skin VARCHAR(32) NOT NULL DEFAULT 'skin_default',
         ADD COLUMN IF NOT EXISTS loadout JSONB NOT NULL DEFAULT '{"primary":"m4a1","secondary":"usp","melee":"knife"}',
-        ADD COLUMN IF NOT EXISTS inventory JSONB NOT NULL DEFAULT '{"characterSkins":["skin_default"],"weapons":["m4a1","ak47","scarh","mp5","shotgun","awp","usp","magnum","knife"],"weaponSkins":[],"equipment":[]}'
+        ADD COLUMN IF NOT EXISTS inventory JSONB NOT NULL DEFAULT '{"characterSkins":["skin_default"],"weapons":["m4a1","ak47","scarh","mp5","shotgun","awp","usp","magnum","knife"],"weaponSkins":[],"equipment":[]}',
+        ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0
     `);
     console.log("[auth] tabela users pronta");
     // Sistema Social: pedidos pendentes e amizades (par normalizado a<b).

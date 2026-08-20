@@ -30,6 +30,8 @@ export interface MyRoomInfo {
 
 export interface SocialHooks {
   isLoggedIn(): boolean;
+  /** Sessão expulsa — não reconectar. */
+  onSessionReplaced(message: string): void;
   /** Entra na sala de um amigo (saindo da atual, se houver). */
   joinRoom(roomId: string): void;
   myRoom(): MyRoomInfo | null;
@@ -174,6 +176,7 @@ export class SocialPanel {
         }
       },
       onPresence: () => this.render(),
+      onSessionReplaced: (message) => this.hooks.onSessionReplaced(message),
       onDisconnect: () => {
         // Reconecta sozinho se o painel estiver em uso.
         window.clearTimeout(this.reconnectTimer);

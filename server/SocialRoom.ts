@@ -1,8 +1,9 @@
 import { Room, Client } from "colyseus";
 
 import { SocialState, SocialUserState } from "./schema";
-import { verifyToken } from "./auth";
+import { authenticateToken } from "./auth";
 import { isAuthEnabled } from "./db";
+import { bindClient, unbindClient } from "./sessionRegistry";
 import * as social from "./social";
 
 const VALID_STATUS = new Set(["home", "lobby", "playing"]);
@@ -113,10 +114,16 @@ export class SocialRoom extends Room<SocialState> {
 
   async onJoin(client: Client, options: { token?: unknown }): Promise<void> {
     if (!isAuthEnabled()) throw new Error("auth_disabled");
-    const account = verifyToken(options?.token);
-    if (!account) throw new Error("login_required");
+    const auth = await authenticateToken(options?.token);
+    if (!auth.ok) {
+      throw new Error(
+        auth.reason === "session_replaced" ? "session_replaced" : "login_required"
+      );
+    }
+    const account = auth.account;
 
     const userId = account.id;
+    bindClient(userId, "social", client);
     this.userBySession.set(client.sessionId, userId);
     let sessions = this.sessionsByUser.get(userId);
     if (!sessions) {
@@ -141,6 +148,7 @@ export class SocialRoom extends Room<SocialState> {
     this.userBySession.delete(client.sessionId);
     this.state.users.delete(client.sessionId);
     if (userId !== undefined) {
+      unbindClient(userId, client);
       const sessions = this.sessionsByUser.get(userId);
       if (sessions) {
         sessions.delete(client.sessionId);

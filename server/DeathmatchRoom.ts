@@ -21,7 +21,8 @@ import {
 } from "../shared/movement";
 import { raycastMap, rayAabb, raySphere, Vec3 } from "./physics";
 import { HITBOX } from "../shared/hitboxes";
-import { verifyToken, recordMatchStats, getUserProgress } from "./auth";
+import { authenticateToken, recordMatchStats, getUserProgress } from "./auth";
+import { bindClient, unbindClient } from "./sessionRegistry";
 import { isAuthEnabled } from "./db";
 import { XP_RULES, MAX_XP, MULTIKILL_WINDOW_MS } from "../shared/ranks";
 import { MAX_GOLD, matchGoldFor } from "../shared/gold";
@@ -347,10 +348,19 @@ export class DeathmatchRoom extends Room<MatchState> {
     );
   }
 
-  onJoin(client: Client, options: RoomCreateOptions): void {
-    const account = verifyToken(options?.token);
-    if (isAuthEnabled() && !account) {
-      throw new Error("login_required");
+  async onJoin(client: Client, options: RoomCreateOptions): Promise<void> {
+    let account: { id: number; username: string } | null = null;
+    if (isAuthEnabled()) {
+      const auth = await authenticateToken(options?.token);
+      if (!auth.ok) {
+        throw new Error(
+          auth.reason === "session_replaced"
+            ? "session_replaced"
+            : "login_required"
+        );
+      }
+      account = auth.account;
+      bindClient(account.id, "deathmatch", client);
     }
 
     const name = account
@@ -401,6 +411,8 @@ export class DeathmatchRoom extends Room<MatchState> {
 
   onLeave(client: Client): void {
     const id = client.sessionId;
+    const userId = this.userIds.get(id);
+    if (userId !== undefined) unbindClient(userId, client);
     this.state.players.delete(id);
     this.userIds.delete(id);
     this.bodies.delete(id);

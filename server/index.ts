@@ -8,8 +8,9 @@ import { isAuthEnabled, migrate } from "./db";
 import {
   login,
   register,
-  getProfile,
-  verifyToken,
+  getProfileResult,
+  authenticateToken,
+  AUTH_SESSION_REPLACED,
   saveAccountPrefs,
   purchaseItem,
   mergeAccountInventory,
@@ -92,7 +93,11 @@ async function handleApi(
         sendJson(res, result.status, { error: result.error });
         return true;
       }
-      sendJson(res, 201, { token: result.token, user: result.user });
+      sendJson(res, 201, {
+        token: result.token,
+        user: result.user,
+        sessionReplaced: result.sessionReplaced,
+      });
     } catch {
       sendJson(res, 400, { error: "JSON inválido." });
     }
@@ -107,7 +112,11 @@ async function handleApi(
         sendJson(res, result.status, { error: result.error });
         return true;
       }
-      sendJson(res, 200, { token: result.token, user: result.user });
+      sendJson(res, 200, {
+        token: result.token,
+        user: result.user,
+        sessionReplaced: result.sessionReplaced,
+      });
     } catch {
       sendJson(res, 400, { error: "JSON inválido." });
     }
@@ -116,12 +125,18 @@ async function handleApi(
 
   if (req.method === "GET" && path === "/api/auth/me") {
     try {
-      const user = await getProfile(bearerToken(req));
-      if (!user) {
-        sendJson(res, 401, { error: "Não autenticado." });
+      const profile = await getProfileResult(bearerToken(req));
+      if (!profile.ok) {
+        const isReplaced = profile.reason === "session_replaced";
+        sendJson(res, 401, {
+          error: isReplaced
+            ? "Sessão encerrada — entrou noutro dispositivo."
+            : "Não autenticado.",
+          code: isReplaced ? AUTH_SESSION_REPLACED : undefined,
+        });
         return true;
       }
-      sendJson(res, 200, { user });
+      sendJson(res, 200, { user: profile.user });
     } catch (err) {
       console.error("[auth] /me:", err);
       sendJson(res, 500, { error: "Erro ao carregar perfil." });
@@ -131,13 +146,19 @@ async function handleApi(
 
   if (req.method === "POST" && path === "/api/account/prefs") {
     try {
-      const account = verifyToken(bearerToken(req));
-      if (!account) {
-        sendJson(res, 401, { error: "Não autenticado." });
+      const auth = await authenticateToken(bearerToken(req));
+      if (!auth.ok) {
+        sendJson(res, 401, {
+          error:
+            auth.reason === "session_replaced"
+              ? "Sessão encerrada — entrou noutro dispositivo."
+              : "Não autenticado.",
+          code: auth.reason === "session_replaced" ? AUTH_SESSION_REPLACED : undefined,
+        });
         return true;
       }
       const body = await readJson(req);
-      const result = await saveAccountPrefs(account.id, body);
+      const result = await saveAccountPrefs(auth.account.id, body);
       if (typeof result === "string") {
         sendJson(res, 400, { error: result });
         return true;
@@ -153,13 +174,19 @@ async function handleApi(
   // Loja: compra servidor-autoritativa (valida preço, desconta gold, grava item).
   if (req.method === "POST" && path === "/api/shop/buy") {
     try {
-      const account = verifyToken(bearerToken(req));
-      if (!account) {
-        sendJson(res, 401, { error: "Não autenticado." });
+      const auth = await authenticateToken(bearerToken(req));
+      if (!auth.ok) {
+        sendJson(res, 401, {
+          error:
+            auth.reason === "session_replaced"
+              ? "Sessão encerrada — entrou noutro dispositivo."
+              : "Não autenticado.",
+          code: auth.reason === "session_replaced" ? AUTH_SESSION_REPLACED : undefined,
+        });
         return true;
       }
       const body = await readJson(req);
-      const result = await purchaseItem(account.id, body);
+      const result = await purchaseItem(auth.account.id, body);
       if (typeof result === "string") {
         sendJson(res, 400, { error: result });
         return true;
@@ -222,13 +249,19 @@ async function handleApi(
   // Inventário: migra itens locais (convidado/localStorage) para a conta.
   if (req.method === "POST" && path === "/api/inventory/sync") {
     try {
-      const account = verifyToken(bearerToken(req));
-      if (!account) {
-        sendJson(res, 401, { error: "Não autenticado." });
+      const auth = await authenticateToken(bearerToken(req));
+      if (!auth.ok) {
+        sendJson(res, 401, {
+          error:
+            auth.reason === "session_replaced"
+              ? "Sessão encerrada — entrou noutro dispositivo."
+              : "Não autenticado.",
+          code: auth.reason === "session_replaced" ? AUTH_SESSION_REPLACED : undefined,
+        });
         return true;
       }
       const body = await readJson(req);
-      const result = await mergeAccountInventory(account.id, body);
+      const result = await mergeAccountInventory(auth.account.id, body);
       if (typeof result === "string") {
         sendJson(res, 400, { error: result });
         return true;

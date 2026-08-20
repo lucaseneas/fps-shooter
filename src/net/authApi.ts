@@ -36,6 +36,11 @@ export interface AuthSession {
 
 const TOKEN_KEY = "fps.authToken";
 
+/** Código devolvido pela API quando o login noutro sítio invalidou o token. */
+export const AUTH_SESSION_REPLACED = "session_replaced";
+
+export const SESSION_REPLACED_LEAVE_CODE = 4001;
+
 function getApiBase(): string {
   if (import.meta.env.DEV) {
     return `${window.location.protocol}//${window.location.hostname}:${CONFIG.serverPort}`;
@@ -48,7 +53,10 @@ function getApiBase(): string {
 async function api<T>(
   path: string,
   init?: RequestInit
-): Promise<{ ok: true; data: T } | { ok: false; error: string; status: number }> {
+): Promise<
+  | { ok: true; data: T }
+  | { ok: false; error: string; status: number; code?: string }
+> {
   try {
     const res = await fetch(`${getApiBase()}${path}`, {
       ...init,
@@ -57,12 +65,16 @@ async function api<T>(
         ...(init?.headers ?? {}),
       },
     });
-    const data = (await res.json().catch(() => ({}))) as T & { error?: string };
+    const data = (await res.json().catch(() => ({}))) as T & {
+      error?: string;
+      code?: string;
+    };
     if (!res.ok) {
       return {
         ok: false,
         status: res.status,
         error: data.error || `Erro ${res.status}`,
+        code: data.code,
       };
     }
     return { ok: true, data };
@@ -91,63 +103,86 @@ export async function fetchAuthStatus(): Promise<boolean> {
 export async function registerAccount(
   username: string,
   password: string
-): Promise<{ ok: true; session: AuthSession } | { ok: false; error: string }> {
-  const result = await api<{ token: string; user: AuthUser }>(
-    "/api/auth/register",
-    {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    }
-  );
+): Promise<
+  | { ok: true; session: AuthSession; sessionReplaced: boolean }
+  | { ok: false; error: string }
+> {
+  const result = await api<{
+    token: string;
+    user: AuthUser;
+    sessionReplaced?: boolean;
+  }>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
   if (!result.ok) return { ok: false, error: result.error };
   storeToken(result.data.token);
   return {
     ok: true,
     session: { token: result.data.token, user: result.data.user },
+    sessionReplaced: result.data.sessionReplaced === true,
   };
 }
 
 export async function loginAccount(
   username: string,
   password: string
-): Promise<{ ok: true; session: AuthSession } | { ok: false; error: string }> {
-  const result = await api<{ token: string; user: AuthUser }>(
-    "/api/auth/login",
-    {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    }
-  );
+): Promise<
+  | { ok: true; session: AuthSession; sessionReplaced: boolean }
+  | { ok: false; error: string }
+> {
+  const result = await api<{
+    token: string;
+    user: AuthUser;
+    sessionReplaced?: boolean;
+  }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
   if (!result.ok) return { ok: false, error: result.error };
   storeToken(result.data.token);
   return {
     ok: true,
     session: { token: result.data.token, user: result.data.user },
+    sessionReplaced: result.data.sessionReplaced === true,
   };
 }
 
+export type RestoreSessionResult =
+  | { ok: true; session: AuthSession }
+  | { ok: false; sessionReplaced: true }
+  | { ok: false; sessionReplaced: false };
+
 /** Restaura sessão a partir do token guardado (com stats). */
-export async function restoreSession(): Promise<AuthSession | null> {
+export async function restoreSession(): Promise<RestoreSessionResult> {
+  const token = loadStoredToken();
+  if (!token) return { ok: false, sessionReplaced: false };
+  const result = await api<{ user: AuthUser }>("/api/auth/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!result.ok) {
+    clearStoredToken();
+    return {
+      ok: false,
+      sessionReplaced: result.code === AUTH_SESSION_REPLACED,
+    };
+  }
+  return { ok: true, session: { token, user: result.data.user } };
+}
+
+/** Atualiza o perfil/stats do utilizador autenticado. */
+export async function fetchProfile(): Promise<
+  AuthUser | null | "session_replaced"
+> {
   const token = loadStoredToken();
   if (!token) return null;
   const result = await api<{ user: AuthUser }>("/api/auth/me", {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!result.ok) {
-    clearStoredToken();
+    if (result.code === AUTH_SESSION_REPLACED) return "session_replaced";
     return null;
   }
-  return { token, user: result.data.user };
-}
-
-/** Atualiza o perfil/stats do utilizador autenticado. */
-export async function fetchProfile(): Promise<AuthUser | null> {
-  const token = loadStoredToken();
-  if (!token) return null;
-  const result = await api<{ user: AuthUser }>("/api/auth/me", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!result.ok) return null;
   return result.data.user;
 }
 

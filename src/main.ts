@@ -36,6 +36,7 @@ import {
   restoreSession,
   saveAccountPrefs,
   syncAccountInventory,
+  SESSION_REPLACED_LEAVE_CODE,
 } from "./net/authApi";
 import { Minimap } from "./ui/Minimap";
 import { SocialPanel } from "./ui/Social";
@@ -416,6 +417,34 @@ function setAuthMessage(text: string, isError = false): void {
   authStatus.classList.toggle("error", isError);
 }
 
+/** Expulsa sessão local — login da mesma conta noutro sítio ou separador. */
+function handleSessionReplaced(message: string): void {
+  clearStoredToken();
+  session = null;
+  guestAllowed = false;
+  inventorySyncedForUser = null;
+  socialPanel.disconnect();
+  window.clearInterval(lobbyRefreshInterval);
+
+  if (room) {
+    inGame = false;
+    inLobby = false;
+    const r = room;
+    room = null;
+    cleanupMatchLocal();
+    lobbyChatLog.replaceChildren();
+    hideLobby();
+    syncRoomSettingsUi();
+    void r.leave();
+  } else {
+    stopProfilePreviews();
+    hideLobby();
+  }
+
+  navigate("/login", true);
+  setAuthMessage(message, true);
+}
+
 function formatMemberSince(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -598,8 +627,12 @@ authForm.addEventListener("submit", (e) => {
     session = result.session;
     guestAllowed = false;
     authPassword.value = "";
-    setAuthMessage("");
     applyAccountPrefs(session.user);
+    if (result.sessionReplaced) {
+      setAuthMessage("Seu outro login foi desconectado.");
+    } else {
+      setAuthMessage("");
+    }
     navigate("/home");
   })();
 });
@@ -630,8 +663,19 @@ async function initAuth(): Promise<void> {
   document.querySelector(".auth-tabs")?.classList.toggle("hidden", !authEnabled);
 
   if (authEnabled) {
-    session = await restoreSession();
-    if (session) applyAccountPrefs(session.user);
+    const restored = await restoreSession();
+    if (restored.ok) {
+      session = restored.session;
+      applyAccountPrefs(session.user);
+    } else {
+      session = null;
+      if (restored.sessionReplaced) {
+        setAuthMessage(
+          "Você foi desconectado porque entrou em outro dispositivo.",
+          true
+        );
+      }
+    }
   } else {
     session = null;
   }
@@ -694,6 +738,7 @@ async function joinFriendRoom(roomId: string): Promise<void> {
 
 const socialPanel = new SocialPanel({
   isLoggedIn: () => session !== null,
+  onSessionReplaced: (message) => handleSessionReplaced(message),
   joinRoom: (roomId) => void joinFriendRoom(roomId),
   myRoom: () => {
     if (!room) return null;
@@ -717,6 +762,12 @@ async function enterHome(): Promise<void> {
   void socialPanel.connect();
   if (session) {
     const profile = await fetchProfile();
+    if (profile === "session_replaced") {
+      handleSessionReplaced(
+        "Você foi desconectado porque entrou em outro dispositivo."
+      );
+      return;
+    }
     if (profile) {
       session = { ...session, user: profile };
       renderProfile(profile);
@@ -2219,6 +2270,12 @@ function refreshSessionProfile(): void {
   if (!token) return;
   void fetchProfile().then((profile) => {
     if (!profile || session?.token !== token) return;
+    if (profile === "session_replaced") {
+      handleSessionReplaced(
+        "Você foi desconectado porque entrou em outro dispositivo."
+      );
+      return;
+    }
     session = { ...session, user: profile };
     inventory = sanitizeInventory(profile.inventory);
     saveLocalInventory(inventory);
@@ -2910,8 +2967,22 @@ function setupRoom(r: Room): void {
     hud.clearAllKillStreaks();
   });
 
+  r.onMessage("sessionReplaced", (msg: { message?: string }) => {
+    handleSessionReplaced(
+      typeof msg?.message === "string"
+        ? msg.message
+        : "Você foi desconectado porque entrou em outro dispositivo."
+    );
+  });
+
   r.onLeave((code) => {
     window.clearInterval(pingInterval);
+    if (code === SESSION_REPLACED_LEAVE_CODE) {
+      handleSessionReplaced(
+        "Você foi desconectado porque entrou em outro dispositivo."
+      );
+      return;
+    }
     resetToMenu(
       code === 4000
         ? "Você foi removido da sala pelo líder."
