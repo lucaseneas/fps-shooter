@@ -1,13 +1,26 @@
 /**
  * Áudio procedural via WebAudio — sem assets externos.
- * Tiros, hitmarker, dano, kill, morte, reload e passos são sintetizados
- * com osciladores e rajadas de ruído filtrado.
+ * Tiros usam síntese em camadas; sons remotos (tiros/passos) usam stereo pan
+ * + atenuação por distância relativos à câmera do jogador local.
  */
+export interface SpatialListener {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+}
+
+interface SpatialMix {
+  pan: number;
+  gain: number;
+}
+
 export class AudioManager {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
   private volume = 0.5;
+  private listener: SpatialListener | null = null;
 
   /** Deve ser chamado num gesto do usuário (clique) para liberar o áudio. */
   resume(): void {
@@ -17,7 +30,6 @@ export class AudioManager {
       this.master.gain.value = this.volume;
       this.master.connect(this.ctx.destination);
 
-      // Buffer de ruído branco compartilhado (0.5s).
       const length = Math.floor(this.ctx.sampleRate * 0.5);
       this.noiseBuffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
       const data = this.noiseBuffer.getChannelData(0);
@@ -35,6 +47,59 @@ export class AudioManager {
     return this.volume;
   }
 
+  /** Posição/orientação do ouvinte (câmera local) — atualizar a cada frame in-game. */
+  setListener(listener: SpatialListener): void {
+    this.listener = listener;
+  }
+
+  /** Pan stereo (-1 esq … 1 dir) + gain por distância horizontal. */
+  private computeSpatial(
+    sourceX: number,
+    sourceZ: number,
+    maxDist: number,
+    falloff = 14
+  ): SpatialMix | null {
+    if (!this.listener) return { pan: 0, gain: 1 };
+
+    const dx = sourceX - this.listener.x;
+    const dz = sourceZ - this.listener.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > maxDist) return null;
+
+    const yaw = this.listener.yaw;
+    const fwdX = Math.sin(yaw);
+    const fwdZ = Math.cos(yaw);
+    const rightX = Math.cos(yaw);
+    const rightZ = -Math.sin(yaw);
+
+    let pan = 0;
+    let behind = 1;
+    if (dist > 0.05) {
+      const nx = dx / dist;
+      const nz = dz / dist;
+      pan = nx * rightX + nz * rightZ;
+      const forward = nx * fwdX + nz * fwdZ;
+      if (forward < 0) behind = 0.72 + 0.28 * (1 + forward);
+    }
+
+    const gain = behind / (1 + dist / falloff);
+    return {
+      pan: Math.max(-1, Math.min(1, pan)),
+      gain,
+    };
+  }
+
+  private connectOutput(gainNode: GainNode, pan?: number): void {
+    if (!this.master) return;
+    if (pan === undefined) {
+      gainNode.connect(this.master);
+      return;
+    }
+    const panner = this.ctx!.createStereoPanner();
+    panner.pan.value = pan;
+    gainNode.connect(panner).connect(this.master);
+  }
+
   // --- Blocos de síntese ---
 
   private tone(
@@ -43,7 +108,8 @@ export class AudioManager {
     gain: number,
     type: OscillatorType = "sine",
     slideTo?: number,
-    delay = 0
+    delay = 0,
+    spatial?: SpatialMix
   ): void {
     if (!this.ctx || !this.master) return;
     const t0 = this.ctx.currentTime + delay;
@@ -54,9 +120,11 @@ export class AudioManager {
     if (slideTo !== undefined) {
       osc.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t0 + duration);
     }
-    g.gain.setValueAtTime(gain, t0);
+    const vol = spatial ? gain * spatial.gain : gain;
+    g.gain.setValueAtTime(vol, t0);
     g.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
-    osc.connect(g).connect(this.master);
+    this.connectOutput(g, spatial?.pan);
+    osc.connect(g);
     osc.start(t0);
     osc.stop(t0 + duration + 0.02);
   }
@@ -66,7 +134,10 @@ export class AudioManager {
     gain: number,
     filterType: BiquadFilterType,
     filterFreq: number,
-    delay = 0
+    delay = 0,
+    filterSlideTo?: number,
+    q = 1,
+    spatial?: SpatialMix
   ): void {
     if (!this.ctx || !this.master || !this.noiseBuffer) return;
     const t0 = this.ctx.currentTime + delay;
@@ -74,69 +145,363 @@ export class AudioManager {
     src.buffer = this.noiseBuffer;
     const filter = this.ctx.createBiquadFilter();
     filter.type = filterType;
-    filter.frequency.value = filterFreq;
+    filter.Q.value = q;
+    filter.frequency.setValueAtTime(filterFreq, t0);
+    if (filterSlideTo !== undefined) {
+      filter.frequency.exponentialRampToValueAtTime(
+        Math.max(40, filterSlideTo),
+        t0 + duration
+      );
+    }
     const g = this.ctx.createGain();
-    g.gain.setValueAtTime(gain, t0);
+    const vol = spatial ? gain * spatial.gain : gain;
+    g.gain.setValueAtTime(vol, t0);
     g.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
-    src.connect(filter).connect(g).connect(this.master);
+    src.connect(filter).connect(g);
+    this.connectOutput(g, spatial?.pan);
     src.start(t0);
     src.stop(t0 + duration + 0.02);
+  }
+
+  /**
+   * Disparo em camadas: estalo agudo (transiente), corpo filtrado com decay
+   * longo, sub-grave opcional e clique mecânico do ferrolho.
+   */
+  private gunshot(
+    profile: {
+      attackGain: number;
+      bodyGain: number;
+      attackMs: number;
+      bodyMs: number;
+      attackFreq: number;
+      bodyFreq: number;
+      bodyEndFreq: number;
+      subFreq?: number;
+      subGain?: number;
+      subMs?: number;
+      mechFreq?: number;
+      mechGain?: number;
+      mechDelay?: number;
+    },
+    gainScale = 1,
+    spatial?: SpatialMix
+  ): void {
+    const mix: SpatialMix | undefined = spatial
+      ? { pan: spatial.pan, gain: spatial.gain * gainScale }
+      : gainScale === 1
+        ? undefined
+        : { pan: 0, gain: gainScale };
+
+    const jitter = 0.92 + Math.random() * 0.16;
+    const attackS = profile.attackMs / 1000;
+    const bodyS = profile.bodyMs / 1000;
+
+    this.noise(
+      attackS,
+      profile.attackGain * jitter,
+      "highpass",
+      profile.attackFreq * jitter,
+      0,
+      profile.attackFreq * 0.55,
+      1,
+      mix
+    );
+
+    this.noise(
+      bodyS,
+      profile.bodyGain,
+      "bandpass",
+      profile.bodyFreq * jitter,
+      attackS * 0.35,
+      profile.bodyEndFreq,
+      0.85,
+      mix
+    );
+
+    if (profile.subFreq && profile.subGain && profile.subMs) {
+      this.tone(
+        profile.subFreq * jitter,
+        profile.subMs / 1000,
+        profile.subGain,
+        "sine",
+        profile.subFreq * 0.55,
+        attackS * 0.2,
+        mix
+      );
+    }
+
+    if (profile.mechFreq && profile.mechGain) {
+      this.tone(
+        profile.mechFreq,
+        0.018,
+        profile.mechGain,
+        "square",
+        profile.mechFreq * 0.7,
+        profile.mechDelay ?? attackS * 0.5,
+        mix
+      );
+    }
+  }
+
+  private gunshotForWeapon(
+    weaponId: string,
+    gainScale = 1,
+    spatial?: SpatialMix
+  ): void {
+    switch (weaponId) {
+      case "usp":
+      case "pistol":
+        this.gunshot(
+          {
+            attackGain: 0.55,
+            bodyGain: 0.32,
+            attackMs: 12,
+            bodyMs: 95,
+            attackFreq: 2800,
+            bodyFreq: 1400,
+            bodyEndFreq: 420,
+            subFreq: 95,
+            subGain: 0.14,
+            subMs: 70,
+            mechFreq: 920,
+            mechGain: 0.06,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+      case "magnum":
+        this.gunshot(
+          {
+            attackGain: 0.72,
+            bodyGain: 0.48,
+            attackMs: 16,
+            bodyMs: 180,
+            attackFreq: 2200,
+            bodyFreq: 900,
+            bodyEndFreq: 280,
+            subFreq: 62,
+            subGain: 0.32,
+            subMs: 140,
+            mechFreq: 780,
+            mechGain: 0.08,
+            mechDelay: 0.012,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+      case "m4a1":
+      case "rifle":
+        this.gunshot(
+          {
+            attackGain: 0.58,
+            bodyGain: 0.38,
+            attackMs: 10,
+            bodyMs: 110,
+            attackFreq: 3200,
+            bodyFreq: 1700,
+            bodyEndFreq: 480,
+            subFreq: 88,
+            subGain: 0.18,
+            subMs: 85,
+            mechFreq: 1100,
+            mechGain: 0.05,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+      case "ak47":
+        this.gunshot(
+          {
+            attackGain: 0.64,
+            bodyGain: 0.44,
+            attackMs: 11,
+            bodyMs: 130,
+            attackFreq: 2600,
+            bodyFreq: 1200,
+            bodyEndFreq: 360,
+            subFreq: 72,
+            subGain: 0.26,
+            subMs: 105,
+            mechFreq: 980,
+            mechGain: 0.07,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+      case "scarh":
+        this.gunshot(
+          {
+            attackGain: 0.62,
+            bodyGain: 0.42,
+            attackMs: 11,
+            bodyMs: 125,
+            attackFreq: 2700,
+            bodyFreq: 1350,
+            bodyEndFreq: 400,
+            subFreq: 78,
+            subGain: 0.22,
+            subMs: 100,
+            mechFreq: 1020,
+            mechGain: 0.06,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+      case "mp5":
+        this.gunshot(
+          {
+            attackGain: 0.48,
+            bodyGain: 0.28,
+            attackMs: 9,
+            bodyMs: 80,
+            attackFreq: 3600,
+            bodyFreq: 1900,
+            bodyEndFreq: 520,
+            subFreq: 110,
+            subGain: 0.1,
+            subMs: 60,
+            mechFreq: 1250,
+            mechGain: 0.04,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+      case "vector":
+        this.gunshot(
+          {
+            attackGain: 0.5,
+            bodyGain: 0.3,
+            attackMs: 9,
+            bodyMs: 85,
+            attackFreq: 3400,
+            bodyFreq: 1750,
+            bodyEndFreq: 500,
+            subFreq: 102,
+            subGain: 0.12,
+            subMs: 65,
+            mechFreq: 1180,
+            mechGain: 0.045,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+      case "shotgun":
+        this.gunshot(
+          {
+            attackGain: 0.85,
+            bodyGain: 0.62,
+            attackMs: 18,
+            bodyMs: 240,
+            attackFreq: 1800,
+            bodyFreq: 700,
+            bodyEndFreq: 180,
+            subFreq: 48,
+            subGain: 0.42,
+            subMs: 190,
+            mechFreq: 640,
+            mechGain: 0.1,
+            mechDelay: 0.02,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+      case "awp":
+      case "sniper":
+        this.gunshot(
+          {
+            attackGain: 0.78,
+            bodyGain: 0.55,
+            attackMs: 20,
+            bodyMs: 280,
+            attackFreq: 2000,
+            bodyFreq: 820,
+            bodyEndFreq: 220,
+            subFreq: 52,
+            subGain: 0.38,
+            subMs: 210,
+            mechFreq: 720,
+            mechGain: 0.09,
+            mechDelay: 0.025,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+      case "knife":
+        this.noise(0.08, 0.22 * gainScale, "highpass", 1800, 0, undefined, 1, spatial);
+        this.tone(420, 0.06, 0.12 * gainScale, "triangle", 180, 0, spatial);
+        break;
+      default:
+        this.gunshot(
+          {
+            attackGain: 0.55,
+            bodyGain: 0.35,
+            attackMs: 12,
+            bodyMs: 100,
+            attackFreq: 2800,
+            bodyFreq: 1500,
+            bodyEndFreq: 450,
+            subFreq: 90,
+            subGain: 0.16,
+            subMs: 80,
+          },
+          gainScale,
+          spatial
+        );
+        break;
+    }
   }
 
   // --- Eventos do jogo ---
 
   shoot(weaponId: string): void {
-    switch (weaponId) {
-      case "usp":
-      case "pistol":
-        this.noise(0.1, 0.4, "bandpass", 1000);
-        this.tone(170, 0.08, 0.3, "square", 70);
-        break;
-      case "magnum":
-        this.noise(0.16, 0.55, "lowpass", 800);
-        this.tone(120, 0.12, 0.4, "square", 55);
-        this.tone(60, 0.16, 0.22, "sawtooth", 40, 0.03);
-        break;
-      case "m4a1":
-      case "rifle":
-        this.noise(0.07, 0.35, "bandpass", 1500);
-        this.tone(220, 0.06, 0.25, "square", 100);
-        break;
-      case "ak47":
-        this.noise(0.09, 0.45, "bandpass", 1100);
-        this.tone(175, 0.08, 0.32, "square", 80);
-        break;
-      case "scarh":
-        this.noise(0.08, 0.4, "bandpass", 1250);
-        this.tone(195, 0.07, 0.28, "square", 88);
-        break;
-      case "mp5":
-      case "vector":
-        this.noise(0.06, 0.3, "bandpass", weaponId === "vector" ? 1500 : 1700);
-        this.tone(weaponId === "vector" ? 210 : 240, 0.05, 0.22, "square", weaponId === "vector" ? 95 : 110);
-        break;
-      case "shotgun":
-        this.noise(0.24, 0.6, "lowpass", 600);
-        this.tone(95, 0.16, 0.4, "square", 45);
-        break;
-      case "awp":
-      case "sniper":
-        this.noise(0.32, 0.55, "bandpass", 700);
-        this.tone(130, 0.22, 0.45, "square", 40);
-        this.tone(55, 0.28, 0.25, "sawtooth", 30, 0.04);
-        break;
-      case "knife":
-        this.noise(0.08, 0.22, "highpass", 1800);
-        this.tone(420, 0.06, 0.12, "triangle", 180);
-        break;
-    }
+    this.gunshotForWeapon(weaponId);
   }
 
-  /** Tiro de outro combatente — volume cai com a distância. */
-  remoteShot(distance: number): void {
-    const gain = 0.3 / (1 + distance / 12);
-    if (gain < 0.01) return;
-    this.noise(0.08, gain, "bandpass", 1200);
+  /** Tiro de outro combatente — pan stereo + volume por distância. */
+  remoteShot(source: { x: number; y: number; z: number }): void {
+    const spatial = this.computeSpatial(source.x, source.z, 58, 16);
+    if (!spatial || spatial.gain < 0.012) return;
+    this.gunshot(
+      {
+        attackGain: 0.5,
+        bodyGain: 0.34,
+        attackMs: 12,
+        bodyMs: 120,
+        attackFreq: 2600,
+        bodyFreq: 1300,
+        bodyEndFreq: 380,
+        subFreq: 80,
+        subGain: 0.14,
+        subMs: 90,
+      },
+      0.55,
+      spatial
+    );
+  }
+
+  /** Passo de outro combatente — pan stereo + volume por distância. */
+  remoteFootstep(source: { x: number; y: number; z: number }): void {
+    const spatial = this.computeSpatial(source.x, source.z, 36, 12);
+    if (!spatial || spatial.gain < 0.02) return;
+    this.noise(
+      0.05,
+      0.18,
+      "lowpass",
+      280 + Math.random() * 90,
+      0,
+      undefined,
+      1,
+      spatial
+    );
   }
 
   hitmarker(headshot: boolean): void {
@@ -149,13 +514,8 @@ export class AudioManager {
     this.noise(0.1, 0.15, "lowpass", 400);
   }
 
-  /**
-   * Confirmação de kill — timbre distinto do hitmarker.
-   * `streak` 1–5 escala o fanfarre (kill → multi kill).
-   */
   killConfirm(streak = 1): void {
     const level = Math.max(1, Math.min(5, streak));
-    // Impacto baixo + “clang” metálico (bem diferente do hitmarker agudo).
     this.noise(0.08, 0.18, "bandpass", 900);
     this.tone(180, 0.12, 0.28, "sawtooth", 90);
     this.tone(660, 0.09, 0.22, "triangle");
@@ -195,6 +555,6 @@ export class AudioManager {
   }
 
   footstep(): void {
-    this.noise(0.05, 0.09, "lowpass", 320);
+    this.noise(0.05, 0.14, "lowpass", 320);
   }
 }

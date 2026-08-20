@@ -101,6 +101,9 @@ export class RemotePlayer {
   private prevVisX = 0;
   private prevVisZ = 0;
   private hasVisual = false;
+  private footstepAcc = 0;
+  private movingOnGround = false;
+  private running = false;
 
   constructor(scene: Scene, id: string, name: string) {
     this.id = id;
@@ -443,6 +446,9 @@ export class RemotePlayer {
     const velocitySpeed = Math.hypot(this.velocityX, this.velocityZ);
     const effectiveSpeed = Math.max(realSpeed, velocitySpeed);
     const isMoving = effectiveSpeed > 0.25 && this.aliveVisible;
+    this.movingOnGround =
+      isMoving && Math.abs(this.velocityY) < 0.85;
+    this.running = effectiveSpeed > 6.0;
 
     this.visual.setPose({
       isMoving,
@@ -640,6 +646,25 @@ export class RemotePlayer {
     return this.root.position.add(
       new Vector3(0, this.eyeHeight() - this.height() / 2, 0)
     );
+  }
+
+  getFeet(): Vector3 {
+    return new Vector3(this.visX, this.visY, this.visZ);
+  }
+
+  /** Retorna true quando um passo remoto deve tocar (som espacial no cliente). */
+  tickFootstep(dt: number): boolean {
+    if (!this.movingOnGround) {
+      this.footstepAcc = 0;
+      return false;
+    }
+    this.footstepAcc += dt;
+    const interval = this.crouching ? 0.55 : this.running ? 0.3 : 0.42;
+    if (this.footstepAcc >= interval) {
+      this.footstepAcc = 0;
+      return true;
+    }
+    return false;
   }
 
   private setVisible(on: boolean): void {

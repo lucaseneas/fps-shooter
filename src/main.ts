@@ -2897,7 +2897,7 @@ function setupRoom(r: Room): void {
     const end = new Vector3(e.endX, e.endY, e.endZ);
     effects.spawnTracer(from, end);
     effects.spawnImpact(end, e.hit);
-    audio.remoteShot(Vector3.Distance(from, player.getHead()));
+    audio.remoteShot(from);
     const rp = remotePlayers.get(e.shooterId);
     rp?.visual.triggerShoot();
   });
@@ -2912,7 +2912,7 @@ function setupRoom(r: Room): void {
     for (const end of e.ends) {
       effects.spawnTracer(from, new Vector3(end.x, end.y, end.z));
     }
-    audio.remoteShot(Vector3.Distance(from, player.getHead()));
+    audio.remoteShot(from);
     const rp = remotePlayers.get(e.shooterId);
     rp?.visual.triggerShoot();
   });
@@ -3611,6 +3611,12 @@ engine.runRenderLoop(() => {
 
   player.update(dt);
   player.updateRecoil(dt);
+  audio.setListener({
+    x: player.getHead().x,
+    y: player.getHead().y,
+    z: player.getHead().z,
+    yaw: player.getYaw(),
+  });
   weapons.setCrouching(player.isCrouching);
   weapons.setAirborne(!player.isGrounded);
   weapons.setMoving(player.isMovingOnGround);
@@ -3638,6 +3644,9 @@ engine.runRenderLoop(() => {
 
   for (const rp of remotePlayers.values()) {
     rp.update(dt, serverRttMs > 0 ? serverRttMs : pingMs ?? 0);
+    if (rp.tickFootstep(dt)) {
+      audio.remoteFootstep(rp.getFeet());
+    }
   }
 
   // Som de passos.
