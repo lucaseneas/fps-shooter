@@ -543,11 +543,13 @@ function finishAppBoot(): void {
   appBoot.classList.add("hidden");
 }
 
-function showPages(route: AppRoute): void {
-  const onLogin = route === "/login";
-  const onHome = route === "/home";
-  pageLogin.classList.toggle("hidden", !onLogin);
-  pageHome.classList.toggle("hidden", !onHome);
+type MenuPage = "login" | "home" | "lobby";
+
+/** Garante uma única página de menu visível (evita botões duplicados/sobrepostos). */
+function setActivePage(page: MenuPage | null): void {
+  pageLogin.classList.toggle("hidden", page !== "login");
+  pageHome.classList.toggle("hidden", page !== "home");
+  pageLobby.classList.toggle("hidden", page !== "lobby");
 }
 
 function applyRoute(route: AppRoute): void {
@@ -562,9 +564,7 @@ function applyRoute(route: AppRoute): void {
       return;
     }
     stopProfilePreviews();
-    pageLogin.classList.add("hidden");
-    pageHome.classList.add("hidden");
-    pageLobby.classList.add("hidden");
+    setActivePage(null);
     return;
   }
 
@@ -578,9 +578,7 @@ function applyRoute(route: AppRoute): void {
       return;
     }
     stopProfilePreviews();
-    pageLogin.classList.add("hidden");
-    pageHome.classList.add("hidden");
-    pageLobby.classList.remove("hidden");
+    setActivePage("lobby");
     startLobbyPreview();
     return;
   }
@@ -595,7 +593,7 @@ function applyRoute(route: AppRoute): void {
       return;
     }
     stopProfilePreviews();
-    showPages("/home");
+    setActivePage("home");
     startHomePreview();
     void enterHome();
     return;
@@ -614,7 +612,7 @@ function applyRoute(route: AppRoute): void {
     navigate("/home", true);
     return;
   }
-  showPages("/login");
+  setActivePage("login");
   window.clearInterval(lobbyRefreshInterval);
 }
 
@@ -1719,6 +1717,13 @@ function ensureHomePreview(): SkinPreview | null {
   return homePreview;
 }
 
+function schedulePreviewResize(preview: SkinPreview | null): void {
+  if (!preview) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => preview.resize());
+  });
+}
+
 function startHomePreview(): void {
   const p = ensureHomePreview();
   if (!p) return;
@@ -1729,7 +1734,7 @@ function startHomePreview(): void {
   const equipped = getEquippedWeaponSkinId(primary);
   p.setWeaponSkin(equipped ? getWeaponSkin(equipped) ?? null : null);
   p.start();
-  p.resize();
+  schedulePreviewResize(p);
 }
 
 // O painel de perfil do pré-lobby é igual ao da home: mesmo 3D e mesmos botões.
@@ -1751,7 +1756,7 @@ function startLobbyPreview(): void {
   const equipped = getEquippedWeaponSkinId(primary);
   p.setWeaponSkin(equipped ? getWeaponSkin(equipped) ?? null : null);
   p.start();
-  p.resize();
+  schedulePreviewResize(p);
 }
 
 function stopProfilePreviews(): void {
@@ -2237,8 +2242,7 @@ function enterLobby(r: Room): void {
   room = r;
   inLobby = true;
   inGame = false;
-  pageLogin.classList.add("hidden");
-  pageHome.classList.add("hidden");
+  window.clearInterval(lobbyRefreshInterval);
   settingsModal.classList.add("hidden");
 
   player.onInput = (input) => {
@@ -2315,9 +2319,7 @@ function returnToLobby(): void {
 }
 
 function showLobby(): void {
-  pageLogin.classList.add("hidden");
-  pageHome.classList.add("hidden");
-  pageLobby.classList.remove("hidden");
+  setActivePage("lobby");
   lastLobbySig = "";
   updateLobbyUi();
 }

@@ -17,6 +17,13 @@ import {
 } from "../../shared/movement";
 
 const BASE_SENSITIVITY = 0.0022;
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return target.isContentEditable;
+}
 /** Velocidade de transição da câmera ao agachar/levantar. */
 const CROUCH_CAM_SPEED = 12;
 /**
@@ -608,6 +615,8 @@ export class FpsController {
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    if (isEditableTarget(e.target)) return;
+
     if (this.pointerLocked) {
       const browserChord =
         e.ctrlKey ||
@@ -627,6 +636,8 @@ export class FpsController {
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
+    if (isEditableTarget(e.target)) return;
+
     if (
       this.pointerLocked &&
       (e.ctrlKey ||

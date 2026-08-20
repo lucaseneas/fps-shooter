@@ -23,12 +23,14 @@ const GUN_ATTACH_POS = new Vector3(0.32, 1.22, 0.3);
 export type PreviewMode = "character" | "weapon" | "loadout";
 
 export class SkinPreview {
+  private readonly canvas: HTMLCanvasElement;
   private engine: Engine;
   private scene: Scene;
   private camera: ArcRotateCamera;
   private dummyMesh: TransformNode | null = null;
   private skinMat: PBRMaterial | StandardMaterial | null = null;
   private isRunning = false;
+  private controlsAttached = false;
   private currentSkin = "skin_default";
   private mode: PreviewMode = "loadout";
 
@@ -41,6 +43,8 @@ export class SkinPreview {
   private pendingSkin: WeaponSkinDef | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    canvas.addEventListener("wheel", (e) => e.preventDefault(), { passive: false });
     this.engine = new Engine(canvas, true, { preserveDrawingBuffer: false, antialias: true });
     this.scene = new Scene(this.engine);
     this.scene.clearColor = new Color4(0, 0, 0, 0);
@@ -56,7 +60,6 @@ export class SkinPreview {
     this.camera.minZ = 0.01;
     this.camera.angularSensibilityX = 1000;
     this.camera.wheelPrecision = 50;
-    this.camera.attachControl(canvas, true);
 
     const hemiLight = new HemisphericLight("previewHemi", new Vector3(0, 1, 0), this.scene);
     hemiLight.intensity = 1.2;
@@ -275,7 +278,10 @@ export class SkinPreview {
     if (this.isRunning) return;
     this.isRunning = true;
     this.applyCameraForMode();
-    this.engine.resize();
+    if (!this.controlsAttached) {
+      this.camera.attachControl(this.canvas, false);
+      this.controlsAttached = true;
+    }
     this.engine.runRenderLoop(() => {
       this.scene.render();
     });
@@ -285,9 +291,16 @@ export class SkinPreview {
     if (!this.isRunning) return;
     this.isRunning = false;
     this.engine.stopRenderLoop();
+    if (this.controlsAttached) {
+      this.camera.detachControl();
+      this.controlsAttached = false;
+    }
   }
 
   public resize() {
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    if (w <= 0 || h <= 0) return;
     this.engine.resize();
   }
 }
