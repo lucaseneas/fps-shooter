@@ -59,7 +59,7 @@ function createGround(scene: Scene): void {
   );
   // Sólido barato (sem GridMaterial). Mais escuro/quente que as paredes (0.22, 0.25, 0.3).
   const mat = new StandardMaterial("groundMat", scene);
-  const floorTex = new Texture("/assets/texture_floor.png", scene);
+  const floorTex = new Texture("/assets/textures/texture_floor.png", scene);
   floorTex.uScale = MAP_SIZE / 4;
   floorTex.vScale = MAP_SIZE / 4;
   mat.diffuseTexture = floorTex;
@@ -85,11 +85,11 @@ function createMapBoxes(scene: Scene): void {
     platform: new StandardMaterial("rampMat", scene),
     pillar: new StandardMaterial("pillarMat", scene),
   };
-  const wallTex = new Texture("/assets/texture_wall.png", scene);
-  const platformTex = new Texture("/assets/texture_floor.png", scene);
-  const bgWallTex = new Texture("/assets/texture_bg_wall.png", scene);
-  const postTex = new Texture("/assets/texture_post.png", scene);
-  const boxTex = new Texture("/assets/texture_crate.png", scene);
+  const wallTex = new Texture("/assets/textures/texture_wall.png", scene);
+  const platformTex = new Texture("/assets/textures/texture_floor.png", scene);
+  const bgWallTex = new Texture("/assets/textures/texture_bg_wall.png", scene);
+  const postTex = new Texture("/assets/textures/texture_post.png", scene);
+  const boxTex = new Texture("/assets/textures/texture_crate.png", scene);
   
   materials.border.diffuseTexture = bgWallTex;
   materials.wall.diffuseTexture = wallTex;

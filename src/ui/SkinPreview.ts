@@ -93,7 +93,7 @@ export class SkinPreview {
 
   private async loadModel() {
     try {
-      const container = await SceneLoader.LoadAssetContainerAsync("", "/assets/player_dummy.glb", this.scene);
+      const container = await SceneLoader.LoadAssetContainerAsync("", "/assets/player/player_dummy.glb", this.scene);
       const inst = container.instantiateModelsToScene();
       this.dummyMesh = inst.rootNodes[0] as TransformNode;
       this.dummyMesh.position.y = 0;
@@ -140,7 +140,7 @@ export class SkinPreview {
     this.currentSkin = skinId;
     if (!this.skinMat) return;
 
-    const tex = new Texture(`/assets/${skinId}.png`, this.scene, true, false, Texture.NEAREST_SAMPLINGMODE);
+    const tex = new Texture(`/assets/skins/${skinId}.png`, this.scene, true, false, Texture.NEAREST_SAMPLINGMODE);
     tex.hasAlpha = true;
 
     const mat = this.skinMat as any;

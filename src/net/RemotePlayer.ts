@@ -1,19 +1,15 @@
 import { Scene } from "@babylonjs/core/scene";
-import { Vector3, Color3, Quaternion } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3 } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
-import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Material } from "@babylonjs/core/Materials/material";
-import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 
 import { CONFIG } from "../../shared/config";
 import { HITBOX } from "../../shared/hitboxes";
 import { CROUCH_EYE_HEIGHT, EYE_HEIGHT } from "../../shared/movement";
-import { WEAPON_ASSETS, weaponModelTransform } from "../player/ViewModel";
+import { PlayerVisual } from "../player/PlayerVisual";
 
 const STAND_HEIGHT = 1.8;
 const CROUCH_HEIGHT = 1.15;
@@ -84,11 +80,7 @@ export class RemotePlayer {
   private crouching = false;
   private invincible = false;
   private wallhack = false;
-  private dummyMesh: TransformNode | null = null;
-  private skinMat: PBRMaterial | StandardMaterial | null = null;
-  private skinTexture: Texture | null = null;
-  private appliedSkinId: string | null = null;
-  private currentSkinId = "skin_default";
+  public readonly visual: PlayerVisual;
   private aliveVisible = true;
 
   private velocityX = 0;
@@ -97,7 +89,6 @@ export class RemotePlayer {
   private lastServerX = 0;
   private lastServerY = 0;
   private lastServerZ = 0;
-  private lastPatchTime = 0;
   private lastYaw = 0;
   private hasPatch = false;
   private wasAlive = true;
@@ -107,6 +98,8 @@ export class RemotePlayer {
   private visY = 0;
   private visZ = 0;
   private visYaw = 0;
+  private prevVisX = 0;
+  private prevVisZ = 0;
   private hasVisual = false;
 
   constructor(scene: Scene, id: string, name: string) {
@@ -151,25 +144,8 @@ export class RemotePlayer {
     this.headMesh.metadata = { hitbox: { id, part: "head" } };
     this.headMesh.isVisible = false; // Substituído pelo Voxel
 
-    // Carregar o modelo voxel
-    SceneLoader.LoadAssetContainerAsync("", "/assets/player_dummy.glb", scene).then((container) => {
-      const inst = container.instantiateModelsToScene();
-      this.dummyMesh = inst.rootNodes[0] as TransformNode;
-      this.dummyMesh.parent = this.root;
-      this.dummyMesh.position.y = -0.9; // Base no chão do root
-      // Pode ter morrido enquanto o GLB baixava — respeita o estado atual.
-      this.dummyMesh.setEnabled(this.aliveVisible);
-
-      this.dummyMesh.getChildMeshes().forEach(m => {
-        m.isPickable = false; // Hitbox é que recebe o raycast
-        if (m.material) {
-          this.skinMat = m.material as PBRMaterial | StandardMaterial;
-        }
-      });
-
-      this.setSkin(this.currentSkinId);
-      this.applyInvincibilityAlpha();
-    }).catch(console.error);
+    // Componente visual do jogador 3D (Minecraft rig com todas animações)
+    this.visual = new PlayerVisual(scene, `${id}_visual`, this.root);
 
     // AABB idêntico ao hitscan do servidor (sem yaw — o server usa AABB).
     const debugMat = new StandardMaterial(`${id}_debugHitboxMat`, scene);
@@ -216,8 +192,8 @@ export class RemotePlayer {
     this.skeletonBody.parent = this.root;
     this.skeletonBody.position.y = STAND_BODY_Y;
     this.skeletonBody.material = skelMat;
-    this.skeletonBody.isPickable = false;
     this.skeletonBody.renderingGroupId = 1;
+    this.skeletonBody.isPickable = false;
 
     this.skeletonHead = MeshBuilder.CreateSphere(
       `${id}_skelHead`,
@@ -227,59 +203,15 @@ export class RemotePlayer {
     this.skeletonHead.parent = this.root;
     this.skeletonHead.position.y = STAND_HEAD_Y;
     this.skeletonHead.material = skelMat;
-    this.skeletonHead.isPickable = false;
     this.skeletonHead.renderingGroupId = 1;
-    this.refreshSkeletonVisibility();
+    this.skeletonHead.isPickable = false;
 
-    const gunMat = new StandardMaterial(`${id}_gunMat`, scene);
-    gunMat.diffuseColor = new Color3(0.15, 0.15, 0.17);
-    gunMat.specularColor = new Color3(0.05, 0.05, 0.05);
+    this.refreshSkeletonVisibility();
 
     this.gun = MeshBuilder.CreateBox(`${id}_gunRoot`, { size: 0.1 }, scene) as any;
     this.gun.isVisible = false;
     this.gun.parent = this.root;
     this.gun.position = new Vector3(0.32, 0.32, 0.3);
-
-    const fallbackGun = MeshBuilder.CreateBox(
-      `${id}_fallbackGun`,
-      { width: 0.09, height: 0.12, depth: 0.55 },
-      scene
-    );
-    fallbackGun.parent = this.gun;
-    fallbackGun.material = gunMat;
-    fallbackGun.isPickable = false;
-
-    const gunBarrel = MeshBuilder.CreateCylinder(
-      `${id}_gunBarrel`,
-      { height: 0.25, diameter: 0.05 },
-      scene
-    );
-    gunBarrel.parent = fallbackGun;
-    gunBarrel.rotation.x = Math.PI / 2;
-    gunBarrel.position = new Vector3(0, 0.02, 0.38);
-    gunBarrel.material = gunMat;
-    gunBarrel.isPickable = false;
-
-    // Carregar o modelo do rifle
-    SceneLoader.LoadAssetContainerAsync("", WEAPON_ASSETS.m4a1, scene).then((container) => {
-      const inst = container.instantiateModelsToScene();
-      const gunOffset = new TransformNode(`${this.id}_gunOffset`, scene);
-      gunOffset.parent = this.gun;
-
-      const model = inst.rootNodes[0] as Mesh;
-      const transform = weaponModelTransform("m4a1", model);
-      gunOffset.rotationQuaternion = Quaternion.FromEulerVector(transform.rotation);
-      gunOffset.scaling.setAll(transform.scale * 0.85);
-
-      model.parent = gunOffset;
-      
-      fallbackGun.setEnabled(false);
-      
-      model.getChildMeshes(false).forEach(m => {
-        m.isPickable = false;
-        // Ajuste no material pode ser necessário se quisermos wallhack/invincibility perfeitos
-      });
-    }).catch(console.error);
 
     this.nameplate = this.createNameplate(scene, name);
   }
@@ -323,24 +255,12 @@ export class RemotePlayer {
 
   setSkin(skinId: string): void {
     if (!skinId) return;
-    this.currentSkinId = skinId;
-    // Sem material (GLB ainda não carregou) ou skin já aplicada: não recria textura.
-    if (!this.skinMat || this.appliedSkinId === skinId) return;
-    this.appliedSkinId = skinId;
+    this.visual.setSkin(skinId);
+  }
 
-    const scene = this.root.getScene();
-    const tex = new Texture(`/assets/${skinId}.png`, scene, true, false, Texture.NEAREST_SAMPLINGMODE);
-    tex.hasAlpha = true;
-
-    const mat = this.skinMat as any;
-    if (mat.albedoTexture !== undefined) {
-      mat.albedoTexture = tex;
-    } else if (mat.diffuseTexture !== undefined) {
-      mat.diffuseTexture = tex;
-    }
-
-    this.skinTexture?.dispose();
-    this.skinTexture = tex;
+  setWeapon(weaponId: string): void {
+    if (!weaponId) return;
+    this.visual.setWeapon(weaponId);
   }
 
   private height(): number {
@@ -366,13 +286,6 @@ export class RemotePlayer {
     this.skeletonBody.scaling.y = this.bodyMesh.scaling.y;
     this.skeletonBody.position.y = this.bodyMesh.position.y;
     this.skeletonHead.position.y = this.headMesh.position.y;
-
-    if (this.dummyMesh) {
-      this.dummyMesh.scaling.y = this.bodyMesh.scaling.y;
-      // O GLB tem a base na origem do nó: -height/2 mantém os pés no chão
-      // em pé ou agachado (a fórmula antiga afundava o modelo ao agachar).
-      this.dummyMesh.position.y = -h / 2;
-    }
   }
 
   /**
@@ -520,6 +433,27 @@ export class RemotePlayer {
     this.root.position.set(this.visX, this.visY + this.height() / 2, this.visZ);
     this.root.rotation.y = this.visYaw;
 
+    // Atualiza pose e animações completas no PlayerVisual
+    let realSpeed = 0;
+    if (dt > 0.001) {
+      const dX = this.visX - this.prevVisX;
+      const dZ = this.visZ - this.prevVisZ;
+      realSpeed = Math.hypot(dX, dZ) / dt;
+    }
+    const velocitySpeed = Math.hypot(this.velocityX, this.velocityZ);
+    const effectiveSpeed = Math.max(realSpeed, velocitySpeed);
+    const isMoving = effectiveSpeed > 0.25 && this.aliveVisible;
+
+    this.visual.setPose({
+      isMoving,
+      isCrouching: this.crouching,
+      speedRatio: effectiveSpeed / 3.0,
+      isAlive: this.aliveVisible,
+    });
+
+    this.prevVisX = this.visX;
+    this.prevVisZ = this.visZ;
+
     const bodyCy = this.crouching
       ? HITBOX.crouchBodyCenterY
       : HITBOX.bodyCenterY;
@@ -563,7 +497,6 @@ export class RemotePlayer {
     // Patch sem pose nova (vida/streaks): heartbeat no buffer e zera vel.
     if (samePose) {
       this.crouching = crouch;
-      this.lastPatchTime = now;
       this.velocityX = 0;
       this.velocityY = 0;
       this.velocityZ = 0;
@@ -578,13 +511,14 @@ export class RemotePlayer {
       this.velocityY = 0;
       this.velocityZ = 0;
       this.hasVisual = false;
+      this.prevVisX = x;
+      this.prevVisZ = z;
     }
 
     this.hasPatch = true;
     this.lastServerX = x;
     this.lastServerY = y;
     this.lastServerZ = z;
-    this.lastPatchTime = now;
     this.lastYaw = yaw;
     this.crouching = crouch;
     this.wasAlive = alive;
@@ -659,6 +593,7 @@ export class RemotePlayer {
   setInvincible(on: boolean): void {
     if (this.invincible === on) return;
     this.invincible = on;
+    this.visual.setInvincible(on);
     this.applyInvincibilityAlpha();
   }
 
@@ -678,12 +613,6 @@ export class RemotePlayer {
       mat.alpha = alpha;
       mat.transparencyMode = mode;
     }
-    // O modelo GLB é o que aparece em tela — sem isso a invencibilidade
-    // não tinha feedback visual nenhum.
-    if (this.skinMat) {
-      this.skinMat.alpha = alpha;
-      this.skinMat.transparencyMode = mode;
-    }
   }
 
   setDebugHitboxes(on: boolean): void {
@@ -694,6 +623,7 @@ export class RemotePlayer {
   /** `rttMs` = RTT autoritativo do servidor (mesmo do rewind). */
   update(dt: number, rttMs = 0): void {
     if (!this.hasPatch) return;
+    this.visual.update(dt);
     this.applyHitscanPose(this.sampleHitscanFeet(rttMs), dt);
   }
 
@@ -718,7 +648,7 @@ export class RemotePlayer {
     this.headMesh.setEnabled(on);
     this.nameplate.setEnabled(on);
     this.gun.setEnabled(on);
-    this.dummyMesh?.setEnabled(on); // Sem isso o cadáver ficava visível até o respawn
+    this.visual.setEnabled(on);
     this.root.checkCollisions = on;
     this.debugBodyHitbox.isVisible = on;
     this.debugHeadHitbox.isVisible = on;
@@ -726,6 +656,7 @@ export class RemotePlayer {
   }
 
   dispose(): void {
+    this.visual.dispose();
     this.debugBodyHitbox.dispose();
     this.debugHeadHitbox.dispose();
     this.root.dispose(false, true);

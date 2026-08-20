@@ -614,6 +614,7 @@ export class FpsController {
         e.metaKey ||
         e.code === "ControlLeft" ||
         e.code === "ControlRight" ||
+        e.code === "F5" ||
         e.key === "F5" ||
         (e.key === "r" && (e.ctrlKey || e.metaKey)) ||
         (e.key === "R" && (e.ctrlKey || e.metaKey));
@@ -858,12 +859,16 @@ export class FpsController {
     const z =
       this.prevSim.z + (this.sim.z - this.prevSim.z) * alpha + this.smoothZ;
     this.body.position.set(x, y, z);
-    this.camera.position.set(x, y + this.eyeY, z);
-    this.camera.rotation.set(
-      Scalar.Clamp(this.basePitch + this.recoilOffset, -this.maxPitch, this.maxPitch),
-      this.yaw + this.recoilYawOffset,
-      0
+
+    const pitch = Scalar.Clamp(
+      this.basePitch + this.recoilOffset,
+      -this.maxPitch,
+      this.maxPitch
     );
+    const yaw = this.yaw + this.recoilYawOffset;
+
+    this.camera.position.set(x, y + this.eyeY, z);
+    this.camera.rotation.set(pitch, yaw, 0);
   }
 
   /** Info de debug para o HUD. */

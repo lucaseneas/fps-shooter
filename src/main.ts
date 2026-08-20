@@ -2821,6 +2821,8 @@ function setupRoom(r: Room): void {
     effects.spawnTracer(from, end);
     effects.spawnImpact(end, e.hit);
     audio.remoteShot(Vector3.Distance(from, player.getHead()));
+    const rp = remotePlayers.get(e.shooterId);
+    rp?.visual.triggerShoot();
   });
 
   r.onMessage("remoteShots", (e: {
@@ -2834,6 +2836,8 @@ function setupRoom(r: Room): void {
       effects.spawnTracer(from, new Vector3(end.x, end.y, end.z));
     }
     audio.remoteShot(Vector3.Distance(from, player.getHead()));
+    const rp = remotePlayers.get(e.shooterId);
+    rp?.visual.triggerShoot();
   });
 
   r.onMessage("debugShot", (e: {
@@ -3272,7 +3276,9 @@ function updateAds(dt: number): void {
 
 canvas.addEventListener("mousedown", (e) => {
   if (!player.isPointerLocked) return;
-  if (e.button === 0) weapons.setTrigger(true);
+  if (e.button === 0) {
+    weapons.setTrigger(true);
+  }
   if (e.button === 2) {
     e.preventDefault();
     if (adsToggled) {
@@ -3285,7 +3291,9 @@ canvas.addEventListener("mousedown", (e) => {
   }
 });
 window.addEventListener("mouseup", (e) => {
-  if (e.button === 0) weapons.setTrigger(false);
+  if (e.button === 0) {
+    weapons.setTrigger(false);
+  }
 });
 canvas.addEventListener("contextmenu", (e) => {
   if (player.isPointerLocked) e.preventDefault();
