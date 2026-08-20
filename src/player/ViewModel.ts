@@ -97,6 +97,14 @@ const WEAPON_CONFIGS: Record<string, WeaponViewModelConfig> = {
     rotation: new Vector3(0, 0, 0),
     targetLength: 0.62,
   },
+  vector: {
+    offset: new Vector3(-0.1, 0.05, -0.32),
+    muzzle: new Vector3(-0.1, 0.05, 0.33),
+    sprintPitch: -0.6,
+    sprintPosOffset: new Vector3(-0.08, 0.06, -0.02),
+    rotation: new Vector3(0, Math.PI, 0),
+    targetLength: 0.58,
+  },
   awp: {
     offset: new Vector3(-0.15, 0.10, -0.32),
     muzzle: new Vector3(-0.15, 0.10, 0.58),
@@ -122,11 +130,12 @@ const WEAPON_CONFIGS: Record<string, WeaponViewModelConfig> = {
     targetLength: 0.32,
   },
   magnum: {
-    // Magnum: ligeiramente mais à frente que armas longas
-    offset: new Vector3(-0.07, 0.02, -0.18),
-    muzzle: new Vector3(-0.07, 0.04, 0.22),
+    offset: new Vector3(-0.07, -0.03, -0.18),
+    muzzle: new Vector3(-0.07, -0.01, 0.22),
     sprintPitch: -0.45,
-    sprintPosOffset: new Vector3(-0.04, -0.02, -0.03),
+    sprintPosOffset: new Vector3(-0.04, 0.04, -0.02),
+    rotation: new Vector3(0, 0, 0),
+    targetLength: 0.38,
   },
   knife: {
     offset: new Vector3(-0.06, -0.1, -0.2),
@@ -219,8 +228,9 @@ export const WEAPON_ASSETS: Record<string, string> = {
   ak47: "/assets/weapons/ak47_v1.glb",
   scarh: "/assets/weapons/scar-h_v1.glb",
   mp5: "/assets/weapons/MP5.glb",
+  vector: "/assets/weapons/vector_v1.glb",
   usp: "/assets/weapons/usp_v1.glb",
-  magnum: "/assets/weapons/magnum.glb",
+  magnum: "/assets/weapons/magnum357_v1.glb",
   shotgun: "/assets/weapons/pump-shotgun_v1.glb",
   awp: "/assets/weapons/awp_v1.glb",
   knife: "/assets/weapons/knife.glb",

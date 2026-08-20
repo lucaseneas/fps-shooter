@@ -111,8 +111,9 @@ export class AudioManager {
         this.tone(195, 0.07, 0.28, "square", 88);
         break;
       case "mp5":
-        this.noise(0.06, 0.3, "bandpass", 1700);
-        this.tone(240, 0.05, 0.22, "square", 110);
+      case "vector":
+        this.noise(0.06, 0.3, "bandpass", weaponId === "vector" ? 1500 : 1700);
+        this.tone(weaponId === "vector" ? 210 : 240, 0.05, 0.22, "square", weaponId === "vector" ? 95 : 110);
         break;
       case "shotgun":
         this.noise(0.24, 0.6, "lowpass", 600);

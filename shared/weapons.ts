@@ -5,6 +5,7 @@ export type WeaponId =
   | "ak47"
   | "scarh"
   | "mp5"
+  | "vector"
   | "shotgun"
   | "awp"
   | "knife";
@@ -236,6 +237,30 @@ export const WEAPONS: WeaponDef[] = [
     sprayBloomRamp: 5,
     drawTime: 0.6,
     moveSpeedMult: 1.15,
+  },
+  {
+    id: "vector",
+    name: "Vector .45",
+    desc: "Cadência extrema e mobilidade alta: derruba rápido, mas o recuo sobe forte e o pente esvazia num instante.",
+    auto: true,
+    fireInterval: 0.055,
+    damageBody: 14,
+    damageHead: 34,
+    pellets: 1,
+    pelletPattern: [[0, 0]],
+    magSize: 30,
+    reserveAmmo: 90,
+    reloadTime: 1.85,
+    recoilPattern: [[0.18, 0.58], [-0.24, 0.72], [0.3, 0.88], [-0.36, 1.02], [0.28, 1.12], [-0.22, 1.2], [0.16, 1.26], [-0.3, 1.3]],
+    falloffStart: 14,
+    falloffEnd: 38,
+    falloffMin: 0.5,
+    viewColor: [0.24, 0.24, 0.26],
+    baseSpread: 0.85,
+    sprayBloomMax: 2.1,
+    sprayBloomRamp: 4,
+    drawTime: 0.55,
+    moveSpeedMult: 1.25,
   },
   {
     id: "shotgun",
