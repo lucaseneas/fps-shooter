@@ -218,12 +218,12 @@ export const WEAPON_ASSETS: Record<string, string> = {
   m4a1: "/assets/weapons/m4a1_v1.glb",
   ak47: "/assets/weapons/ak47_v1.glb",
   scarh: "/assets/weapons/scar-h_v1.glb",
-  mp5: "/assets/MP5.glb",
+  mp5: "/assets/weapons/MP5.glb",
   usp: "/assets/weapons/usp_v1.glb",
-  magnum: "/assets/magnum.glb",
+  magnum: "/assets/weapons/magnum.glb",
   shotgun: "/assets/weapons/pump-shotgun_v1.glb",
   awp: "/assets/weapons/awp_v1.glb",
-  knife: "/assets/knife.glb",
+  knife: "/assets/weapons/knife.glb",
 };
 
 export class ViewModel {
