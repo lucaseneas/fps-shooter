@@ -1,4 +1,4 @@
-import { MAP_BOXES, PLAY_BOUND } from "../shared/mapData";
+import { getActiveMap, type MapCollision } from "../shared/mapRuntime";
 
 export interface Vec2 {
   x: number;
@@ -14,12 +14,14 @@ export function moveWithCollisions(
   pos: Vec2,
   dx: number,
   dz: number,
-  radius: number
+  radius: number,
+  map?: MapCollision
 ): void {
+  const geo = map ?? getActiveMap();
   pos.x += dx;
   pos.z += dz;
 
-  for (const b of MAP_BOXES) {
+  for (const b of geo.boxes) {
     const ex = b.w / 2 + radius;
     const ez = b.d / 2 + radius;
     const rx = pos.x - b.x;
@@ -35,8 +37,8 @@ export function moveWithCollisions(
     }
   }
 
-  pos.x = Math.max(-PLAY_BOUND, Math.min(PLAY_BOUND, pos.x));
-  pos.z = Math.max(-PLAY_BOUND, Math.min(PLAY_BOUND, pos.z));
+  pos.x = Math.max(-geo.playBound, Math.min(geo.playBound, pos.x));
+  pos.z = Math.max(-geo.playBound, Math.min(geo.playBound, pos.z));
 }
 
 /**
@@ -49,13 +51,15 @@ export function segmentBlocked(
   az: number,
   bx: number,
   by: number,
-  bz: number
+  bz: number,
+  map?: MapCollision
 ): boolean {
   const dx = bx - ax;
   const dy = by - ay;
   const dz = bz - az;
+  const boxes = (map ?? getActiveMap()).boxes;
 
-  for (const b of MAP_BOXES) {
+  for (const b of boxes) {
     const min = [b.x - b.w / 2, b.y - b.h / 2, b.z - b.d / 2];
     const max = [b.x + b.w / 2, b.y + b.h / 2, b.z + b.d / 2];
     const origin = [ax, ay, az];
@@ -171,7 +175,12 @@ export function raySphere(
  * Menor `t` de interseção do raio com a geometria do mapa (AABBs + chão),
  * ou maxDist se não bate em nada.
  */
-export function raycastMap(o: Vec3, d: Vec3, maxDist: number): number {
+export function raycastMap(
+  o: Vec3,
+  d: Vec3,
+  maxDist: number,
+  map?: MapCollision
+): number {
   let best = maxDist;
 
   // Plano do chão (y = 0).
@@ -180,7 +189,7 @@ export function raycastMap(o: Vec3, d: Vec3, maxDist: number): number {
     if (t >= 0 && t < best) best = t;
   }
 
-  for (const b of MAP_BOXES) {
+  for (const b of (map ?? getActiveMap()).boxes) {
     const t = rayAabb(o, d, b.x, b.y, b.z, b.w / 2, b.h / 2, b.d / 2, best);
     if (t !== null && t < best) best = t;
   }

@@ -100,3 +100,59 @@ export const MAP_BOXES: BoxDef[] = [
 
 /** Limite jogável no plano XZ (com margem para o raio do corpo). */
 export const PLAY_BOUND = HALF - 1.5;
+
+/** Caixa rotacionada no yaw (mapa GLB / editor). */
+export interface ObbDef extends BoxDef {
+  yaw: number;
+}
+
+/** Rampa: sobe ao longo de `yaw` de yMin até yMax. */
+export interface RampDef {
+  x: number;
+  z: number;
+  yMin: number;
+  yMax: number;
+  width: number;
+  length: number;
+  yaw: number;
+  solid?: boolean;
+}
+
+export interface SpawnPoint {
+  x: number;
+  z: number;
+}
+
+/** Geometria de colisão de um mapa (caixas + OBB + rampas). */
+export interface MapGeometry {
+  id: string;
+  boxes: BoxDef[];
+  obbs: ObbDef[];
+  ramps: RampDef[];
+  playMinX: number;
+  playMaxX: number;
+  playMinZ: number;
+  playMaxZ: number;
+  mapSizeX: number;
+  mapSizeZ: number;
+  mapSize: number;
+  spawns: SpawnPoint[];
+}
+
+/** Praça hardcoded — usada como mapa padrão e como template no editor. */
+export function buildPracaGeometry(): MapGeometry {
+  return {
+    id: "praca",
+    boxes: MAP_BOXES,
+    obbs: [],
+    ramps: [],
+    playMinX: -PLAY_BOUND,
+    playMaxX: PLAY_BOUND,
+    playMinZ: -PLAY_BOUND,
+    playMaxZ: PLAY_BOUND,
+    mapSizeX: MAP_SIZE,
+    mapSizeZ: MAP_SIZE,
+    mapSize: MAP_SIZE,
+    spawns: [],
+  };
+}

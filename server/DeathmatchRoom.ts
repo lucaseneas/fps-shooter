@@ -7,6 +7,13 @@ import { KILL_STREAK_REWARDS } from "../shared/killStreaks";
 import { pickBotNames } from "../shared/names";
 import { pickSpawnFarFrom, randomSpawn } from "../shared/spawnPoints";
 import {
+  customMapToGeometry,
+  defaultPracaGeometry,
+  isCustomMapId,
+  sanitizeCustomMap,
+} from "../shared/customMap";
+import { geometryToCollision, type MapCollision } from "../shared/mapRuntime";
+import {
   getWeapon,
   damageFalloff,
   weaponMaxRange,
@@ -72,6 +79,7 @@ interface RoomCreateOptions {
   gameMode?: string;
   killsToWin?: number;
   mapId?: string;
+  customMap?: unknown;
 }
 
 /** Payload do líder para alterar as configurações da sala (pré-lobby). */
@@ -82,6 +90,7 @@ interface RoomSettingsMessage {
   killsToWin?: unknown;
   maxPlayers?: unknown;
   bots?: unknown;
+  customMap?: unknown;
 }
 
 /** Código de close usado ao remover um jogador da sala (kick pelo líder). */
@@ -147,6 +156,7 @@ export class DeathmatchRoom extends Room<MatchState> {
   /** Última posição de morte, para renascer longe dela. */
   private deathPos = new Map<string, { x: number; z: number }>();
   private matchResetAt = 0;
+  private roomMap: MapCollision = geometryToCollision(defaultPracaGeometry(), "Praça");
 
   onCreate(options: RoomCreateOptions = {}): void {
     this.setState(new MatchState());
@@ -164,10 +174,6 @@ export class DeathmatchRoom extends Room<MatchState> {
         ? options.gameMode
         : "ffa";
     const killsToWin = clampInt(options.killsToWin, 1, 100, CONFIG.killsToWin);
-    const mapId =
-      typeof options.mapId === "string" && MAPS.some((m) => m.id === options.mapId)
-        ? options.mapId
-        : MAPS[0].id;
 
     this.maxClients = maxPlayers;
     this.roomCapacity = maxPlayers;
@@ -177,7 +183,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.maxPlayers = maxPlayers;
     this.state.gameMode = gameMode;
     this.state.killsToWin = killsToWin;
-    this.state.mapId = mapId;
+    this.applyRoomMap(options.mapId, options.customMap);
 
     // Metadata exibida na lista de salas do lobby.
     void this.syncMetadata();
@@ -527,7 +533,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       const count = Math.min(queue.length, MAX_INPUTS_PER_TICK);
       for (let i = 0; i < count; i++) {
         const input = queue[i];
-        stepPlayer(body, input);
+        stepPlayer(body, input, this.roomMap);
         p.lastSeq = input.seq;
         p.yaw = input.yaw;
         p.crouch = Boolean(input.crouch);
@@ -625,7 +631,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     const p = this.state.players.get(id);
     if (!p) return;
 
-    const spawn = pickSpawnFarFrom(this.deathPos.get(id) ?? null);
+    const spawn = pickSpawnFarFrom(this.deathPos.get(id) ?? null, this.roomMap.spawns);
     p.x = spawn.x;
     p.z = spawn.z;
     p.y = 0;
@@ -681,7 +687,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.history.set(id, []);
       if (this.bots.has(id)) {
         // Bot aguarda o próximo start num spawn limpo.
-        const spawn = randomSpawn();
+        const spawn = randomSpawn(this.roomMap.spawns);
         p.x = spawn.x;
         p.z = spawn.z;
         p.y = 0;
@@ -762,8 +768,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     if (typeof msg.roomName === "string") {
       this.state.roomName = sanitizeRoomName(msg.roomName);
     }
-    if (typeof msg.mapId === "string" && MAPS.some((m) => m.id === msg.mapId)) {
-      this.state.mapId = msg.mapId;
+    if (typeof msg.mapId === "string") {
+      this.applyRoomMap(msg.mapId, msg.customMap);
     }
     if (
       typeof msg.gameMode === "string" &&
@@ -798,10 +804,34 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.rebalanceBots();
   }
 
+  /** Define o mapa da sala (oficial ou JSON custom enviado pelo host). */
+  private applyRoomMap(mapId: unknown, customMap?: unknown): void {
+    if (typeof mapId === "string" && isCustomMapId(mapId)) {
+      const def = sanitizeCustomMap(customMap);
+      if (def) {
+        def.id = mapId.slice(0, 48);
+        const geo = customMapToGeometry(def);
+        this.roomMap = geometryToCollision(geo, def.name);
+        this.state.mapId = def.id;
+        this.state.mapPayload = JSON.stringify(def);
+        return;
+      }
+    }
+    if (typeof mapId === "string" && MAPS.some((m) => m.id === mapId)) {
+      this.roomMap = geometryToCollision(defaultPracaGeometry(), "Praça");
+      this.state.mapId = mapId;
+      this.state.mapPayload = "";
+      return;
+    }
+    this.roomMap = geometryToCollision(defaultPracaGeometry(), "Praça");
+    this.state.mapId = MAPS[0].id;
+    this.state.mapPayload = "";
+  }
+
   /** Publica o estado atual da sala na listagem do lobby. */
   private syncMetadata(): Promise<unknown> {
     const mapLabel =
-      MAPS.find((m) => m.id === this.state.mapId)?.label ?? this.state.mapId;
+      MAPS.find((m) => m.id === this.state.mapId)?.label ?? this.roomMap.label;
     return this.setMetadata({
       map: mapLabel,
       name: this.state.roomName,
@@ -874,7 +904,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       };
 
       const range = weaponMaxRange(weapon);
-      const tMap = raycastMap(origin, dir, range);
+      const tMap = raycastMap(origin, dir, range, this.roomMap);
       let tBest = tMap;
       let hitId: string | null = null;
       let hitPart: "head" | "body" = "body";
@@ -1142,7 +1172,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     // Bots sempre usam a skin Padrão
     p.skinId = DEFAULT_SKIN;
 
-    const spawn = randomSpawn();
+    const spawn = randomSpawn(this.roomMap.spawns);
     p.x = spawn.x;
     p.z = spawn.z;
     this.state.players.set(id, p);
@@ -1154,6 +1184,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       applyDamage: (t, a, k, w) => this.applyDamage(t, a, k, w),
       broadcastShot: (e: ShotEvent) => this.broadcast("shot", e),
       isMatchOver: () => this.state.matchOver,
+      getMap: () => this.roomMap,
     };
     this.bots.set(id, new BotAi(id, p, world));
   }

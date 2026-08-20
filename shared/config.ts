@@ -5,12 +5,22 @@ export const GAME_MODES = [
 
 export type GameModeId = (typeof GAME_MODES)[number]["id"];
 
-/** Mapas disponíveis para as salas. */
+/** Mapas oficiais disponíveis para as salas. */
 export const MAPS = [
-  { id: "praca", label: "Praça" },
+  { id: "praca", label: "Praça", kind: "boxes" as const },
 ] as const;
 
 export type MapId = (typeof MAPS)[number]["id"];
+
+export type MapDef =
+  | { id: string; label: string; kind: "boxes" }
+  | { id: string; label: string; kind: "glb"; glbUrl: string; scale: number };
+
+export function getMapDef(mapId: string): MapDef {
+  const found = MAPS.find((m) => m.id === mapId);
+  if (found) return found;
+  return MAPS[0];
+}
 
 /** Opções de kills para vencer a partida. */
 export const KILLS_TO_WIN_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50] as const;

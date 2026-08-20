@@ -59,6 +59,7 @@ export interface MatchSnapshot {
   killsToWin: number;
   mapId: string;
   matchStarted: boolean;
+  mapPayload: string;
 }
 
 let cachedClient: Client | null = null;
@@ -96,6 +97,7 @@ export interface CreateRoomOptions {
   gameMode: string;
   killsToWin: number;
   mapId: string;
+  customMap?: unknown;
 }
 
 /** Entrada da lista de salas do lobby. */
@@ -153,6 +155,7 @@ export async function createRoom(
     gameMode: settings.gameMode,
     killsToWin: settings.killsToWin,
     mapId: settings.mapId,
+    customMap: settings.customMap,
   });
 }
 
@@ -184,5 +187,6 @@ export function getMatchSnapshot(room: Room): MatchSnapshot {
     killsToWin: typeof s.killsToWin === "number" ? s.killsToWin : CONFIG.killsToWin,
     mapId: typeof s.mapId === "string" ? s.mapId : "praca",
     matchStarted: s.matchStarted === true,
+    mapPayload: typeof s.mapPayload === "string" ? s.mapPayload : "",
   };
 }

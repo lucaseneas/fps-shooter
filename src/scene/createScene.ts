@@ -14,7 +14,7 @@ import "@babylonjs/core/Collisions/collisionCoordinator";
 
 import "@babylonjs/loaders/glTF";
 
-import { MAP_BOXES, MAP_SIZE, BoxDef } from "../../shared/mapData";
+import { MAP_BOXES, MAP_SIZE, type BoxDef } from "../../shared/mapData";
 
 /**
  * Constrói a cena a partir de `shared/mapData` — a MESMA geometria que o
@@ -25,7 +25,6 @@ export function createScene(engine: Engine): Scene {
   scene.clearColor = new Color4(0.53, 0.68, 0.82, 1.0); // céu azulado
   scene.ambientColor = new Color3(0.3, 0.3, 0.35);
 
-  // Névoa leve para dar profundidade sem custo.
   scene.fogMode = Scene.FOGMODE_LINEAR;
   scene.fogColor = new Color3(0.53, 0.68, 0.82);
   scene.fogStart = 60;
@@ -35,8 +34,7 @@ export function createScene(engine: Engine): Scene {
   scene.gravity = new Vector3(0, -0.9, 0);
 
   setupLights(scene);
-  createGround(scene);
-  createMapBoxes(scene);
+  applyBoxMap(scene, MAP_BOXES, MAP_SIZE);
 
   return scene;
 }
@@ -51,32 +49,61 @@ function setupLights(scene: Scene): void {
   sun.intensity = 1.1;
 }
 
-function createGround(scene: Scene): void {
+function tagMap(obj: { metadata: unknown }): void {
+  obj.metadata = { ...(obj.metadata as object | null), staticGeo: true, mapWorld: true };
+}
+
+function disposeMapWorld(scene: Scene): void {
+  for (const mesh of scene.meshes.slice()) {
+    if ((mesh.metadata as { mapWorld?: boolean } | null)?.mapWorld) {
+      mesh.dispose();
+    }
+  }
+  for (const mat of scene.materials.slice()) {
+    if ((mat.metadata as { mapWorld?: boolean } | null)?.mapWorld) {
+      mat.dispose(true, true);
+    }
+  }
+}
+
+/** Troca o chão e as caixas visíveis (mapa oficial ou custom). */
+export function applyBoxMap(
+  scene: Scene,
+  boxes: readonly BoxDef[],
+  mapSize: number
+): void {
+  disposeMapWorld(scene);
+  scene.fogStart = Math.max(20, mapSize * 0.75);
+  scene.fogEnd = Math.max(60, mapSize * 2.1);
+  createGround(scene, mapSize);
+  createMapBoxes(scene, boxes);
+}
+
+function createGround(scene: Scene, mapSize: number): void {
   const ground = MeshBuilder.CreateGround(
     "ground",
-    { width: MAP_SIZE, height: MAP_SIZE },
+    { width: mapSize, height: mapSize },
     scene
   );
-  // Sólido barato (sem GridMaterial). Mais escuro/quente que as paredes (0.22, 0.25, 0.3).
   const mat = new StandardMaterial("groundMat", scene);
   const floorTex = new Texture("/assets/textures/texture_floor.png", scene);
-  floorTex.uScale = MAP_SIZE / 4;
-  floorTex.vScale = MAP_SIZE / 4;
+  floorTex.uScale = mapSize / 4;
+  floorTex.vScale = mapSize / 4;
   mat.diffuseTexture = floorTex;
   mat.specularColor = new Color3(0.02, 0.02, 0.02);
   mat.freeze();
+  tagMap(mat);
   ground.material = mat;
   ground.checkCollisions = false;
-  ground.metadata = { staticGeo: true };
+  tagMap(ground);
   ground.freezeWorldMatrix();
 }
 
 /**
  * Uma caixa por peça no mapData, depois MergeMeshes por `kind`.
- * ~35 draw calls → ~5; matrizes congeladas (mapa estático).
- * Colisão do jogador usa MAP_BOXES no sim compartilhado, não checkCollisions.
+ * Colisão do jogador usa as AABBs no sim compartilhado, não checkCollisions.
  */
-function createMapBoxes(scene: Scene): void {
+function createMapBoxes(scene: Scene, boxes: readonly BoxDef[]): void {
   const materials: Record<BoxDef["kind"], StandardMaterial> = {
     border: new StandardMaterial("borderMat", scene),
     wall: new StandardMaterial("wallMat", scene),
@@ -90,7 +117,7 @@ function createMapBoxes(scene: Scene): void {
   const bgWallTex = new Texture("/assets/textures/texture_bg_wall.png", scene);
   const postTex = new Texture("/assets/textures/texture_post.png", scene);
   const boxTex = new Texture("/assets/textures/texture_crate.png", scene);
-  
+
   materials.border.diffuseTexture = bgWallTex;
   materials.wall.diffuseTexture = wallTex;
   materials.building.diffuseColor = new Color3(0.55, 0.48, 0.42);
@@ -103,6 +130,7 @@ function createMapBoxes(scene: Scene): void {
   for (const mat of Object.values(materials)) {
     mat.specularColor = new Color3(0.05, 0.05, 0.05);
     mat.freeze();
+    tagMap(mat);
   }
 
   const byKind: Record<BoxDef["kind"], Mesh[]> = {
@@ -114,38 +142,38 @@ function createMapBoxes(scene: Scene): void {
     pillar: [],
   };
 
-  MAP_BOXES.forEach((b, i) => {
-    let wUV = 1, hUV = 1, dUV = 1;
+  boxes.forEach((b, i) => {
+    let wUV = 1,
+      hUV = 1,
+      dUV = 1;
     if (b.kind !== "box") {
       const tileScale = 4;
       wUV = b.w / tileScale;
       hUV = b.h / tileScale;
       dUV = b.d / tileScale;
     }
-    
+
     const faceUV = [
-      new Vector4(0, 0, wUV, hUV), // back
-      new Vector4(0, 0, wUV, hUV), // front
-      new Vector4(0, 0, dUV, hUV), // right
-      new Vector4(0, 0, dUV, hUV), // left
-      new Vector4(0, 0, wUV, dUV), // top
-      new Vector4(0, 0, wUV, dUV)  // bottom
+      new Vector4(0, 0, wUV, hUV),
+      new Vector4(0, 0, wUV, hUV),
+      new Vector4(0, 0, dUV, hUV),
+      new Vector4(0, 0, dUV, hUV),
+      new Vector4(0, 0, wUV, dUV),
+      new Vector4(0, 0, wUV, dUV),
     ];
 
     const mesh = MeshBuilder.CreateBox(
       `map_${b.kind}_${i}`,
-      { width: b.w, height: b.h, depth: b.d, faceUV: faceUV, wrap: true },
+      { width: b.w, height: b.h, depth: b.d, faceUV, wrap: true },
       scene
     );
     mesh.position = new Vector3(b.x, b.y, b.z);
     mesh.material = materials[b.kind];
     mesh.checkCollisions = false;
-    mesh.metadata = { staticGeo: true };
+    tagMap(mesh);
     mesh.computeWorldMatrix(true);
     byKind[b.kind].push(mesh);
   });
-
-
 
   for (const kind of Object.keys(byKind) as BoxDef["kind"][]) {
     const meshes = byKind[kind];
@@ -162,7 +190,7 @@ function createMapBoxes(scene: Scene): void {
     if (!merged) continue;
     merged.name = `map_${kind}`;
     merged.material = materials[kind];
-    merged.metadata = { staticGeo: true };
+    tagMap(merged);
     merged.checkCollisions = false;
     merged.isPickable = true;
     merged.freezeWorldMatrix();

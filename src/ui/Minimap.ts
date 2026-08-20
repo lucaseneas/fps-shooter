@@ -1,3 +1,4 @@
+import type { BoxDef } from "../../shared/mapData";
 import { MAP_BOXES, MAP_SIZE } from "../../shared/mapData";
 
 /**
@@ -8,22 +9,33 @@ import { MAP_BOXES, MAP_SIZE } from "../../shared/mapData";
 export class Minimap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly size: number;
-  private readonly scale: number;
-  private readonly background: HTMLCanvasElement;
+  private scale: number;
+  private mapSize: number;
+  private boxes: readonly BoxDef[];
+  private background: HTMLCanvasElement;
 
   constructor(canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
     this.size = canvas.width;
+    this.mapSize = MAP_SIZE;
     this.scale = this.size / MAP_SIZE;
+    this.boxes = MAP_BOXES;
+    this.background = this.prerenderBackground();
+  }
+
+  rebuild(boxes: readonly BoxDef[], mapSize: number): void {
+    this.boxes = boxes;
+    this.mapSize = mapSize;
+    this.scale = this.size / Math.max(8, mapSize);
     this.background = this.prerenderBackground();
   }
 
   private toPx(wx: number): number {
-    return (wx + MAP_SIZE / 2) * this.scale;
+    return (wx + this.mapSize / 2) * this.scale;
   }
 
   private toPy(wz: number): number {
-    return this.size - (wz + MAP_SIZE / 2) * this.scale;
+    return this.size - (wz + this.mapSize / 2) * this.scale;
   }
 
   private prerenderBackground(): HTMLCanvasElement {
@@ -43,7 +55,7 @@ export class Minimap {
       pillar: "#9aa0ac",
     };
 
-    for (const b of MAP_BOXES) {
+    for (const b of this.boxes) {
       ctx.fillStyle = colors[b.kind] ?? "#666";
       const x = this.toPx(b.x - b.w / 2);
       const y = this.toPy(b.z + b.d / 2);
@@ -58,7 +70,6 @@ export class Minimap {
     ctx.clearRect(0, 0, this.size, this.size);
     ctx.drawImage(this.background, 0, 0);
 
-    // Player: seta laranja apontando para onde olha.
     const px = this.toPx(playerX);
     const py = this.toPy(playerZ);
     ctx.save();

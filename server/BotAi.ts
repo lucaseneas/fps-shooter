@@ -2,6 +2,7 @@ import { PlayerState } from "./schema";
 import { moveWithCollisions, segmentBlocked, distance3 } from "./physics";
 import { randomSpawn, SpawnPoint } from "../shared/spawnPoints";
 import { getWeapon, damageFalloff } from "../shared/weapons";
+import type { MapCollision } from "../shared/mapRuntime";
 
 const EYE_HEIGHT = 1.6;
 const WALK_SPEED = 4.0;
@@ -38,6 +39,7 @@ export interface BotWorld {
   ): void;
   broadcastShot(e: ShotEvent): void;
   isMatchOver(): boolean;
+  getMap(): MapCollision;
 }
 
 /**
@@ -50,7 +52,7 @@ export class BotAi {
   private readonly state: PlayerState;
   private readonly world: BotWorld;
 
-  private patrolTarget: SpawnPoint = randomSpawn();
+  private patrolTarget: SpawnPoint;
   private repathTimer = 0;
   private targetId: string | null = null;
   private timeSinceSeen = 0;
@@ -62,6 +64,7 @@ export class BotAi {
     this.id = id;
     this.state = state;
     this.world = world;
+    this.patrolTarget = randomSpawn(world.getMap().spawns);
   }
 
   update(dt: number): void {
@@ -84,7 +87,7 @@ export class BotAi {
   /** Reinicia estado interno após respawn. */
   reset(): void {
     this.targetId = null;
-    this.patrolTarget = randomSpawn();
+    this.patrolTarget = randomSpawn(this.world.getMap().spawns);
     this.reactionRemaining = 0;
     this.fireCooldown = 0;
   }
@@ -125,7 +128,8 @@ export class BotAi {
   private canSee(p: PlayerState): boolean {
     return !segmentBlocked(
       this.state.x, EYE_HEIGHT, this.state.z,
-      p.x, p.y + EYE_HEIGHT, p.z
+      p.x, p.y + EYE_HEIGHT, p.z,
+      this.world.getMap()
     );
   }
 
@@ -136,7 +140,7 @@ export class BotAi {
     const dist = Math.hypot(dx, dz);
 
     if (dist < 1.5 || this.repathTimer <= 0) {
-      this.patrolTarget = randomSpawn();
+      this.patrolTarget = randomSpawn(this.world.getMap().spawns);
       this.repathTimer = 6 + Math.random() * 6;
       return;
     }
@@ -145,7 +149,7 @@ export class BotAi {
     const nz = dz / dist;
     this.state.yaw = Math.atan2(nx, nz);
     const pos = { x: this.state.x, z: this.state.z };
-    moveWithCollisions(pos, nx * WALK_SPEED * dt, nz * WALK_SPEED * dt, BODY_RADIUS);
+    moveWithCollisions(pos, nx * WALK_SPEED * dt, nz * WALK_SPEED * dt, BODY_RADIUS, this.world.getMap());
     this.state.x = pos.x;
     this.state.z = pos.z;
   }
@@ -173,7 +177,7 @@ export class BotAi {
       mz = nx * side;
     }
     const pos = { x: this.state.x, z: this.state.z };
-    moveWithCollisions(pos, mx * COMBAT_SPEED * dt, mz * COMBAT_SPEED * dt, BODY_RADIUS);
+    moveWithCollisions(pos, mx * COMBAT_SPEED * dt, mz * COMBAT_SPEED * dt, BODY_RADIUS, this.world.getMap());
     this.state.x = pos.x;
     this.state.z = pos.z;
 

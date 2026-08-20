@@ -72,6 +72,8 @@ export class MatchState extends Schema {
   @type("number") killsToWin = 20;
   /** Mapa da partida (id em shared/config MAPS). */
   @type("string") mapId = "praca";
+  /** JSON do mapa custom (vazio = mapa oficial). */
+  @type("string") mapPayload = "";
   /** Falso = sala em pré-lobby; verdadeiro = partida em andamento. */
   @type("boolean") matchStarted = false;
 }

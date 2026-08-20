@@ -1,6 +1,6 @@
 /** Router SPA simples (History API). */
 
-export type AppRoute = "/login" | "/home" | "/lobby" | "/play";
+export type AppRoute = "/login" | "/home" | "/lobby" | "/play" | "/maps";
 
 type RouteListener = (route: AppRoute) => void;
 
@@ -15,6 +15,7 @@ export function currentRoute(): AppRoute {
   if (path === "/home") return "/home";
   if (path === "/lobby") return "/lobby";
   if (path === "/play") return "/play";
+  if (path === "/maps") return "/maps";
   return "/login";
 }
 

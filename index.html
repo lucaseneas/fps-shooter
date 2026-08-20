@@ -197,6 +197,7 @@
           </div>
           <div class="home-top-actions">
             <button type="button" id="shopButton" class="social-btn shop-btn">Loja</button>
+            <button type="button" id="mapStudioButton" class="social-btn shop-btn">Criação de mapas</button>
             <button type="button" id="skinStudioButton" class="social-btn">🎨 Estúdio</button>
             <button type="button" id="socialButton" class="social-btn">
               Social <span class="social-badge hidden" id="socialBadge">0</span>
@@ -351,6 +352,75 @@
             <button type="button" id="createRoomCancel" class="secondary">Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Página /maps — criador de mapas -->
+    <div id="pageMaps" class="app-page hidden">
+      <div id="mapStudioHub" class="map-studio-hub">
+        <header class="home-top">
+          <div>
+            <h1>Criação de mapas</h1>
+            <p class="subtitle">Edite um mapa existente ou crie um novo no plano 3D</p>
+          </div>
+          <div class="home-top-actions">
+            <button type="button" id="mapStudioNew" class="social-btn">Criar novo</button>
+            <button type="button" id="mapStudioBack" class="secondary">Voltar</button>
+          </div>
+        </header>
+        <div id="mapStudioList" class="map-studio-list"></div>
+      </div>
+
+      <div id="mapStudioSize" class="map-studio-size hidden">
+        <div class="map-size-card">
+          <h2>Tamanho do mapa</h2>
+          <p>O plano abre vazio, com bordas. Depois você coloca paredes, caixas e spawns.</p>
+          <div class="map-size-grid">
+            <button type="button" data-map-size="40">40 × 40</button>
+            <button type="button" data-map-size="60">60 × 60</button>
+            <button type="button" data-map-size="80">80 × 80</button>
+            <button type="button" data-map-size="100">100 × 100</button>
+            <button type="button" data-map-size="120">120 × 120</button>
+          </div>
+          <button type="button" id="mapSizeCancel" class="secondary">Cancelar</button>
+        </div>
+      </div>
+
+      <div id="mapStudioEditor" class="map-studio-editor hidden">
+        <aside class="map-editor-side">
+          <div class="map-editor-head">
+            <label class="studio-label" for="mapEditorName">Nome</label>
+            <input id="mapEditorName" type="text" maxlength="32" />
+          </div>
+          <p class="studio-label">Ferramentas</p>
+          <div id="mapEditorTools" class="map-tools"></div>
+          <p id="mapEditorSel" class="skins-hint">Clique no chão para colocar</p>
+          <div class="map-dims">
+            <label>W <input id="mapEditorW" type="number" min="0.5" max="80" step="0.5" /></label>
+            <label>H <input id="mapEditorH" type="number" min="0.2" max="20" step="0.5" /></label>
+            <label>D <input id="mapEditorD" type="number" min="0.5" max="80" step="0.5" /></label>
+          </div>
+          <div class="map-dims">
+            <label>X <input id="mapEditorX" type="number" step="1" disabled /></label>
+            <label>Z <input id="mapEditorZ" type="number" step="1" disabled /></label>
+          </div>
+          <div class="map-editor-actions">
+            <button type="button" id="mapEditorRotate" class="secondary">Girar 90° (R)</button>
+            <button type="button" id="mapEditorDelete" class="secondary">Apagar (Del)</button>
+          </div>
+          <p class="skins-hint">
+            Botão esquerdo coloca / seleciona · direito orbita · meio arrasta ·
+            roda zoom · Ctrl+Z desfaz
+          </p>
+          <p id="mapEditorStatus" class="skins-hint"></p>
+          <div class="map-editor-footer">
+            <button type="button" id="mapEditorSave">Salvar mapa</button>
+            <button type="button" id="mapEditorClose" class="secondary">Fechar</button>
+          </div>
+        </aside>
+        <div class="map-editor-view">
+          <canvas id="mapEditorCanvas"></canvas>
+        </div>
       </div>
     </div>
 

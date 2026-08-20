@@ -1,5 +1,5 @@
-import { MAP_BOXES, PLAY_BOUND } from "./mapData";
 import { MAX_MOVE_SPEED_MULT, MIN_MOVE_SPEED_MULT } from "./weapons";
+import { getActiveMap, type MapCollision } from "./mapRuntime";
 
 /**
  * Simulação de movimento do player — código COMPARTILHADO e determinístico.
@@ -76,7 +76,14 @@ function clamp(v: number, min: number, max: number): number {
 }
 
 /** Avança a simulação em exatamente um passo fixo (FIXED_DT). */
-export function stepPlayer(s: BodyState, input: PlayerInput): void {
+export function stepPlayer(
+  s: BodyState,
+  input: PlayerInput,
+  map?: MapCollision
+): void {
+  const geo = map ?? getActiveMap();
+  const boxes = geo.boxes;
+  const playBound = geo.playBound;
   const dt = FIXED_DT;
   const prevFeet = s.y;
 
@@ -108,7 +115,7 @@ export function stepPlayer(s: BodyState, input: PlayerInput): void {
   s.x += wx * speed * dt;
   s.z += wz * speed * dt;
 
-  for (const b of MAP_BOXES) {
+  for (const b of boxes) {
     const top = b.y + b.h / 2;
     const bottom = b.y - b.h / 2;
     // Caixa baixa o bastante para subir como degrau, ou acima da cabeça.
@@ -130,8 +137,8 @@ export function stepPlayer(s: BodyState, input: PlayerInput): void {
     }
   }
 
-  s.x = clamp(s.x, -PLAY_BOUND, PLAY_BOUND);
-  s.z = clamp(s.z, -PLAY_BOUND, PLAY_BOUND);
+  s.x = clamp(s.x, -playBound, playBound);
+  s.z = clamp(s.z, -playBound, playBound);
 
   // --- Pulo ---
   if (input.jump && s.grounded) {
@@ -146,7 +153,7 @@ export function stepPlayer(s: BodyState, input: PlayerInput): void {
   if (s.vy <= 0) {
     // Superfície de apoio mais alta que os pés cruzaram neste passo.
     let landing = s.y <= 0 ? 0 : -Infinity;
-    for (const b of MAP_BOXES) {
+    for (const b of boxes) {
       const top = b.y + b.h / 2;
       const ex = b.w / 2 + PLAYER_RADIUS;
       const ez = b.d / 2 + PLAYER_RADIUS;

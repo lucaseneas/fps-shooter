@@ -2,7 +2,7 @@ import { Engine } from "@babylonjs/core/Engines/engine";
 import { Vector3 } from "@babylonjs/core/Maths/math";
 import type { Room } from "colyseus.js";
 
-import { createScene } from "./scene/createScene";
+import { createScene, applyBoxMap } from "./scene/createScene";
 import { FpsController } from "./player/FpsController";
 import { ViewModel } from "./player/ViewModel";
 import { WeaponSystem } from "./game/WeaponSystem";
@@ -69,6 +69,17 @@ import {
   weaponSkinsFor,
 } from "../shared/weaponSkins";
 import { WeaponSkinStudio, hexToRgb, rgbToHex } from "./ui/WeaponSkinStudio";
+import { MapStudio } from "./ui/MapStudio";
+import { getCustomMap, playableMapOptions } from "./ui/mapStorage";
+import {
+  customMapToGeometry,
+  sanitizeCustomMap,
+} from "../shared/customMap";
+import {
+  getActiveMap,
+  resetActiveMap,
+  setActiveMapGeometry,
+} from "../shared/mapRuntime";
 import { AppRoute, navigate, onRouteChange } from "./app/router";
 import {
   MAX_XP,
@@ -96,6 +107,7 @@ import {
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const pageLogin = document.getElementById("pageLogin") as HTMLDivElement;
 const pageHome = document.getElementById("pageHome") as HTMLDivElement;
+const pageMaps = document.getElementById("pageMaps") as HTMLDivElement;
 const settingsModal = document.getElementById("settingsModal") as HTMLDivElement;
 const loadoutModal = document.getElementById("loadoutModal") as HTMLDivElement;
 const loadoutOptions = document.getElementById("loadoutOptions") as HTMLDivElement;
@@ -543,17 +555,46 @@ function finishAppBoot(): void {
   appBoot.classList.add("hidden");
 }
 
-type MenuPage = "login" | "home" | "lobby";
+type MenuPage = "login" | "home" | "lobby" | "maps";
 
 /** Garante uma única página de menu visível (evita botões duplicados/sobrepostos). */
 function setActivePage(page: MenuPage | null): void {
   pageLogin.classList.toggle("hidden", page !== "login");
   pageHome.classList.toggle("hidden", page !== "home");
   pageLobby.classList.toggle("hidden", page !== "lobby");
+  pageMaps?.classList.toggle("hidden", page !== "maps");
+}
+
+const mapStudio = new MapStudio();
+mapStudio.onBack = () => navigate("/home");
+
+function applyClientWorldMap(): void {
+  if (room) {
+    const snap = getMatchSnapshot(room);
+    if (snap.mapPayload) {
+      try {
+        const def = sanitizeCustomMap(JSON.parse(snap.mapPayload) as unknown);
+        if (def) {
+          const geo = customMapToGeometry(def);
+          setActiveMapGeometry(geo, def.name);
+          applyBoxMap(scene, geo.boxes, geo.mapSize);
+          minimap.rebuild(geo.boxes, geo.mapSize);
+          return;
+        }
+      } catch {
+        /* mapa custom inválido — cai no padrão */
+      }
+    }
+  }
+  resetActiveMap();
+  const active = getActiveMap();
+  applyBoxMap(scene, active.boxes, active.mapSize);
+  minimap.rebuild(active.boxes, active.mapSize);
 }
 
 function applyRoute(route: AppRoute): void {
   setHudVisible(route === "/play" && inGame);
+  if (route !== "/maps") mapStudio.close();
 
   if (route === "/play") {
     if (!inGame) {
@@ -596,6 +637,21 @@ function applyRoute(route: AppRoute): void {
     setActivePage("home");
     startHomePreview();
     void enterHome();
+    return;
+  }
+
+  if (route === "/maps") {
+    if (room) {
+      void room.leave();
+      return;
+    }
+    if (authEnabled && !session && !guestAllowed) {
+      navigate("/login", true);
+      return;
+    }
+    stopProfilePreviews();
+    setActivePage("maps");
+    mapStudio.open();
     return;
   }
 
@@ -880,6 +936,7 @@ function openCreateRoomModal(): void {
     Number.isFinite(savedBots) ? Math.min(7, Math.max(0, savedBots)) : 7
   );
   syncCreateRoomForm();
+  refreshMapSelects();
   createRoomModal.classList.remove("hidden");
   createRoomName.focus();
   createRoomName.select();
@@ -958,8 +1015,17 @@ createRoomForm.addEventListener("submit", (e) => {
   const gameMode = createGameMode.value;
   const killsToWin = parseInt(createKillsToWin.value, 10) || 20;
   const mapId = createMap.value || MAPS[0].id;
+  const customMap = getCustomMap(mapId) ?? undefined;
   localStorage.setItem(BOTS_STORAGE_KEY, String(bots));
-  pendingCreateOptions = { roomName, bots, maxPlayers, gameMode, killsToWin, mapId };
+  pendingCreateOptions = {
+    roomName,
+    bots,
+    maxPlayers,
+    gameMode,
+    killsToWin,
+    mapId,
+    customMap,
+  };
   closeCreateRoomModal();
   beginJoinFlow(null);
 });
@@ -2099,6 +2165,9 @@ function closeSkinStudio(): void {
   resumeProfilePreviewsIfVisible();
 }
 
+document.getElementById("mapStudioButton")?.addEventListener("click", () => {
+  navigate("/maps");
+});
 document.getElementById("skinStudioButton")?.addEventListener("click", openSkinStudio);
 skinStudioCancel.addEventListener("click", closeSkinStudio);
 skinStudioModal.addEventListener("click", (e) => {
@@ -2277,6 +2346,7 @@ function startMatchLocal(): void {
   hideLobby();
   navigate("/play");
   audio.resume();
+  applyClientWorldMap();
   enterPreSpawn();
   pushSocialPresence();
 }
@@ -2385,6 +2455,7 @@ function resetToMenu(errorMsg?: string): void {
   lobbyChatLog.replaceChildren();
   hideLobby();
   syncRoomSettingsUi();
+  applyClientWorldMap();
   pushSocialPresence();
 
   if (errorMsg) {
@@ -2493,8 +2564,25 @@ function fillSelect(
 
 fillSelect(
   lobbyMapSelect,
-  MAPS.map((m) => ({ value: m.id, label: m.label }))
+  playableMapOptions()
 );
+fillSelect(
+  createMap,
+  playableMapOptions()
+);
+
+function refreshMapSelects(extra?: { value: string; label: string }): void {
+  const prevCreate = createMap.value;
+  const prevLobby = lobbyMapSelect.value;
+  const opts = playableMapOptions();
+  if (extra && !opts.some((o) => o.value === extra.value)) opts.push(extra);
+  fillSelect(createMap, opts);
+  fillSelect(lobbyMapSelect, opts);
+  if (opts.some((o) => o.value === prevCreate)) createMap.value = prevCreate;
+  if (opts.some((o) => o.value === prevLobby)) lobbyMapSelect.value = prevLobby;
+}
+
+mapStudio.setOnMapsChanged(() => refreshMapSelects());
 fillSelect(
   lobbyModeSelect,
   GAME_MODES.map((m) => ({ value: m.id, label: m.label }))
@@ -2516,9 +2604,10 @@ function sendLobbySetting(msg: Record<string, unknown>): void {
   room.send("updateSettings", msg);
 }
 
-lobbyMapSelect.addEventListener("change", () =>
-  sendLobbySetting({ mapId: lobbyMapSelect.value })
-);
+lobbyMapSelect.addEventListener("change", () => {
+  const mapId = lobbyMapSelect.value;
+  sendLobbySetting({ mapId, customMap: getCustomMap(mapId) ?? undefined });
+});
 lobbyModeSelect.addEventListener("change", () =>
   sendLobbySetting({ gameMode: lobbyModeSelect.value })
 );
@@ -2647,6 +2736,16 @@ let lastLobbySig = "";
 function updateLobbyUi(): void {
   if (!room || !inLobby) return;
   const snap = getMatchSnapshot(room);
+  let extraMap: { value: string; label: string } | undefined;
+  if (snap.mapPayload) {
+    try {
+      const def = sanitizeCustomMap(JSON.parse(snap.mapPayload) as unknown);
+      if (def) extraMap = { value: def.id, label: def.name };
+    } catch {
+      /* ignore */
+    }
+  }
+  refreshMapSelects(extraMap);
   const myId = room.sessionId;
   const isHost = snap.hostId === myId;
   const canEdit = isHost && !snap.matchStarted;
