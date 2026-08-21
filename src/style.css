@@ -3806,6 +3806,37 @@ kbd {
 }
 
 /* ---------- Criador de mapas ---------- */
+#mapStudioToastContainer {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.map-studio-toast {
+  background: rgba(10, 25, 45, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 140, 0, 0.45);
+  box-shadow: 0 0 15px rgba(255, 140, 0, 0.2);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-align: center;
+  animation: toast-slide-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
+             toast-fade-out 0.4s ease forwards 3.6s;
+  border-left: 4px solid var(--accent);
+}
+
 #pageMaps.map-page-editor {
   overflow: hidden;
   background: #0b0e13;
@@ -3889,6 +3920,7 @@ kbd {
 
 .map-card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 

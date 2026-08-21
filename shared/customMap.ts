@@ -419,6 +419,16 @@ export function cloneCustomMap(def: CustomMapDef): CustomMapDef {
   };
 }
 
+/** Nova entrada com id próprio; o nome fica "Cópia de …". */
+export function duplicateCustomMap(def: CustomMapDef): CustomMapDef {
+  const copy = cloneCustomMap(def);
+  const base = def.name.trim() || "Mapa";
+  copy.id = newCustomMapId();
+  copy.name = `Cópia de ${base}`.slice(0, 32);
+  copy.updatedAt = Date.now();
+  return copy;
+}
+
 export function geometryPlayBound(geo: MapGeometry): number {
   return Math.min(-geo.playMinX, geo.playMaxX, -geo.playMinZ, geo.playMaxZ);
 }

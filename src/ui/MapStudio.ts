@@ -8,6 +8,7 @@ import {
   KIND_DEFAULT_HEX,
   MAP_SIZE_OPTIONS,
   MAP_TEXTURES,
+  duplicateCustomMap,
   makeEmptyMap,
   pracaToCustomMap,
   type CustomMapDef,
@@ -51,6 +52,7 @@ export class MapStudio {
   private readonly colorInput: HTMLInputElement;
   private readonly textureSelect: HTMLSelectElement;
   private readonly canvas: HTMLCanvasElement;
+  private readonly toastContainer: HTMLElement;
   private editor: MapEditor | null = null;
   private savedSnapshot = "";
   private onMapsChanged: (() => void) | null = null;
@@ -72,6 +74,7 @@ export class MapStudio {
     this.colorInput = el("mapEditorColor");
     this.textureSelect = el("mapEditorTexture");
     this.canvas = el("mapEditorCanvas");
+    this.toastContainer = el("mapStudioToastContainer");
 
     el<HTMLButtonElement>("mapStudioBack").addEventListener("click", () => {
       this.requestLeaveHub();
@@ -259,7 +262,16 @@ export class MapStudio {
     this.editor?.load(saved);
     this.savedSnapshot = JSON.stringify(this.editor?.current);
     this.statusEl.textContent = "Mapa salvo. Aparece na lista ao criar sala.";
+    this.showToast("Mapa salvo com sucesso!");
     this.onMapsChanged?.();
+  }
+
+  private showToast(message: string): void {
+    const toast = document.createElement("div");
+    toast.className = "map-studio-toast";
+    toast.textContent = message;
+    this.toastContainer.appendChild(toast);
+    window.setTimeout(() => toast.remove(), 4000);
   }
 
   private renderList(): void {
@@ -269,12 +281,18 @@ export class MapStudio {
     official.className = "map-card";
     official.innerHTML = `
       <h3>Praça</h3>
-      <p>Mapa oficial 80×80. Editar cria uma cópia sua.</p>
+      <p>Mapa oficial 80×80.</p>
       <div class="map-card-actions">
-        <button type="button" data-act="copy">Editar cópia</button>
+        <button type="button" data-act="edit">Editar</button>
+        <button type="button" class="secondary" data-act="dup">Duplicar</button>
       </div>`;
-    official.querySelector("button")?.addEventListener("click", () => {
+    official.querySelector("[data-act=edit]")?.addEventListener("click", () => {
       this.openEditor(pracaToCustomMap());
+    });
+    official.querySelector("[data-act=dup]")?.addEventListener("click", () => {
+      saveCustomMap(pracaToCustomMap());
+      this.renderList();
+      this.onMapsChanged?.();
     });
     this.listEl.appendChild(official);
 
@@ -295,11 +313,15 @@ export class MapStudio {
         <p>${m.size}×${m.size} · ${m.pieces.length} peças · ${m.spawns.length} spawns<br>${when}</p>
         <div class="map-card-actions">
           <button type="button" data-act="edit">Editar</button>
+          <button type="button" class="secondary" data-act="dup">Duplicar</button>
           <button type="button" class="secondary" data-act="del">Excluir</button>
         </div>`;
       card.querySelector("h3")!.textContent = m.name;
       card.querySelector("[data-act=edit]")?.addEventListener("click", () => {
         this.openEditor(m);
+      });
+      card.querySelector("[data-act=dup]")?.addEventListener("click", () => {
+        this.duplicateAndSave(m);
       });
       card.querySelector("[data-act=del]")?.addEventListener("click", () => {
         if (!window.confirm(`Excluir “${m.name}”?`)) return;
@@ -309,6 +331,13 @@ export class MapStudio {
       });
       this.listEl.appendChild(card);
     }
+  }
+
+  private duplicateAndSave(source: CustomMapDef): void {
+    const copy = duplicateCustomMap(source);
+    saveCustomMap(copy);
+    this.renderList();
+    this.onMapsChanged?.();
   }
 
   private syncTools(): void {
