@@ -44,6 +44,7 @@ const HEAD_RADIUS = HITBOX.headRadius;
 const BODY_CENTER_Y = HITBOX.bodyCenterY;
 const BODY_HALF = HITBOX.bodyHalf;
 const CROUCH_HEAD_CENTER_Y = HITBOX.crouchHeadCenterY;
+const CROUCH_HEAD_FORWARD = HITBOX.crouchHeadForward;
 const CROUCH_BODY_CENTER_Y = HITBOX.crouchBodyCenterY;
 const CROUCH_BODY_HALF_Y = HITBOX.crouchBodyHalfY;
 
@@ -931,13 +932,18 @@ export class DeathmatchRoom extends Room<MatchState> {
       let hitPart: "head" | "body" = "body";
 
       for (const target of targets) {
-        const crouched = Boolean(this.state.players.get(target.id)?.crouch);
+        const targetPlayer = this.state.players.get(target.id);
+        const crouched = Boolean(targetPlayer?.crouch);
+        const yaw = targetPlayer?.yaw ?? 0;
         const headY = crouched ? CROUCH_HEAD_CENTER_Y : HEAD_CENTER_Y;
+        const headFwd = crouched ? CROUCH_HEAD_FORWARD : 0;
+        const headX = target.pos.x + Math.sin(yaw) * headFwd;
+        const headZ = target.pos.z + Math.cos(yaw) * headFwd;
         const bodyY = crouched ? CROUCH_BODY_CENTER_Y : BODY_CENTER_Y;
         const bodyHalfY = crouched ? CROUCH_BODY_HALF_Y : BODY_HALF.y;
         const tHead = raySphere(
           origin, dir,
-          target.pos.x, target.pos.y + headY, target.pos.z,
+          headX, target.pos.y + headY, headZ,
           HEAD_RADIUS, tBest
         );
         if (tHead !== null && tHead < tBest) {

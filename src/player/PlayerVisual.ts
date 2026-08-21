@@ -85,7 +85,7 @@ export class PlayerVisual {
       const inst = container.instantiateModelsToScene();
       this.dummyMesh = inst.rootNodes[0] as TransformNode;
       this.dummyMesh.parent = this.root;
-      this.dummyMesh.position.y = -0.9; // Base no chão
+      this.dummyMesh.position.y = -0.9; // Base no chão (origem = pés)
       this.dummyMesh.setEnabled(this.alive);
 
       // Indexar todos os grupos de animação

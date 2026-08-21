@@ -8,11 +8,10 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 
 import { CONFIG } from "../../shared/config";
 import { HITBOX } from "../../shared/hitboxes";
-import { CROUCH_EYE_HEIGHT, EYE_HEIGHT } from "../../shared/movement";
 import { PlayerVisual } from "../player/PlayerVisual";
 
 const STAND_HEIGHT = 1.8;
-const CROUCH_HEIGHT = 1.15;
+const ROOT_HALF = STAND_HEIGHT / 2;
 const MAX_EXTRAP_SPEED = 10;
 const HISTORY_MS = 1000;
 /** Prever no máximo ~2 ticks: além disso segura a última pose (evita drift). */
@@ -27,13 +26,14 @@ const TELEPORT_SNAP_DIST = 4;
 const CORRECTION_SPEED = 12;
 
 // Alturas/posições visuais derivadas do HITBOX (modelo player_dummy.glb: 1.0×2.0×0.5).
+// Root fica sempre a STAND_HEIGHT/2 — o dummy (pés em -0.9) não afunda ao agachar;
+// Crouch_Idle/Walk cuidam da pose e a hitbox acompanha essa silhueta.
 const STAND_BODY_H = HITBOX.bodyHalf.y * 2;
 const CROUCH_BODY_H = HITBOX.crouchBodyHalfY * 2;
-/** Y relativo ao centro do root (root fica a height/2 acima dos pés). */
-const STAND_BODY_Y = HITBOX.bodyCenterY - STAND_HEIGHT / 2;
-const CROUCH_BODY_Y = HITBOX.crouchBodyCenterY - CROUCH_HEIGHT / 2;
-const STAND_HEAD_Y = HITBOX.headCenterY - STAND_HEIGHT / 2;
-const CROUCH_HEAD_Y = HITBOX.crouchHeadCenterY - CROUCH_HEIGHT / 2;
+const STAND_BODY_Y = HITBOX.bodyCenterY - ROOT_HALF;
+const CROUCH_BODY_Y = HITBOX.crouchBodyCenterY - ROOT_HALF;
+const STAND_HEAD_Y = HITBOX.headCenterY - ROOT_HALF;
+const CROUCH_HEAD_Y = HITBOX.crouchHeadCenterY - ROOT_HALF;
 
 interface PosSample {
   t: number;
@@ -312,29 +312,21 @@ export class RemotePlayer {
     this.visual.setWeapon(weaponId);
   }
 
-  private height(): number {
-    return STAND_HEIGHT + (CROUCH_HEIGHT - STAND_HEIGHT) * this.crouchT;
-  }
-
-  private eyeHeight(): number {
-    return EYE_HEIGHT + (CROUCH_EYE_HEIGHT - EYE_HEIGHT) * this.crouchT;
-  }
-
   private applyCrouchPose(): void {
     const t = this.crouchT;
-    const h = this.height();
     const bodyH = STAND_BODY_H + (CROUCH_BODY_H - STAND_BODY_H) * t;
 
     this.bodyMesh.scaling.y = bodyH / STAND_BODY_H;
     this.bodyMesh.position.y = STAND_BODY_Y + (CROUCH_BODY_Y - STAND_BODY_Y) * t;
     this.headMesh.position.y = STAND_HEAD_Y + (CROUCH_HEAD_Y - STAND_HEAD_Y) * t;
+    this.headMesh.position.z = HITBOX.crouchHeadForward * t;
     this.gun.position.y = 0.32 - 0.27 * t;
-    this.nameplate.position.y = h / 2 + 0.45 - 0.2 * t;
+    this.nameplate.position.y = ROOT_HALF + 0.45 - 0.14 * t;
 
-    // Esqueleto espelha a pose do modelo (crouch).
     this.skeletonBody.scaling.y = this.bodyMesh.scaling.y;
     this.skeletonBody.position.y = this.bodyMesh.position.y;
     this.skeletonHead.position.y = this.headMesh.position.y;
+    this.skeletonHead.position.z = this.headMesh.position.z;
   }
 
   /**
@@ -479,7 +471,7 @@ export class RemotePlayer {
       }
     }
 
-    this.root.position.set(this.visX, this.visY + this.height() / 2, this.visZ);
+    this.root.position.set(this.visX, this.visY + ROOT_HALF, this.visZ);
     this.root.rotation.y = this.visYaw;
 
     // Atualiza pose e animações completas no PlayerVisual
@@ -515,10 +507,13 @@ export class RemotePlayer {
     const headCy = this.crouching
       ? HITBOX.crouchHeadCenterY
       : HITBOX.headCenterY;
+    const headFwd = this.crouching ? HITBOX.crouchHeadForward : 0;
+    const headX = this.visX + Math.sin(this.visYaw) * headFwd;
+    const headZ = this.visZ + Math.cos(this.visYaw) * headFwd;
 
     this.debugBodyHitbox.scaling.y = bodyHalfY / HITBOX.bodyHalf.y;
     this.debugBodyHitbox.position.set(this.visX, this.visY + bodyCy, this.visZ);
-    this.debugHeadHitbox.position.set(this.visX, this.visY + headCy, this.visZ);
+    this.debugHeadHitbox.position.set(headX, this.visY + headCy, headZ);
   }
 
   applyState(
@@ -689,8 +684,12 @@ export class RemotePlayer {
   }
 
   getHead(): Vector3 {
-    return this.root.position.add(
-      new Vector3(0, this.eyeHeight() - this.height() / 2, 0)
+    const y = this.crouching ? HITBOX.crouchHeadCenterY : HITBOX.headCenterY;
+    const fwd = this.crouching ? HITBOX.crouchHeadForward : 0;
+    return new Vector3(
+      this.visX + Math.sin(this.visYaw) * fwd,
+      this.visY + y,
+      this.visZ + Math.cos(this.visYaw) * fwd
     );
   }
 
