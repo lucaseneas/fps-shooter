@@ -40,75 +40,116 @@ body {
   display: none;
 }
 
-#crosshair {
+.ch {
+  --ch-scale: 1;
+  --ch-gap: 4px;
+  --ch-len: calc(9px * var(--ch-scale));
+  --ch-thick: max(1.5px, calc(2px * var(--ch-scale)));
+  --ch-dot: max(2px, calc(3.5px * var(--ch-scale)));
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 4px;
-  height: 4px;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.ch .ch-center,
+.ch .ch-arm,
+.ch .ch-ring,
+.ch .ch-chevron {
+  position: absolute;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.85);
+}
+
+.ch .ch-center {
+  left: 50%;
+  top: 50%;
+  width: var(--ch-dot);
+  height: var(--ch-dot);
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+  background: rgba(255, 255, 255, 0.95);
 }
 
-#crosshair::before,
-#crosshair::after {
-  content: "";
-  position: absolute;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+.ch .ch-arm {
+  background: rgba(255, 255, 255, 0.92);
 }
 
-/* Variações escolhidas nas configurações. */
-#crosshair[data-style="dot"] {
-  width: 6px;
-  height: 6px;
+.ch .ch-arm.n {
+  width: var(--ch-thick);
+  height: var(--ch-len);
+  left: 50%;
+  bottom: calc(50% + var(--ch-gap));
+  transform: translateX(-50%);
 }
 
-#crosshair[data-style="dot"]::before,
-#crosshair[data-style="dot"]::after,
-#crosshair[data-style="ring"]::before,
-#crosshair[data-style="ring"]::after,
-#crosshair[data-style="chevron"]::before,
-#crosshair[data-style="chevron"]::after {
+.ch .ch-arm.s {
+  width: var(--ch-thick);
+  height: var(--ch-len);
+  left: 50%;
+  top: calc(50% + var(--ch-gap));
+  transform: translateX(-50%);
+}
+
+.ch .ch-arm.w {
+  height: var(--ch-thick);
+  width: var(--ch-len);
+  top: 50%;
+  right: calc(50% + var(--ch-gap));
+  transform: translateY(-50%);
+}
+
+.ch .ch-arm.e {
+  height: var(--ch-thick);
+  width: var(--ch-len);
+  top: 50%;
+  left: calc(50% + var(--ch-gap));
+  transform: translateY(-50%);
+}
+
+.ch .ch-ring {
+  left: 50%;
+  top: 50%;
+  width: calc(var(--ch-gap) * 2 + var(--ch-len) + var(--ch-thick));
+  height: calc(var(--ch-gap) * 2 + var(--ch-len) + var(--ch-thick));
+  transform: translate(-50%, -50%);
+  border: var(--ch-thick) solid rgba(255, 255, 255, 0.92);
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.85);
+}
+
+.ch .ch-chevron {
+  left: 50%;
+  top: 50%;
+  width: calc(12px * var(--ch-scale));
+  height: calc(12px * var(--ch-scale));
+  background: transparent;
+  border: solid rgba(255, 255, 255, 0.92);
+  border-width: 0 var(--ch-thick) var(--ch-thick) 0;
+  transform: translate(-50%, -70%) rotate(45deg);
+}
+
+.ch[data-style="cross"] .ch-ring,
+.ch[data-style="cross"] .ch-chevron,
+.ch[data-style="dot"] .ch-arm,
+.ch[data-style="dot"] .ch-ring,
+.ch[data-style="dot"] .ch-chevron,
+.ch[data-style="ring"] .ch-arm,
+.ch[data-style="ring"] .ch-chevron,
+.ch[data-style="chevron"] .ch-arm,
+.ch[data-style="chevron"] .ch-ring,
+.ch[data-style="chevron"] .ch-center,
+.ch[data-center="0"] .ch-center {
   display: none;
 }
 
-#crosshair[data-style="ring"] {
-  width: 15px;
-  height: 15px;
-  background: transparent;
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
-}
-
-#crosshair[data-style="chevron"] {
-  width: 14px;
-  height: 14px;
-  background: transparent;
-  border: solid rgba(255, 255, 255, 0.9);
-  border-width: 0 2px 2px 0;
-  border-radius: 0;
-  transform: translate(-50%, -62%) rotate(45deg);
-}
-
-/* linha horizontal */
-#crosshair::before {
-  top: 50%;
-  left: 50%;
-  width: 22px;
-  height: 2px;
-  transform: translate(-50%, -50%);
-}
-
-/* linha vertical */
-#crosshair::after {
-  top: 50%;
-  left: 50%;
-  width: 2px;
-  height: 22px;
-  transform: translate(-50%, -50%);
+.ch[data-style="dot"] .ch-center {
+  display: block;
+  width: calc(var(--ch-dot) * 1.35);
+  height: calc(var(--ch-dot) * 1.35);
 }
 
 #crosshair.scoped {
@@ -2770,8 +2811,10 @@ kbd {
 .settings {
   margin: 14px auto 0;
   padding: 14px 18px;
-  max-width: 360px;
+  max-width: 380px;
   min-height: 148px;
+  max-height: min(62vh, 540px);
+  overflow-y: auto;
   text-align: left;
   background: rgba(10, 14, 20, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2796,6 +2839,10 @@ kbd {
 
 .setting-row:last-child {
   margin-bottom: 0;
+}
+
+.setting-row.hidden {
+  display: none;
 }
 
 .setting-row label {
@@ -2831,6 +2878,7 @@ kbd {
 #sensValue,
 #botsValue,
 #volValue,
+#reticleSizeValue,
 #createMaxPlayersValue,
 #createBotsValue {
   font-size: 13px;
@@ -2908,6 +2956,110 @@ kbd {
   color: #c3ccd6;
   cursor: pointer;
   line-height: 1.3;
+}
+
+.reticle-editor > .setting-row {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
+.reticle-preview-box {
+  position: relative;
+  height: 92px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.04), transparent 46%),
+    rgba(6, 10, 16, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.reticle-styles,
+.reticle-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.reticle-styles {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.reticle-style-btn,
+.reticle-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 4px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #8b97a3;
+  background: rgba(10, 14, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.reticle-mode-btn {
+  flex-direction: row;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.reticle-style-btn:hover,
+.reticle-mode-btn:hover {
+  color: #e8ecf1;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.reticle-style-btn.active,
+.reticle-mode-btn.active {
+  color: #1a1206;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.reticle-ico {
+  display: block;
+  color: inherit;
+}
+
+.reticle-ico.cross {
+  width: 14px;
+  height: 14px;
+  background:
+    linear-gradient(currentColor, currentColor) center / 14px 2px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 2px 14px no-repeat;
+}
+
+.reticle-ico.dot {
+  width: 6px;
+  height: 6px;
+  margin: 4px 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.reticle-ico.ring {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.reticle-ico.chevron {
+  width: 8px;
+  height: 8px;
+  margin-bottom: 2px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 .toggle-control input {

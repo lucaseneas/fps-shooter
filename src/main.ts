@@ -153,7 +153,17 @@ const settingsDeveloperPanel = document.getElementById(
 ) as HTMLDivElement;
 const volSlider = document.getElementById("volSlider") as HTMLInputElement;
 const volValue = document.getElementById("volValue") as HTMLSpanElement;
-const reticleSelect = document.getElementById("reticleSelect") as HTMLSelectElement;
+const crosshairEl = document.getElementById("crosshair") as HTMLDivElement;
+const reticlePreview = document.getElementById("reticlePreview") as HTMLDivElement;
+const reticleStyles = document.getElementById("reticleStyles") as HTMLDivElement;
+const reticleSizeSlider = document.getElementById("reticleSizeSlider") as HTMLInputElement;
+const reticleSizeValue = document.getElementById("reticleSizeValue") as HTMLSpanElement;
+const reticleCenterRow = document.getElementById("reticleCenterRow") as HTMLDivElement;
+const reticleCenterToggle = document.getElementById(
+  "reticleCenterToggle"
+) as HTMLInputElement;
+const reticleModes = document.getElementById("reticleModes") as HTMLDivElement;
+const reticleModeHint = document.getElementById("reticleModeHint") as HTMLParagraphElement;
 const debugModeToggle = document.getElementById("debugModeToggle") as HTMLInputElement;
 const roomListEl = document.getElementById("roomList") as HTMLDivElement;
 const refreshRoomsButton = document.getElementById("refreshRoomsButton") as HTMLButtonElement;
@@ -381,18 +391,154 @@ applyVolume(Number.isFinite(savedVol) ? Math.min(1, Math.max(0, savedVol)) : 0.5
 
 const RETICLE_STORAGE_KEY = "fps.reticle";
 const RETICLE_TYPES = new Set(["cross", "dot", "ring", "chevron"]);
+const RETICLE_MODES = new Set(["static", "dynamic"]);
+const RETICLE_MAX_GAP_PX = 26;
 
-function applyReticle(type: string): void {
-  const selected = RETICLE_TYPES.has(type) ? type : "cross";
-  document.getElementById("crosshair")!.dataset.style = selected;
-  reticleSelect.value = selected;
+type ReticleStyle = "cross" | "dot" | "ring" | "chevron";
+type ReticleMode = "static" | "dynamic";
+
+interface ReticlePrefs {
+  style: ReticleStyle;
+  size: number;
+  center: boolean;
+  mode: ReticleMode;
 }
 
-applyReticle(localStorage.getItem(RETICLE_STORAGE_KEY) ?? "cross");
-reticleSelect.addEventListener("change", () => {
-  applyReticle(reticleSelect.value);
-  localStorage.setItem(RETICLE_STORAGE_KEY, reticleSelect.value);
+const DEFAULT_RETICLE: ReticlePrefs = {
+  style: "cross",
+  size: 0.5,
+  center: true,
+  mode: "dynamic",
+};
+
+let reticlePrefs: ReticlePrefs = { ...DEFAULT_RETICLE };
+
+function clampReticleSize(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_RETICLE.size;
+  return Math.min(2, Math.max(0.5, value));
+}
+
+function loadReticlePrefs(): ReticlePrefs {
+  const raw = localStorage.getItem(RETICLE_STORAGE_KEY);
+  if (!raw) return { ...DEFAULT_RETICLE };
+  if (RETICLE_TYPES.has(raw)) {
+    return { ...DEFAULT_RETICLE, style: raw as ReticleStyle };
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<ReticlePrefs>;
+    const style = RETICLE_TYPES.has(String(parsed.style))
+      ? (parsed.style as ReticleStyle)
+      : DEFAULT_RETICLE.style;
+    const mode = RETICLE_MODES.has(String(parsed.mode))
+      ? (parsed.mode as ReticleMode)
+      : DEFAULT_RETICLE.mode;
+    return {
+      style,
+      size: clampReticleSize(Number(parsed.size)),
+      center: parsed.center !== false,
+      mode,
+    };
+  } catch {
+    return { ...DEFAULT_RETICLE };
+  }
+}
+
+function baseReticleGap(size: number): number {
+  return 3.2 * size;
+}
+
+function applyReticleToEl(el: HTMLElement, prefs: ReticlePrefs, gapPx: number): void {
+  el.dataset.style = prefs.style;
+  el.dataset.center = prefs.center ? "1" : "0";
+  el.dataset.mode = prefs.mode;
+  el.style.setProperty("--ch-scale", String(prefs.size));
+  el.style.setProperty("--ch-gap", `${gapPx}px`);
+}
+
+function syncReticleEditor(prefs: ReticlePrefs): void {
+  for (const btn of reticleStyles.querySelectorAll<HTMLButtonElement>("[data-reticle]")) {
+    btn.classList.toggle("active", btn.dataset.reticle === prefs.style);
+  }
+  for (const btn of reticleModes.querySelectorAll<HTMLButtonElement>("[data-reticle-mode]")) {
+    btn.classList.toggle("active", btn.dataset.reticleMode === prefs.mode);
+  }
+  reticleSizeSlider.value = String(prefs.size);
+  reticleSizeValue.textContent = `${Math.round(prefs.size * 100)}%`;
+  reticleCenterToggle.checked = prefs.center;
+  reticleCenterRow.classList.toggle(
+    "hidden",
+    prefs.style === "dot" || prefs.style === "chevron"
+  );
+  reticleModeHint.textContent =
+    prefs.mode === "dynamic"
+      ? prefs.style === "dot" || prefs.style === "chevron"
+        ? "Dinâmica vale para Cruz e Círculo. Ponto e chevron ficam no tamanho fixo."
+        : "Abre com o spread da arma até um limite — útil para ver o cone de tiro."
+      : "Fica no tamanho que você definiu, sem acompanhar o spread.";
+}
+
+function applyReticlePrefs(prefs: ReticlePrefs, persist = true): void {
+  reticlePrefs = {
+    style: prefs.style,
+    size: clampReticleSize(prefs.size),
+    center: prefs.center,
+    mode: prefs.mode,
+  };
+  const gap = baseReticleGap(reticlePrefs.size);
+  const previewGap =
+    reticlePrefs.mode === "dynamic" &&
+    reticlePrefs.style !== "dot" &&
+    reticlePrefs.style !== "chevron"
+      ? Math.min(RETICLE_MAX_GAP_PX, gap * 2.4)
+      : gap;
+  applyReticleToEl(crosshairEl, reticlePrefs, gap);
+  applyReticleToEl(reticlePreview, reticlePrefs, previewGap);
+  syncReticleEditor(reticlePrefs);
+  if (persist) {
+    localStorage.setItem(RETICLE_STORAGE_KEY, JSON.stringify(reticlePrefs));
+  }
+}
+
+function saveReticlePatch(patch: Partial<ReticlePrefs>): void {
+  applyReticlePrefs({ ...reticlePrefs, ...patch });
+}
+
+applyReticlePrefs(loadReticlePrefs(), false);
+
+reticleStyles.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-reticle]");
+  if (!btn?.dataset.reticle || !RETICLE_TYPES.has(btn.dataset.reticle)) return;
+  saveReticlePatch({ style: btn.dataset.reticle as ReticleStyle });
 });
+
+reticleSizeSlider.addEventListener("input", () => {
+  saveReticlePatch({ size: parseFloat(reticleSizeSlider.value) });
+});
+
+reticleCenterToggle.addEventListener("change", () => {
+  saveReticlePatch({ center: reticleCenterToggle.checked });
+});
+
+reticleModes.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-reticle-mode]");
+  if (!btn?.dataset.reticleMode || !RETICLE_MODES.has(btn.dataset.reticleMode)) return;
+  saveReticlePatch({ mode: btn.dataset.reticleMode as ReticleMode });
+});
+
+function spreadDiameterPx(): number {
+  const spreadRad = (weapons.currentSpread * Math.PI) / 180;
+  const fov = player.camera.fov;
+  return (canvas.clientHeight * Math.tan(spreadRad)) / Math.tan(fov / 2);
+}
+
+function updateDynamicReticle(): void {
+  if (reticlePrefs.mode !== "dynamic") return;
+  if (reticlePrefs.style === "dot" || reticlePrefs.style === "chevron") return;
+  const base = baseReticleGap(reticlePrefs.size);
+  const radius = spreadDiameterPx() / 2;
+  const gap = Math.max(base, Math.min(RETICLE_MAX_GAP_PX, radius));
+  crosshairEl.style.setProperty("--ch-gap", `${gap}px`);
+}
 
 const DEBUG_STORAGE_KEY = "fps.debugMode";
 let debugMode = localStorage.getItem(DEBUG_STORAGE_KEY) === "true";
@@ -3573,7 +3719,6 @@ const scopeOverlay = document.getElementById("scopeOverlay")!;
 const scopeOverlayCanvas = document.getElementById(
   "scopeOverlayCanvas",
 ) as HTMLCanvasElement;
-const crosshairEl = document.getElementById("crosshair")!;
 
 let adsToggled = false;
 let adsOverlayOn = false;
@@ -3991,17 +4136,15 @@ engine.runRenderLoop(() => {
   updateAds(dt);
   viewModel.update(dt);
 
+  const diameter = spreadDiameterPx();
   if (debugMode) {
-    const canvasHeight = canvas.clientHeight;
-    const spreadRad = (weapons.currentSpread * Math.PI) / 180;
-    const fov = player.camera.fov;
-    const diameter = canvasHeight * Math.tan(spreadRad) / Math.tan(fov / 2);
     debugSpreadCircle.style.width = `${diameter}px`;
     debugSpreadCircle.style.height = `${diameter}px`;
     debugSpreadCircle.style.display = "block";
   } else {
     debugSpreadCircle.style.display = "none";
   }
+  updateDynamicReticle();
 
   for (const rp of remotePlayers.values()) {
     rp.update(dt, serverRttMs > 0 ? serverRttMs : pingMs ?? 0);

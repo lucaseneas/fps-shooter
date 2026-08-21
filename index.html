@@ -21,7 +21,15 @@
 
     <!-- HUD (oculto fora da partida) -->
     <div id="hud" class="hidden">
-      <div id="crosshair"></div>
+      <div id="crosshair" class="ch" data-style="cross" data-center="1" data-mode="dynamic">
+        <span class="ch-center"></span>
+        <span class="ch-arm n"></span>
+        <span class="ch-arm e"></span>
+        <span class="ch-arm s"></span>
+        <span class="ch-arm w"></span>
+        <span class="ch-ring"></span>
+        <span class="ch-chevron"></span>
+      </div>
       <div id="scopeOverlay" aria-hidden="true">
         <canvas id="scopeOverlayCanvas" aria-hidden="true"></canvas>
       </div>
@@ -856,14 +864,78 @@
                 <span id="volValue">50%</span>
               </div>
             </div>
-            <div class="setting-row">
-              <label for="reticleSelect">Retícula</label>
-              <select id="reticleSelect" class="setting-select">
-                <option value="cross">Cruz</option>
-                <option value="dot">Ponto</option>
-                <option value="ring">Círculo</option>
-                <option value="chevron">Chevron</option>
-              </select>
+            <div class="setting-row reticle-editor">
+              <label>Retícula</label>
+              <div class="reticle-preview-box" aria-hidden="true">
+                <div
+                  id="reticlePreview"
+                  class="ch"
+                  data-style="cross"
+                  data-center="1"
+                  data-mode="dynamic"
+                >
+                  <span class="ch-center"></span>
+                  <span class="ch-arm n"></span>
+                  <span class="ch-arm e"></span>
+                  <span class="ch-arm s"></span>
+                  <span class="ch-arm w"></span>
+                  <span class="ch-ring"></span>
+                  <span class="ch-chevron"></span>
+                </div>
+              </div>
+              <div class="reticle-styles" id="reticleStyles">
+                <button type="button" class="reticle-style-btn active" data-reticle="cross" title="Cruz">
+                  <span class="reticle-ico cross"></span>
+                  Cruz
+                </button>
+                <button type="button" class="reticle-style-btn" data-reticle="dot" title="Ponto">
+                  <span class="reticle-ico dot"></span>
+                  Ponto
+                </button>
+                <button type="button" class="reticle-style-btn" data-reticle="ring" title="Círculo">
+                  <span class="reticle-ico ring"></span>
+                  Círculo
+                </button>
+                <button type="button" class="reticle-style-btn" data-reticle="chevron" title="Chevron">
+                  <span class="reticle-ico chevron"></span>
+                  Chevron
+                </button>
+              </div>
+              <div class="setting-row">
+                <label for="reticleSizeSlider">Tamanho</label>
+                <div class="setting-control">
+                  <input
+                    id="reticleSizeSlider"
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.05"
+                    value="0.5"
+                  />
+                  <span id="reticleSizeValue">50%</span>
+                </div>
+              </div>
+              <div class="setting-row" id="reticleCenterRow">
+                <label for="reticleCenterToggle">Meio visível</label>
+                <label class="toggle-control">
+                  <input id="reticleCenterToggle" type="checkbox" checked />
+                  <span>Ponto no centro da cruz / círculo</span>
+                </label>
+              </div>
+              <div class="setting-row">
+                <label>Comportamento</label>
+                <div class="reticle-modes" id="reticleModes">
+                  <button type="button" class="reticle-mode-btn" data-reticle-mode="static">
+                    Estática
+                  </button>
+                  <button type="button" class="reticle-mode-btn active" data-reticle-mode="dynamic">
+                    Dinâmica
+                  </button>
+                </div>
+                <p class="setting-hint" id="reticleModeHint">
+                  Abre com o spread da arma até um limite — útil para ver o cone de tiro.
+                </p>
+              </div>
             </div>
           </div>
           <div id="settingsLobbyPanel" class="settings-tab-panel hidden">
