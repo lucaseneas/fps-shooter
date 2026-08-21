@@ -68,6 +68,11 @@ export class RemotePlayer {
   private readonly bodyMesh: Mesh;
   private readonly headMesh: Mesh;
   private readonly nameplate: Mesh;
+  private nameplateTex!: DynamicTexture;
+  private playerName: string;
+  private nameplateWanted = true;
+  private nameplateColor = "white";
+  private readonly aimPick: Mesh;
   private readonly gun: Mesh;
   private readonly debugBodyHitbox: Mesh;
   private readonly debugHeadHitbox: Mesh;
@@ -107,6 +112,7 @@ export class RemotePlayer {
 
   constructor(scene: Scene, id: string, name: string) {
     this.id = id;
+    this.playerName = name;
 
     this.root = MeshBuilder.CreateBox(
       `${id}_root`,
@@ -146,6 +152,24 @@ export class RemotePlayer {
     this.headMesh.material = headMat;
     this.headMesh.metadata = { hitbox: { id, part: "head" } };
     this.headMesh.isVisible = false; // Substituído pelo Voxel
+    this.bodyMesh.isPickable = false;
+    this.headMesh.isPickable = false;
+
+    const aimPick = MeshBuilder.CreateBox(
+      `${id}_aimPick`,
+      {
+        width: HITBOX.bodyHalf.x * 2.2,
+        height: STAND_HEIGHT,
+        depth: HITBOX.bodyHalf.z * 2.2,
+      },
+      scene
+    );
+    aimPick.parent = this.root;
+    aimPick.position.y = 0;
+    aimPick.visibility = 0;
+    aimPick.isPickable = true;
+    aimPick.metadata = { remoteAimId: id };
+    this.aimPick = aimPick;
 
     // Componente visual do jogador 3D (Minecraft rig com todas animações)
     this.visual = new PlayerVisual(scene, `${id}_visual`, this.root);
@@ -216,10 +240,10 @@ export class RemotePlayer {
     this.gun.parent = this.root;
     this.gun.position = new Vector3(0.32, 0.32, 0.3);
 
-    this.nameplate = this.createNameplate(scene, name);
+    this.nameplate = this.createNameplate(scene);
   }
 
-  private createNameplate(scene: Scene, name: string): Mesh {
+  private createNameplate(scene: Scene): Mesh {
     const plane = MeshBuilder.CreatePlane(
       `${this.id}_name`,
       { width: 1.6, height: 0.4 },
@@ -237,15 +261,8 @@ export class RemotePlayer {
       false
     );
     texture.hasAlpha = true;
-    texture.drawText(
-      name,
-      null,
-      44,
-      "bold 36px 'Segoe UI'",
-      "white",
-      "transparent",
-      true
-    );
+    this.nameplateTex = texture;
+    this.drawNameplate("white");
 
     const mat = new StandardMaterial(`${this.id}_nameMat`, scene);
     mat.diffuseTexture = texture;
@@ -254,6 +271,35 @@ export class RemotePlayer {
     mat.backFaceCulling = false;
     plane.material = mat;
     return plane;
+  }
+
+  private drawNameplate(color: string): void {
+    this.nameplateColor = color;
+    this.nameplateTex.clear();
+    this.nameplateTex.drawText(
+      this.playerName,
+      null,
+      44,
+      "bold 36px 'Segoe UI'",
+      color,
+      "transparent",
+      true
+    );
+  }
+
+  /**
+   * Aliado: sempre visível (azul).
+   * Inimigo (e FFA): só com a mira em cima, em vermelho.
+   */
+  setNameplateRole(role: "ffa" | "ally" | "enemy", aimed: boolean): void {
+    if (role === "ally") {
+      this.nameplateWanted = true;
+      if (this.nameplateColor !== "#8ec8ff") this.drawNameplate("#8ec8ff");
+    } else {
+      this.nameplateWanted = aimed;
+      if (this.nameplateColor !== "#ff5a4a") this.drawNameplate("#ff5a4a");
+    }
+    this.nameplate.setEnabled(this.aliveVisible && this.nameplateWanted);
   }
 
   setSkin(skinId: string): void {
@@ -671,7 +717,8 @@ export class RemotePlayer {
     this.aliveVisible = on;
     this.bodyMesh.setEnabled(on);
     this.headMesh.setEnabled(on);
-    this.nameplate.setEnabled(on);
+    this.nameplate.setEnabled(on && this.nameplateWanted);
+    this.aimPick.setEnabled(on);
     this.gun.setEnabled(on);
     this.visual.setEnabled(on);
     this.root.checkCollisions = on;

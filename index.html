@@ -90,7 +90,15 @@
       </div>
 
       <!-- Kills (topo centro) -->
-      <div id="killsPanel">Kills: <span id="killCount">0 / 20</span></div>
+      <div id="killsPanel">
+        <span id="killsPanelFfa">Kills: <span id="killCount">0 / 20</span></span>
+        <span id="killsPanelTdm" class="hidden">
+          <span class="tdm-alpha">Alfa <span id="teamKillsAlpha">0</span></span>
+          <span class="tdm-sep">—</span>
+          <span class="tdm-echo"><span id="teamKillsEcho">0</span> Echo</span>
+          <span class="tdm-target">/ <span id="teamKillsTarget">20</span></span>
+        </span>
+      </div>
 
       <!-- Vida (canto inferior esquerdo) -->
       <div id="healthPanel">
@@ -111,18 +119,47 @@
       <!-- Scoreboard (Tab) -->
       <div id="scoreboard" class="hidden">
         <h2>Placar</h2>
-        <table>
+        <table id="scoreboardFfaTable">
           <thead>
             <tr><th></th><th>Jogador</th><th>K</th><th>D</th></tr>
           </thead>
           <tbody id="scoreboardBody"></tbody>
         </table>
+        <div id="scoreboardTdm" class="score-teams hidden">
+          <div class="score-col alpha">
+            <h3>Equipe Alfa <span id="scoreAlphaTotal">0</span></h3>
+            <table>
+              <thead>
+                <tr><th></th><th>Jogador</th><th>K</th><th>D</th></tr>
+              </thead>
+              <tbody id="scoreboardAlphaBody"></tbody>
+            </table>
+          </div>
+          <div class="score-col echo">
+            <h3>Equipe Echo <span id="scoreEchoTotal">0</span></h3>
+            <table>
+              <thead>
+                <tr><th></th><th>Jogador</th><th>K</th><th>D</th></tr>
+              </thead>
+              <tbody id="scoreboardEchoBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <button type="button" id="scoreboardSwitchTeam" class="hidden">Trocar de equipe</button>
       </div>
 
       <!-- Tela de morte -->
       <div id="deathScreen" class="hidden">
+        <div id="deathTitle">Você morreu</div>
         <div id="deathInfo"></div>
-        <div id="deathTimer"></div>
+        <div id="deathWeapon"></div>
+        <div id="deathKillerHp">
+          <span id="deathKillerHpLabel">HP restante</span>
+          <div id="deathKillerHpBar"><div id="deathKillerHpFill"></div></div>
+          <span id="deathKillerHpText"></span>
+        </div>
+        <div id="deathCount">3</div>
+        <div id="deathTimer">Renascendo…</div>
       </div>
 
       <!-- Fim de partida -->
@@ -332,6 +369,7 @@
             <label for="createGameMode">Modo de jogo</label>
             <select id="createGameMode" class="setting-select">
               <option value="ffa" selected>Free-for-All</option>
+              <option value="tdm">Mata-Mata em equipe</option>
             </select>
           </div>
           <div class="setting-row">
@@ -376,7 +414,7 @@
       <div id="mapStudioSize" class="map-studio-size hidden">
         <div class="map-size-card">
           <h2>Tamanho do mapa</h2>
-          <p>O plano abre vazio, com bordas. Depois você coloca paredes, caixas e spawns.</p>
+          <p>O plano abre vazio, com bordas. Depois você coloca paredes, caixas e os spawns do FFA e do Mata-Mata em equipe.</p>
           <div class="map-size-grid">
             <button type="button" data-map-size="40">40 × 40</button>
             <button type="button" data-map-size="60">60 × 60</button>
@@ -514,8 +552,24 @@
                 <span id="lobbyPlayersCount" class="lobby-count"></span>
               </h2>
               <div id="lobbyPlayersList" class="lobby-players-list"></div>
+              <div id="lobbyTeams" class="lobby-teams hidden">
+                <div class="lobby-team-col alpha">
+                  <button type="button" id="lobbyTeamAlpha" class="lobby-team-head">
+                    Equipe Alfa
+                    <span id="lobbyTeamAlphaCount">0</span>
+                  </button>
+                  <div id="lobbyTeamAlphaList" class="lobby-team-rows"></div>
+                </div>
+                <div class="lobby-team-col echo">
+                  <button type="button" id="lobbyTeamEcho" class="lobby-team-head">
+                    Equipe Echo
+                    <span id="lobbyTeamEchoCount">0</span>
+                  </button>
+                  <div id="lobbyTeamEchoList" class="lobby-team-rows"></div>
+                </div>
+              </div>
               <p class="lobby-ready-count" id="lobbyReadyCount"></p>
-              <p class="lobby-hint">Botão direito num jogador para adicionar como amigo.</p>
+              <p class="lobby-hint" id="lobbyPlayersHint">Botão direito num jogador para adicionar como amigo.</p>
             </section>
 
             <aside class="lobby-panel lobby-chat">
@@ -576,6 +630,18 @@
             ESTOU PRONTO
           </button>
         </footer>
+      </div>
+    </div>
+
+    <!-- Confirmação de troca de equipe (Tab no Mata-Mata) -->
+    <div id="teamSwitchConfirm" class="hidden">
+      <div class="team-select-card">
+        <h2>Trocar de equipe?</h2>
+        <p id="teamSwitchConfirmText"></p>
+        <div class="modal-actions">
+          <button type="button" id="teamSwitchYes">Trocar</button>
+          <button type="button" id="teamSwitchNo" class="secondary">Cancelar</button>
+        </div>
       </div>
     </div>
 
@@ -744,65 +810,89 @@
     <div id="settingsModal" class="hidden menu-mode">
       <div class="modal-card">
         <h2>⚙ Configurações</h2>
+        <div class="settings-tabs">
+          <button type="button" class="settings-tab active" data-settingstab="gameplay">
+            Jogabilidade
+          </button>
+          <button
+            type="button"
+            id="settingsLobbyTab"
+            class="settings-tab hidden"
+            data-settingstab="lobby"
+          >
+            Lobby
+          </button>
+          <button type="button" class="settings-tab" data-settingstab="developer">
+            Desenvolvedor
+          </button>
+        </div>
         <div class="settings">
-          <div class="setting-row">
-            <label for="sensSlider">Sensibilidade da mira</label>
-            <div class="setting-control">
-              <input
-                id="sensSlider"
-                type="range"
-                min="0.05"
-                max="2"
-                step="0.05"
-                value="1"
-              />
-              <span id="sensValue">1.00</span>
+          <div id="settingsGameplayPanel" class="settings-tab-panel">
+            <div class="setting-row">
+              <label for="sensSlider">Sensibilidade da mira</label>
+              <div class="setting-control">
+                <input
+                  id="sensSlider"
+                  type="range"
+                  min="0.05"
+                  max="2"
+                  step="0.05"
+                  value="1"
+                />
+                <span id="sensValue">1.00</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label for="volSlider">Volume do jogo</label>
+              <div class="setting-control">
+                <input
+                  id="volSlider"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value="0.5"
+                />
+                <span id="volValue">50%</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label for="reticleSelect">Retícula</label>
+              <select id="reticleSelect" class="setting-select">
+                <option value="cross">Cruz</option>
+                <option value="dot">Ponto</option>
+                <option value="ring">Círculo</option>
+                <option value="chevron">Chevron</option>
+              </select>
             </div>
           </div>
-          <div class="setting-row" id="botsSettingRow">
-            <label for="botsSlider">Bots na sala</label>
-            <div class="setting-control">
-              <input
-                id="botsSlider"
-                type="range"
-                min="0"
-                max="7"
-                step="1"
-                value="7"
-              />
-              <span id="botsValue">7</span>
-            </div>
-            <p class="setting-hint" id="botsHostHint">Apenas o líder da sala pode alterar.</p>
-          </div>
-          <div class="setting-row">
-            <label for="volSlider">Volume</label>
-            <div class="setting-control">
-              <input
-                id="volSlider"
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value="0.5"
-              />
-              <span id="volValue">50%</span>
+          <div id="settingsLobbyPanel" class="settings-tab-panel hidden">
+            <div class="setting-row" id="botsSettingRow">
+              <label for="botsSlider">Quantidade de bots</label>
+              <div class="setting-control">
+                <input
+                  id="botsSlider"
+                  type="range"
+                  min="0"
+                  max="7"
+                  step="1"
+                  value="7"
+                />
+                <span id="botsValue">7</span>
+              </div>
+              <p class="setting-hint" id="botsHostHint">
+                Define quantos bots preenchem os slots vazios.
+              </p>
             </div>
           </div>
-          <div class="setting-row">
-            <label for="reticleSelect">Retícula</label>
-            <select id="reticleSelect" class="setting-select">
-              <option value="cross">Cruz</option>
-              <option value="dot">Ponto</option>
-              <option value="ring">Círculo</option>
-              <option value="chevron">Chevron</option>
-            </select>
-          </div>
-          <div class="setting-row debug-setting">
-            <label for="debugModeToggle">Modo debug</label>
-            <label class="toggle-control">
-              <input id="debugModeToggle" type="checkbox" />
-              <span>Vida, munição, hitboxes e trajetórias do servidor</span>
-            </label>
+          <div id="settingsDeveloperPanel" class="settings-tab-panel hidden">
+            <div class="setting-row debug-setting">
+              <label for="debugModeToggle">Modo debug</label>
+              <label class="toggle-control">
+                <input id="debugModeToggle" type="checkbox" />
+                <span>Vida, munição, hitboxes e trajetórias do servidor</span>
+              </label>
+            </div>
           </div>
         </div>
         <div class="modal-actions">
@@ -869,7 +959,7 @@
     <!-- Modal: informações do amigo (igual ao perfil da home) -->
     <div id="friendInfoModal" class="hidden social-overlay">
       <div class="modal-card friend-info-card">
-        <h2>Amigo</h2>
+        <h2>Informações</h2>
         <p class="profile-name" id="friendInfoName">—</p>
         <p class="profile-meta" id="friendInfoMeta"></p>
         <div class="profile-body">

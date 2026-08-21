@@ -38,14 +38,21 @@ export type EditorTool =
   | "pillar"
   | "platform"
   | "stair"
-  | "spawn";
+  | "spawn"
+  | "spawnAlpha"
+  | "spawnEcho";
+
+export type SpawnListId = "ffa" | "alpha" | "echo";
 
 export type EditorSelection =
   | { type: "piece"; id: string }
-  | { type: "spawn"; index: number }
+  | { type: "spawn"; list: SpawnListId; index: number }
   | null;
 
-const KIND_COLOR: Record<EditorPieceKind | "border" | "spawn", Color3> = {
+const KIND_COLOR: Record<
+  EditorPieceKind | "border" | "spawn" | "spawnAlpha" | "spawnEcho",
+  Color3
+> = {
   wall: new Color3(0.32, 0.38, 0.46),
   box: new Color3(0.69, 0.42, 0.21),
   pillar: new Color3(0.62, 0.64, 0.7),
@@ -53,7 +60,19 @@ const KIND_COLOR: Record<EditorPieceKind | "border" | "spawn", Color3> = {
   stair: new Color3(0.62, 0.58, 0.5),
   border: new Color3(0.22, 0.24, 0.28),
   spawn: new Color3(0.25, 0.85, 0.42),
+  spawnAlpha: new Color3(0.3, 0.55, 1),
+  spawnEcho: new Color3(0.88, 0.33, 0.27),
 };
+
+function isSpawnTool(tool: EditorTool): tool is "spawn" | "spawnAlpha" | "spawnEcho" {
+  return tool === "spawn" || tool === "spawnAlpha" || tool === "spawnEcho";
+}
+
+function toolToSpawnList(tool: "spawn" | "spawnAlpha" | "spawnEcho"): SpawnListId {
+  if (tool === "spawnAlpha") return "alpha";
+  if (tool === "spawnEcho") return "echo";
+  return "ffa";
+}
 
 function hexToColor3(hex: string): Color3 {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -209,7 +228,7 @@ export class MapEditor {
   setTool(tool: EditorTool): void {
     this.tool = tool;
     if (tool !== "select") this.selection = null;
-    if (tool !== "select" && tool !== "spawn") {
+    if (tool !== "select" && !isSpawnTool(tool)) {
       const p = PIECE_PRESETS[tool];
       this.brush = { w: p.w, h: p.h, d: p.d };
     }
@@ -266,7 +285,7 @@ export class MapEditor {
       this.rebuildPieces();
       this.markDirty();
     } else if (this.selection?.type === "spawn") {
-      const s = this.def.spawns[this.selection.index];
+      const s = this.spawnArray(this.selection.list)[this.selection.index];
       if (!s) return;
       s.x = snapTo(x, this.grid);
       s.z = snapTo(z, this.grid);
@@ -291,8 +310,10 @@ export class MapEditor {
     const sel = this.selection;
     if (sel.type === "piece") {
       this.def.pieces = this.def.pieces.filter((p) => p.id !== sel.id);
-    } else if (this.def.spawns.length > 1) {
-      this.def.spawns.splice(sel.index, 1);
+    } else if (sel.type === "spawn") {
+      const list = this.spawnArray(sel.list);
+      if (sel.list === "ffa" && list.length <= 1) return;
+      list.splice(sel.index, 1);
     } else {
       return;
     }
@@ -336,6 +357,25 @@ export class MapEditor {
     if (this.history.length > 60) this.history.shift();
     this.historyIndex = this.history.length - 1;
     this.emitChange();
+  }
+
+  private spawnArray(list: SpawnListId): SpawnPoint[] {
+    if (!this.def) return [];
+    if (list === "alpha") {
+      if (!this.def.spawnsAlpha) this.def.spawnsAlpha = [];
+      return this.def.spawnsAlpha;
+    }
+    if (list === "echo") {
+      if (!this.def.spawnsEcho) this.def.spawnsEcho = [];
+      return this.def.spawnsEcho;
+    }
+    return this.def.spawns;
+  }
+
+  private spawnColorKey(list: SpawnListId): "spawn" | "spawnAlpha" | "spawnEcho" {
+    if (list === "alpha") return "spawnAlpha";
+    if (list === "echo") return "spawnEcho";
+    return "spawn";
   }
 
   private selectedPiece(): EditorPiece | null {
@@ -494,18 +534,23 @@ export class MapEditor {
     for (const m of this.spawnMeshes) m.dispose();
     this.spawnMeshes = [];
     if (!this.def) return;
-    this.def.spawns.forEach((s, i) => {
-      const mesh = MeshBuilder.CreateCylinder(
-        `ed_spawn_${i}`,
-        { height: 1.2, diameter: 1.1, tessellation: 10 },
-        this.scene
-      );
-      mesh.position = new Vector3(s.x, 0.6, s.z);
-      mesh.material = this.mat("spawn", KIND_COLOR.spawn);
-      mesh.isPickable = true;
-      mesh.metadata = { editor: "spawn", index: i };
-      this.spawnMeshes.push(mesh);
-    });
+    this.def.spawns.forEach((s, i) => this.addSpawnMesh(s, "ffa", i));
+    (this.def.spawnsAlpha ?? []).forEach((s, i) => this.addSpawnMesh(s, "alpha", i));
+    (this.def.spawnsEcho ?? []).forEach((s, i) => this.addSpawnMesh(s, "echo", i));
+  }
+
+  private addSpawnMesh(s: SpawnPoint, list: SpawnListId, i: number): void {
+    const key = this.spawnColorKey(list);
+    const mesh = MeshBuilder.CreateCylinder(
+      `ed_spawn_${list}_${i}`,
+      { height: 1.2, diameter: 1.1, tessellation: 10 },
+      this.scene
+    );
+    mesh.position = new Vector3(s.x, 0.6, s.z);
+    mesh.material = this.mat(key, KIND_COLOR[key]);
+    mesh.isPickable = true;
+    mesh.metadata = { editor: "spawn", list, index: i };
+    this.spawnMeshes.push(mesh);
   }
 
   private groundHit(): Vector3 | null {
@@ -549,7 +594,12 @@ export class MapEditor {
         this.updateSelectBox();
         return;
       }
-      const meta = picked.metadata as { editor?: string; id?: string; index?: number };
+      const meta = picked.metadata as {
+        editor?: string;
+        id?: string;
+        index?: number;
+        list?: SpawnListId;
+      };
       if (meta.editor === "piece" && meta.id) {
         this.selection = { type: "piece", id: meta.id };
         const p = this.selectedPiece();
@@ -560,8 +610,9 @@ export class MapEditor {
           this.dragOffset = { x: p.x - hit.x, z: p.z - hit.z };
         }
       } else if (meta.editor === "spawn" && typeof meta.index === "number") {
-        this.selection = { type: "spawn", index: meta.index };
-        const s = this.def.spawns[meta.index];
+        const list: SpawnListId = meta.list ?? "ffa";
+        this.selection = { type: "spawn", list, index: meta.index };
+        const s = this.spawnArray(list)[meta.index];
         const hit = this.groundHit();
         if (s && hit) {
           this.dragging = true;
@@ -578,10 +629,12 @@ export class MapEditor {
     if (!hit) return;
     const x = snapTo(hit.x, this.grid);
     const z = snapTo(hit.z, this.grid);
-    if (this.tool === "spawn") {
-      if (this.def.spawns.length >= 24) return;
-      this.def.spawns.push({ x, z });
-      this.clampSpawn(this.def.spawns[this.def.spawns.length - 1]);
+    if (isSpawnTool(this.tool)) {
+      const list = toolToSpawnList(this.tool);
+      const arr = this.spawnArray(list);
+      if (arr.length >= 24) return;
+      arr.push({ x, z });
+      this.clampSpawn(arr[arr.length - 1]);
       this.rebuildSpawns();
       this.markDirty();
       return;
@@ -605,7 +658,7 @@ export class MapEditor {
           this.rebuildPieces();
         }
       } else if (this.selection?.type === "spawn") {
-        const s = this.def.spawns[this.selection.index];
+        const s = this.spawnArray(this.selection.list)[this.selection.index];
         if (s) {
           s.x = x;
           s.z = z;
@@ -670,14 +723,15 @@ export class MapEditor {
     if (!hit) return;
     const x = snapTo(hit.x, this.grid);
     const z = snapTo(hit.z, this.grid);
-    if (this.tool === "spawn") {
+    if (isSpawnTool(this.tool)) {
+      const key = this.spawnColorKey(toolToSpawnList(this.tool));
       const mesh = MeshBuilder.CreateCylinder(
         "ed_ghost",
         { height: 1.2, diameter: 1.1, tessellation: 10 },
         this.scene
       );
       mesh.position = new Vector3(x, 0.6, z);
-      mesh.material = this.mat("ghost_spawn", KIND_COLOR.spawn, 0.4);
+      mesh.material = this.mat(`ghost_${key}`, KIND_COLOR[key], 0.4);
       mesh.isPickable = false;
       this.ghost = mesh;
       return;
@@ -720,7 +774,7 @@ export class MapEditor {
         w = p.w + 0.12;
       }
     } else {
-      const s = this.def.spawns[this.selection.index];
+      const s = this.spawnArray(this.selection.list)[this.selection.index];
       if (!s) return;
       x = s.x;
       z = s.z;

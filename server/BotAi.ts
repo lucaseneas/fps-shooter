@@ -40,6 +40,7 @@ export interface BotWorld {
   broadcastShot(e: ShotEvent): void;
   isMatchOver(): boolean;
   getMap(): MapCollision;
+  getSpawns(team?: string): SpawnPoint[];
 }
 
 /**
@@ -64,7 +65,7 @@ export class BotAi {
     this.id = id;
     this.state = state;
     this.world = world;
-    this.patrolTarget = randomSpawn(world.getMap().spawns);
+    this.patrolTarget = randomSpawn(world.getSpawns(state.team));
   }
 
   update(dt: number): void {
@@ -87,7 +88,7 @@ export class BotAi {
   /** Reinicia estado interno após respawn. */
   reset(): void {
     this.targetId = null;
-    this.patrolTarget = randomSpawn(this.world.getMap().spawns);
+    this.patrolTarget = randomSpawn(this.world.getSpawns(this.state.team));
     this.reactionRemaining = 0;
     this.fireCooldown = 0;
   }
@@ -96,7 +97,12 @@ export class BotAi {
     const players = this.world.getPlayers();
     const current = this.targetId ? players.get(this.targetId) : undefined;
 
-    if (current && current.alive && this.canSee(current)) {
+    if (
+      current &&
+      current.alive &&
+      !(this.state.team && current.team === this.state.team) &&
+      this.canSee(current)
+    ) {
       this.timeSinceSeen = 0;
       return;
     }
@@ -108,6 +114,7 @@ export class BotAi {
     let bestDist = VIEW_DISTANCE;
     for (const [id, p] of players) {
       if (id === this.id || !p.alive) continue;
+      if (this.state.team && p.team && p.team === this.state.team) continue;
       const d = distance3(
         this.state.x, EYE_HEIGHT, this.state.z,
         p.x, p.y + EYE_HEIGHT, p.z
@@ -140,7 +147,7 @@ export class BotAi {
     const dist = Math.hypot(dx, dz);
 
     if (dist < 1.5 || this.repathTimer <= 0) {
-      this.patrolTarget = randomSpawn(this.world.getMap().spawns);
+      this.patrolTarget = randomSpawn(this.world.getSpawns(this.state.team));
       this.repathTimer = 6 + Math.random() * 6;
       return;
     }

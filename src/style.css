@@ -667,6 +667,37 @@ body {
   font-weight: 700;
 }
 
+#killsPanelTdm {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 700;
+}
+
+#killsPanelTdm.hidden,
+#killsPanelFfa.hidden {
+  display: none;
+}
+
+.tdm-alpha {
+  color: #6ea8ff;
+}
+
+.tdm-echo {
+  color: #ff6b5e;
+}
+
+.tdm-sep {
+  color: #8b97a3;
+  font-weight: 500;
+}
+
+.tdm-target {
+  color: #8b97a3;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* ---------- Vida ---------- */
 #healthPanel {
   position: absolute;
@@ -768,9 +799,73 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 18px 24px;
+  pointer-events: auto;
+  user-select: none;
 }
 
 #scoreboard.hidden {
+  display: none;
+}
+
+#scoreboardFfaTable.hidden,
+#scoreboardTdm.hidden {
+  display: none;
+}
+
+.score-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-width: min(720px, 86vw);
+}
+
+.score-col h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.score-col.alpha h3 {
+  color: #9cc4ff;
+}
+
+.score-col.echo h3 {
+  color: #ff9a90;
+}
+
+.score-col h3 span {
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+#scoreboard .score-empty {
+  text-align: center;
+  color: #6b7580;
+  font-size: 12px;
+}
+
+#scoreboardSwitchTeam {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #1a1206;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#scoreboardSwitchTeam.hidden {
   display: none;
 }
 
@@ -820,9 +915,12 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-#scoreboard tr.me td {
-  color: var(--accent);
-  font-weight: 700;
+#scoreboard tr[data-score-player]:not(.me) {
+  cursor: pointer;
+}
+
+#scoreboard tr[data-score-player]:not(.me):hover td {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 #scoreboard .score-tag {
@@ -848,38 +946,154 @@ body {
 }
 
 #scoreboard tr.host:not(.me) td:nth-child(2) {
-  color: #f0d78c;
+  color: var(--accent);
+}
+
+#scoreboard tr.score-team td {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding-top: 10px;
+  color: #c5d0dc;
+}
+
+#scoreboard tr.score-team.alpha td {
+  color: #7db3fc;
+}
+
+#scoreboard tr.score-team.echo td {
+  color: #ff8a7a;
 }
 
 /* ---------- Tela de morte ---------- */
 #deathScreen {
   position: absolute;
   inset: 0;
+  z-index: 8;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   background: radial-gradient(
     ellipse at center,
-    rgba(120, 10, 10, 0.25),
-    rgba(30, 5, 5, 0.6)
+    rgba(10, 2, 2, 0.62),
+    rgba(0, 0, 0, 0.88)
   );
+  animation: deathFadeIn 0.28s ease-out;
 }
 
 #deathScreen.hidden {
   display: none;
 }
 
+#deathTitle {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #ff6b6b;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+}
+
 #deathInfo {
-  font-size: 24px;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+}
+
+#deathWeapon {
+  font-size: 14px;
   font-weight: 600;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.6px;
+  color: #c8b8b8;
+}
+
+#deathKillerHp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 4px;
+}
+
+#deathKillerHp.hidden {
+  display: none;
+}
+
+#deathKillerHpLabel {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #b8a8a8;
+}
+
+#deathKillerHp.hidden {
+  display: none;
+}
+
+#deathKillerHpBar {
+  width: 140px;
+  height: 10px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+#deathKillerHpFill {
+  height: 100%;
+  width: 100%;
+  border-radius: 4px;
+  background: #6fd66f;
+}
+
+#deathKillerHpText {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f0e8e8;
+  min-width: 52px;
+}
+
+#deathCount {
+  font-size: 108px;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffffff;
+  text-shadow:
+    0 0 28px rgba(255, 70, 70, 0.55),
+    0 4px 18px rgba(0, 0, 0, 0.9);
+}
+
+#deathCount.pop {
+  animation: deathCountPop 0.35s ease-out;
 }
 
 #deathTimer {
   font-size: 15px;
-  color: #d8c0c0;
+  letter-spacing: 1px;
+  color: #c8b8b8;
+}
+
+@keyframes deathFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes deathCountPop {
+  from {
+    transform: scale(1.35);
+    opacity: 0.35;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* ---------- Fim de partida ---------- */
@@ -910,6 +1124,14 @@ body {
   flex-shrink: 0;
   max-height: 38vh;
   overflow-y: auto;
+}
+
+#endScreen #scoreboard .score-teams {
+  min-width: 0;
+}
+
+#scoreboard.end-mode #scoreboardSwitchTeam {
+  display: none;
 }
 
 #endTitle {
@@ -1719,6 +1941,169 @@ body {
   color: #7db3fc;
 }
 
+.lobby-chip.team-alpha {
+  background: rgba(77, 141, 255, 0.18);
+  color: #7db3fc;
+}
+
+.lobby-chip.team-echo {
+  background: rgba(224, 85, 69, 0.18);
+  color: #ff8a7a;
+}
+
+.lobby-players-list.hidden,
+.lobby-teams.hidden {
+  display: none;
+}
+
+.lobby-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lobby-team-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 14, 20, 0.4);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.lobby-team-col.alpha {
+  border-color: rgba(77, 141, 255, 0.28);
+}
+
+.lobby-team-col.echo {
+  border-color: rgba(224, 85, 69, 0.28);
+}
+
+.lobby-team-col.mine.alpha {
+  border-color: #4d8dff;
+  box-shadow: inset 0 0 0 1px rgba(77, 141, 255, 0.25);
+}
+
+.lobby-team-col.mine.echo {
+  border-color: #e05545;
+  box-shadow: inset 0 0 0 1px rgba(224, 85, 69, 0.25);
+}
+
+.lobby-team-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: #e8ecf1;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.lobby-team-col.alpha .lobby-team-head {
+  color: #9cc4ff;
+  background: rgba(77, 141, 255, 0.12);
+}
+
+.lobby-team-col.echo .lobby-team-head {
+  color: #ff9a90;
+  background: rgba(224, 85, 69, 0.12);
+}
+
+.lobby-team-head:hover,
+.lobby-team-head.active {
+  filter: brightness(1.12);
+}
+
+.lobby-team-head span {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: inherit;
+  opacity: 0.8;
+}
+
+.lobby-team-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.lobby-team-empty {
+  margin: 8px 4px;
+  font-size: 12px;
+  color: #6b7580;
+  text-align: center;
+}
+
+.lobby-teams .lobby-player-row {
+  padding: 8px 8px;
+}
+
+.lobby-teams .lobby-chips {
+  margin-left: auto;
+}
+
+.team-select-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.team-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 14, 20, 0.7);
+  color: #e8ecf1;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.team-btn.alpha {
+  border-color: rgba(77, 141, 255, 0.45);
+}
+
+.team-btn.echo {
+  border-color: rgba(224, 85, 69, 0.45);
+}
+
+.team-btn.alpha.active,
+.team-btn.alpha:hover {
+  border-color: #4d8dff;
+  color: #9cc4ff;
+  background: rgba(77, 141, 255, 0.16);
+}
+
+.team-btn.echo.active,
+.team-btn.echo:hover {
+  border-color: #e05545;
+  color: #ff9a90;
+  background: rgba(224, 85, 69, 0.16);
+}
+
+.team-btn-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b97a3;
+}
+
 .lobby-kick {
   flex-shrink: 0;
   width: 26px;
@@ -1895,6 +2280,49 @@ kbd {
 
 #loadoutModal.hidden {
   display: none;
+}
+
+#teamSwitchConfirm {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 13, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+#teamSwitchConfirm.hidden {
+  display: none;
+}
+
+.team-select-card {
+  min-width: min(420px, 92vw);
+  padding: 28px 24px 20px;
+  border-radius: 16px;
+  background: rgba(16, 22, 32, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+.team-select-card h2 {
+  margin: 0 0 8px;
+}
+
+.team-select-card p {
+  margin: 0 0 18px;
+  color: #8b97a3;
+  font-size: 13px;
+}
+
+.team-select-card .modal-actions {
+  margin-top: 8px;
+}
+
+.team-select-confirm {
+  margin-top: 16px;
+  width: 100%;
 }
 
 /* Pré-spawn: vê o mapa de cima atrás do painel. */
@@ -2298,14 +2726,60 @@ kbd {
 }
 
 /* ---------- Configurações ---------- */
+#settingsModal .modal-card {
+  min-width: 420px;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 18px 0 0;
+}
+
+.settings-tab {
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #8b97a3;
+  background: rgba(10, 14, 20, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-tab:hover {
+  color: #e8ecf1;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.settings-tab.active {
+  color: #1a1206;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.settings-tab.hidden {
+  display: none;
+}
+
 .settings {
-  margin: 20px auto 0;
+  margin: 14px auto 0;
   padding: 14px 18px;
-  max-width: 300px;
+  max-width: 360px;
+  min-height: 148px;
   text-align: left;
   background: rgba(10, 14, 20, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
+}
+
+.settings-tab-panel.hidden {
+  display: none;
 }
 
 .settings h3 {
@@ -3434,7 +3908,7 @@ kbd {
 .social-overlay {
   position: fixed;
   inset: 0;
-  z-index: 45;
+  z-index: 60;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4081,6 +4555,20 @@ kbd {
 
 #pageMaps .map-tool.active {
   background: rgba(255, 157, 47, 0.18);
+}
+
+#pageMaps .map-tool[data-tool="spawnAlpha"].active,
+#pageMaps .map-tool[data-tool="spawnAlpha"]:hover {
+  border-color: #4d8dff;
+  color: #7db3fc;
+  background: rgba(77, 141, 255, 0.16);
+}
+
+#pageMaps .map-tool[data-tool="spawnEcho"].active,
+#pageMaps .map-tool[data-tool="spawnEcho"]:hover {
+  border-color: #e05545;
+  color: #ff8a7a;
+  background: rgba(224, 85, 69, 0.16);
 }
 
 .map-dims {

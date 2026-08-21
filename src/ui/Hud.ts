@@ -16,6 +16,10 @@ export interface ScoreRow {
   isHost?: boolean;
   /** XP de carreira — define a insígnia exibida ao lado do nome. */
   xp: number;
+  team?: string;
+  /** Id da conta (0 = convidado/bot) — menu do Social no placar. */
+  userId?: number;
+  isBot?: boolean;
 }
 
 /** Resumo de gold exibido na tela de fim de partida. */
@@ -58,14 +62,32 @@ export class Hud {
   private readonly weaponName = el<HTMLDivElement>("weaponName");
   private readonly weaponSlots = el<HTMLDivElement>("weaponSlots");
   private readonly killCount = el<HTMLSpanElement>("killCount");
+  private readonly killsPanelFfa = el<HTMLSpanElement>("killsPanelFfa");
+  private readonly killsPanelTdm = el<HTMLSpanElement>("killsPanelTdm");
+  private readonly teamKillsAlphaEl = el<HTMLSpanElement>("teamKillsAlpha");
+  private readonly teamKillsEchoEl = el<HTMLSpanElement>("teamKillsEcho");
+  private readonly teamKillsTargetEl = el<HTMLSpanElement>("teamKillsTarget");
   private readonly killFeed = el<HTMLDivElement>("killFeed");
   private readonly scoreboard = el<HTMLDivElement>("scoreboard");
   private readonly scoreboardBody = el<HTMLTableSectionElement>("scoreboardBody");
+  private readonly scoreboardFfaTable = el<HTMLTableElement>("scoreboardFfaTable");
+  private readonly scoreboardTdm = el<HTMLDivElement>("scoreboardTdm");
+  private readonly scoreboardAlphaBody = el<HTMLTableSectionElement>("scoreboardAlphaBody");
+  private readonly scoreboardEchoBody = el<HTMLTableSectionElement>("scoreboardEchoBody");
+  private readonly scoreAlphaTotal = el<HTMLSpanElement>("scoreAlphaTotal");
+  private readonly scoreEchoTotal = el<HTMLSpanElement>("scoreEchoTotal");
+  private readonly scoreboardSwitchTeam = el<HTMLButtonElement>("scoreboardSwitchTeam");
   /** Posição original do placar no DOM (ele entra no fluxo da tela de fim). */
   private scoreboardHome: { parent: HTMLElement; next: ChildNode | null } | null = null;
   private readonly deathScreen = el<HTMLDivElement>("deathScreen");
   private readonly deathInfo = el<HTMLDivElement>("deathInfo");
+  private readonly deathWeapon = el<HTMLDivElement>("deathWeapon");
+  private readonly deathKillerHp = el<HTMLDivElement>("deathKillerHp");
+  private readonly deathKillerHpFill = el<HTMLDivElement>("deathKillerHpFill");
+  private readonly deathKillerHpText = el<HTMLSpanElement>("deathKillerHpText");
+  private readonly deathCount = el<HTMLDivElement>("deathCount");
   private readonly deathTimer = el<HTMLDivElement>("deathTimer");
+  private lastDeathSecond = -1;
   private readonly endScreen = el<HTMLDivElement>("endScreen");
   private readonly endTitle = el<HTMLDivElement>("endTitle");
   private readonly endXpSummary = el<HTMLDivElement>("endXpSummary");
@@ -113,8 +135,32 @@ export class Hud {
     "MULTI KILL",
   ] as const;
 
+  onSwitchTeam: (() => void) | null = null;
+  onScoreboardPlayerMenu:
+    | ((
+        target: { userId: number; name: string; isBot?: boolean },
+        x: number,
+        y: number
+      ) => void)
+    | null = null;
+
   constructor() {
     this.renderStreakTimeline(0);
+    this.scoreboardSwitchTeam.addEventListener("click", () => this.onSwitchTeam?.());
+    this.scoreboard.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const tr = (e.target as HTMLElement).closest("tr[data-score-player]");
+      if (!tr || !this.scoreboard.contains(tr) || tr.classList.contains("me")) return;
+      this.onScoreboardPlayerMenu?.(
+        {
+          userId: Number(tr.getAttribute("data-user-id") ?? "0") || 0,
+          name: tr.getAttribute("data-player-name") ?? "",
+          isBot: tr.getAttribute("data-is-bot") === "1",
+        },
+        e.clientX,
+        e.clientY
+      );
+    });
   }
 
   setHealth(current: number): void {
@@ -161,14 +207,31 @@ export class Hud {
   }
 
   private killsTarget: number = CONFIG.killsToWin;
+  private teamScoreAlpha = 0;
+  private teamScoreEcho = 0;
 
   /** Define o total de kills para vencer (vem da config da sala). */
   setKillsTarget(target: number): void {
     this.killsTarget = target;
+    this.teamKillsTargetEl.textContent = String(target);
+  }
+
+  setScoreMode(mode: "ffa" | "tdm"): void {
+    this.killsPanelFfa.classList.toggle("hidden", mode === "tdm");
+    this.killsPanelTdm.classList.toggle("hidden", mode !== "tdm");
   }
 
   setKills(kills: number): void {
     this.killCount.textContent = `${kills} / ${this.killsTarget}`;
+  }
+
+  setTeamScores(alpha: number, echo: number): void {
+    this.teamScoreAlpha = alpha;
+    this.teamScoreEcho = echo;
+    this.teamKillsAlphaEl.textContent = String(alpha);
+    this.teamKillsEchoEl.textContent = String(echo);
+    this.scoreAlphaTotal.textContent = String(alpha);
+    this.scoreEchoTotal.textContent = String(echo);
   }
 
   /** Atualiza a timeline de kill streaks (kills sem morrer). */
@@ -408,9 +471,13 @@ export class Hud {
     window.setTimeout(() => ring.remove(), 900);
   }
 
-  setScoreboardVisible(on: boolean, rows?: ScoreRow[]): void {
+  setScoreboardVisible(on: boolean, rows?: ScoreRow[], showSwitch = false): void {
     if (!on) this.restoreScoreboard();
     this.scoreboard.classList.toggle("hidden", !on);
+    this.scoreboardSwitchTeam.classList.toggle(
+      "hidden",
+      !on || !showSwitch || this.scoreboard.classList.contains("end-mode")
+    );
     if (on && rows) this.renderScoreboard(rows);
   }
 
@@ -427,37 +494,80 @@ export class Hud {
   }
 
   renderScoreboard(rows: ScoreRow[]): void {
-    this.scoreboardBody.innerHTML = rows
-      .map((c) => {
-        const tags = [
-          c.isHost ? `<span class="score-tag host">Líder</span>` : "",
-          c.isPlayer ? `<span class="score-tag you">você</span>` : "",
-        ]
-          .filter(Boolean)
-          .join(" ");
-        const rank = rankForXp(c.xp);
-        return `
-      <tr class="${c.isPlayer ? "me" : ""}${c.isHost ? " host" : ""}">
+    const tdm = rows.some((r) => r.team === "alpha" || r.team === "echo");
+    this.scoreboardFfaTable.classList.toggle("hidden", tdm);
+    this.scoreboardTdm.classList.toggle("hidden", !tdm);
+    if (!tdm) {
+      this.scoreboardBody.innerHTML = rows.map((c) => this.scoreRowHtml(c)).join("");
+      return;
+    }
+    const alpha = rows.filter((r) => r.team === "alpha");
+    const echo = rows.filter((r) => r.team === "echo");
+    this.scoreAlphaTotal.textContent = String(this.teamScoreAlpha);
+    this.scoreEchoTotal.textContent = String(this.teamScoreEcho);
+    this.scoreboardAlphaBody.innerHTML =
+      alpha.length > 0
+        ? alpha.map((c) => this.scoreRowHtml(c)).join("")
+        : `<tr><td colspan="4" class="score-empty">Ninguém nesta equipe</td></tr>`;
+    this.scoreboardEchoBody.innerHTML =
+      echo.length > 0
+        ? echo.map((c) => this.scoreRowHtml(c)).join("")
+        : `<tr><td colspan="4" class="score-empty">Ninguém nesta equipe</td></tr>`;
+  }
+
+  private scoreRowHtml(c: ScoreRow): string {
+    const tags = [
+      c.isHost ? `<span class="score-tag host">Líder</span>` : "",
+      c.isPlayer ? `<span class="score-tag you">você</span>` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const rank = rankForXp(c.xp);
+    const classes = [c.isPlayer ? "me" : "", c.isHost ? "host" : ""]
+      .filter(Boolean)
+      .join(" ");
+    return `
+      <tr class="${classes}" data-score-player="1" data-user-id="${c.userId ?? 0}" data-player-name="${escapeHtml(c.name)}" data-is-bot="${c.isBot ? "1" : "0"}">
         <td><img class="score-rank" src="${rankIconUrl(rank)}" alt="${rank.name}" title="${rank.name}" /></td>
         <td>${escapeHtml(c.name)}${tags ? ` ${tags}` : ""}</td>
         <td>${c.kills}</td>
         <td>${c.deaths}</td>
       </tr>`;
-      })
-      .join("");
   }
 
-  showDeathScreen(killerName: string, weaponName: string): void {
-    this.deathInfo.textContent = `Morto por ${killerName} [${weaponName}]`;
+  showDeathScreen(
+    killerName: string,
+    weaponName: string,
+    killerHealth = 0
+  ): void {
+    this.deathInfo.textContent = killerName || "?";
+    this.deathWeapon.textContent = weaponName ? `[${weaponName}]` : "";
+    const hp = Math.max(0, Math.round(killerHealth));
+    const pct = Math.max(0, Math.min(1, hp / CONFIG.playerMaxHealth));
+    this.deathKillerHpFill.style.width = `${pct * 100}%`;
+    this.deathKillerHpFill.style.background =
+      pct > 0.5 ? "#6fd66f" : pct > 0.25 ? "#e8c14a" : "#e05545";
+    this.deathKillerHpText.textContent = `${hp} HP`;
+    this.deathKillerHp.classList.toggle("hidden", !killerName);
+    this.lastDeathSecond = -1;
     this.deathScreen.classList.remove("hidden");
   }
 
   updateDeathTimer(seconds: number): void {
-    this.deathTimer.textContent = `Renascendo em ${Math.ceil(seconds)}…`;
+    const n = Math.max(0, Math.ceil(seconds));
+    this.deathCount.textContent = String(n);
+    this.deathTimer.textContent = n > 0 ? "Renascendo…" : "";
+    if (n !== this.lastDeathSecond) {
+      this.lastDeathSecond = n;
+      this.deathCount.classList.remove("pop");
+      void this.deathCount.offsetWidth;
+      this.deathCount.classList.add("pop");
+    }
   }
 
   hideDeathScreen(): void {
     this.deathScreen.classList.add("hidden");
+    this.lastDeathSecond = -1;
   }
 
   showEndScreen(

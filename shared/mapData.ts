@@ -140,7 +140,12 @@ export interface MapGeometry {
   mapSizeX: number;
   mapSizeZ: number;
   mapSize: number;
+  /** Spawns do Free-for-All. */
   spawns: SpawnPoint[];
+  /** Spawns da Equipe Alfa (Mata-Mata em equipe). */
+  spawnsAlpha: SpawnPoint[];
+  /** Spawns da Equipe Echo (Mata-Mata em equipe). */
+  spawnsEcho: SpawnPoint[];
 }
 
 /** Praça hardcoded — usada como mapa padrão e como template no editor. */
@@ -158,5 +163,7 @@ export function buildPracaGeometry(): MapGeometry {
     mapSizeZ: MAP_SIZE,
     mapSize: MAP_SIZE,
     spawns: [],
+    spawnsAlpha: [],
+    spawnsEcho: [],
   };
 }

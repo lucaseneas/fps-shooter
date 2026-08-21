@@ -30,8 +30,20 @@ const TOOLS: Array<{ id: EditorTool; label: string }> = [
   { id: "pillar", label: "Pilar" },
   { id: "platform", label: "Plataforma" },
   { id: "stair", label: "Escada" },
-  { id: "spawn", label: "Spawn" },
+  { id: "spawn", label: "Spawn FFA" },
+  { id: "spawnAlpha", label: "Spawn Alfa" },
+  { id: "spawnEcho", label: "Spawn Echo" },
 ];
+
+function isSpawnTool(tool: EditorTool): boolean {
+  return tool === "spawn" || tool === "spawnAlpha" || tool === "spawnEcho";
+}
+
+const SPAWN_LABEL: Record<"ffa" | "alpha" | "echo", string> = {
+  ffa: "FFA",
+  alpha: "Alfa",
+  echo: "Echo",
+};
 
 /**
  * Página de criação de mapas: lista, tamanho, editor 3D e publicação no catálogo global.
@@ -284,7 +296,15 @@ export class MapStudio {
     const latest = this.editor?.current;
     if (!latest) return;
     if (latest.spawns.length < 1) {
-      this.statusEl.textContent = "Defina pelo menos 1 spawn.";
+      this.statusEl.textContent = "Defina pelo menos 1 spawn do Free-for-All.";
+      return;
+    }
+    if (latest.spawnsAlpha.length < 1) {
+      this.statusEl.textContent = "Defina pelo menos 1 spawn da Equipe Alfa (norte).";
+      return;
+    }
+    if (latest.spawnsEcho.length < 1) {
+      this.statusEl.textContent = "Defina pelo menos 1 spawn da Equipe Echo (sul).";
       return;
     }
     this.statusEl.textContent = "A gravar…";
@@ -358,7 +378,7 @@ export class MapStudio {
       const when = new Date(m.updatedAt).toLocaleString("pt-BR");
       card.innerHTML = `
         <h3></h3>
-        <p>${m.size}×${m.size} · ${m.pieces.length} peças · ${m.spawns.length} spawns<br>${when}</p>
+        <p>${m.size}×${m.size} · ${m.pieces.length} peças · ${m.spawns.length} FFA · ${m.spawnsAlpha.length} Alfa · ${m.spawnsEcho.length} Echo<br>${when}</p>
         <div class="map-card-actions">
           <button type="button" data-act="edit">Editar</button>
           <button type="button" class="secondary" data-act="dup">Duplicar</button>
@@ -417,7 +437,7 @@ export class MapStudio {
     const def = ed?.current;
     const tool = ed?.currentTool ?? "select";
     const placing =
-      tool !== "select" && tool !== "spawn";
+      tool !== "select" && !isSpawnTool(tool);
     if (sel?.type === "piece" && def) {
       const p = def.pieces.find((x) => x.id === sel.id);
       this.selLabel.textContent = p
@@ -429,8 +449,14 @@ export class MapStudio {
       this.zInput.disabled = !p;
       this.setLookEnabled(Boolean(p), p?.color ?? (p ? KIND_DEFAULT_HEX[p.kind] : "#888888"), p?.texture ?? "default");
     } else if (sel?.type === "spawn" && def) {
-      const s = def.spawns[sel.index];
-      this.selLabel.textContent = `Spawn ${sel.index + 1} · Del apaga`;
+      const list =
+        sel.list === "alpha"
+          ? def.spawnsAlpha
+          : sel.list === "echo"
+            ? def.spawnsEcho
+            : def.spawns;
+      const s = list[sel.index];
+      this.selLabel.textContent = `Spawn ${SPAWN_LABEL[sel.list]} ${sel.index + 1} · Del apaga`;
       this.xInput.value = s ? String(s.x) : "0";
       this.zInput.value = s ? String(s.z) : "0";
       this.xInput.disabled = !s;
@@ -440,7 +466,11 @@ export class MapStudio {
       if (tool === "select") {
         this.selLabel.textContent = "Clique numa peça ou escolha uma ferramenta";
       } else if (tool === "spawn") {
-        this.selLabel.textContent = "Clique no chão para colocar spawn";
+        this.selLabel.textContent = "Clique no chão para spawn Free-for-All (verde)";
+      } else if (tool === "spawnAlpha") {
+        this.selLabel.textContent = "Clique no chão para spawn da Equipe Alfa (azul, norte)";
+      } else if (tool === "spawnEcho") {
+        this.selLabel.textContent = "Clique no chão para spawn da Equipe Echo (vermelho, sul)";
       } else {
         this.selLabel.textContent = `Clique no chão para colocar ${PIECE_PRESETS[tool].label.toLowerCase()}`;
       }
@@ -474,6 +504,6 @@ export class MapStudio {
       return;
     }
     const dirty = this.isDirty() ? " · não salvo" : " · salvo";
-    this.statusEl.textContent = `${def.size}×${def.size} · ${def.pieces.length} peças · ${def.spawns.length} spawns${dirty}`;
+    this.statusEl.textContent = `${def.size}×${def.size} · ${def.pieces.length} peças · ${def.spawns.length} FFA · ${def.spawnsAlpha.length} Alfa · ${def.spawnsEcho.length} Echo${dirty}`;
   }
 }

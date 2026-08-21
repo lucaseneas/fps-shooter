@@ -7,7 +7,7 @@ import {
   type MapGeometry,
   type SpawnPoint,
 } from "./mapData";
-import { SPAWN_POINTS } from "./spawnPoints";
+import { SPAWN_POINTS, SPAWN_POINTS_ALPHA, SPAWN_POINTS_ECHO } from "./spawnPoints";
 
 export const CUSTOM_MAP_PREFIX = "custom:";
 export const MAP_SIZE_OPTIONS = [40, 60, 80, 100, 120] as const;
@@ -55,7 +55,10 @@ export const KIND_DEFAULT_TEXTURE: Record<EditorPieceKind | "border", MapTexture
   border: "bg_wall",
 };
 
-export const KIND_DEFAULT_HEX: Record<EditorPieceKind | "border" | "spawn", string> = {
+export const KIND_DEFAULT_HEX: Record<
+  EditorPieceKind | "border" | "spawn" | "spawnAlpha" | "spawnEcho",
+  string
+> = {
   wall: "#525f75",
   box: "#b06a35",
   pillar: "#9ea3b2",
@@ -63,6 +66,8 @@ export const KIND_DEFAULT_HEX: Record<EditorPieceKind | "border" | "spawn", stri
   stair: "#9e9480",
   border: "#383d47",
   spawn: "#40d96b",
+  spawnAlpha: "#4d8dff",
+  spawnEcho: "#e05545",
 };
 
 export function textureUrlFor(
@@ -110,7 +115,12 @@ export interface CustomMapDef {
   name: string;
   size: number;
   pieces: EditorPiece[];
+  /** Spawns do Free-for-All. */
   spawns: SpawnPoint[];
+  /** Spawns da Equipe Alfa (Mata-Mata em equipe). */
+  spawnsAlpha: SpawnPoint[];
+  /** Spawns da Equipe Echo (Mata-Mata em equipe). */
+  spawnsEcho: SpawnPoint[];
   updatedAt: number;
 }
 
@@ -191,6 +201,24 @@ export function defaultSpawnsForSize(size: number): SpawnPoint[] {
   ];
 }
 
+/** Spawns TDM padrão: Alfa no norte (+Z), Echo no sul (−Z). */
+export function defaultTeamSpawnsForSize(size: number): {
+  alpha: SpawnPoint[];
+  echo: SpawnPoint[];
+} {
+  const inset = size / 2 - 6;
+  return {
+    alpha: [
+      { x: -6, z: inset },
+      { x: 6, z: inset },
+    ],
+    echo: [
+      { x: -6, z: -inset },
+      { x: 6, z: -inset },
+    ],
+  };
+}
+
 export function makeEmptyMap(name: string, size: number): CustomMapDef {
   const safeSize = MAP_SIZE_OPTIONS.includes(size as MapSizeOption)
     ? size
@@ -201,6 +229,8 @@ export function makeEmptyMap(name: string, size: number): CustomMapDef {
     size: safeSize,
     pieces: [],
     spawns: defaultSpawnsForSize(safeSize),
+    spawnsAlpha: [],
+    spawnsEcho: [],
     updatedAt: Date.now(),
   };
 }
@@ -234,6 +264,8 @@ export function pracaToCustomMap(): CustomMapDef {
     size: MAP_SIZE,
     pieces,
     spawns: SPAWN_POINTS.map((s) => ({ x: s.x, z: s.z })),
+    spawnsAlpha: SPAWN_POINTS_ALPHA.map((s) => ({ x: s.x, z: s.z })),
+    spawnsEcho: SPAWN_POINTS_ECHO.map((s) => ({ x: s.x, z: s.z })),
     updatedAt: Date.now(),
   };
 }
@@ -317,6 +349,11 @@ export function customMapToGeometry(def: CustomMapDef): MapGeometry {
   const play = half - 1.5;
   const spawns =
     def.spawns.length > 0 ? def.spawns : defaultSpawnsForSize(def.size);
+  const teamFallback = defaultTeamSpawnsForSize(def.size);
+  const spawnsAlpha =
+    def.spawnsAlpha.length > 0 ? def.spawnsAlpha : teamFallback.alpha;
+  const spawnsEcho =
+    def.spawnsEcho.length > 0 ? def.spawnsEcho : teamFallback.echo;
   return {
     id: def.id,
     boxes,
@@ -330,6 +367,8 @@ export function customMapToGeometry(def: CustomMapDef): MapGeometry {
     mapSizeZ: def.size,
     mapSize: def.size,
     spawns: spawns.map((s) => ({ x: s.x, z: s.z })),
+    spawnsAlpha: spawnsAlpha.map((s) => ({ x: s.x, z: s.z })),
+    spawnsEcho: spawnsEcho.map((s) => ({ x: s.x, z: s.z })),
   };
 }
 
@@ -390,13 +429,7 @@ export function sanitizeCustomMap(raw: unknown): CustomMapDef | null {
     if (s) pieces.push(s);
     if (pieces.length >= MAX_MAP_PIECES) break;
   }
-  const spawnsIn = Array.isArray(o.spawns) ? o.spawns : [];
-  const spawns: SpawnPoint[] = [];
-  for (const s of spawnsIn) {
-    const sp = sanitizeSpawn(s, size);
-    if (sp) spawns.push(sp);
-    if (spawns.length >= MAX_SPAWNS) break;
-  }
+  const spawns = sanitizeSpawnList(o.spawns, size);
   if (spawns.length < MIN_SPAWNS) {
     spawns.push(...defaultSpawnsForSize(size));
   }
@@ -406,8 +439,21 @@ export function sanitizeCustomMap(raw: unknown): CustomMapDef | null {
     size,
     pieces,
     spawns: spawns.slice(0, MAX_SPAWNS),
+    spawnsAlpha: sanitizeSpawnList(o.spawnsAlpha, size),
+    spawnsEcho: sanitizeSpawnList(o.spawnsEcho, size),
     updatedAt: num(o.updatedAt, Date.now(), 0, Date.now() + 1e12),
   };
+}
+
+function sanitizeSpawnList(raw: unknown, size: number): SpawnPoint[] {
+  const src = Array.isArray(raw) ? raw : [];
+  const out: SpawnPoint[] = [];
+  for (const s of src) {
+    const sp = sanitizeSpawn(s, size);
+    if (sp) out.push(sp);
+    if (out.length >= MAX_SPAWNS) break;
+  }
+  return out;
 }
 
 export function cloneCustomMap(def: CustomMapDef): CustomMapDef {
@@ -417,6 +463,8 @@ export function cloneCustomMap(def: CustomMapDef): CustomMapDef {
     size: def.size,
     pieces: def.pieces.map((p) => ({ ...p })),
     spawns: def.spawns.map((s) => ({ ...s })),
+    spawnsAlpha: (def.spawnsAlpha ?? []).map((s) => ({ ...s })),
+    spawnsEcho: (def.spawnsEcho ?? []).map((s) => ({ ...s })),
     updatedAt: def.updatedAt,
   };
 }
@@ -438,5 +486,7 @@ export function geometryPlayBound(geo: MapGeometry): number {
 export function defaultPracaGeometry(): MapGeometry {
   const geo = buildPracaGeometry();
   geo.spawns = SPAWN_POINTS.map((s) => ({ x: s.x, z: s.z }));
+  geo.spawnsAlpha = SPAWN_POINTS_ALPHA.map((s) => ({ x: s.x, z: s.z }));
+  geo.spawnsEcho = SPAWN_POINTS_ECHO.map((s) => ({ x: s.x, z: s.z }));
   return geo;
 }

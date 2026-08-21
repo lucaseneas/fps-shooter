@@ -46,6 +46,8 @@ export interface PlayerSnapshot {
   // Gold (total acumulado / ganho na partida)
   gold: number;
   matchGold: number;
+  /** Time no tdm: "alpha" | "echo" | "". */
+  team: string;
 }
 
 export interface MatchSnapshot {
@@ -60,6 +62,9 @@ export interface MatchSnapshot {
   mapId: string;
   matchStarted: boolean;
   mapPayload: string;
+  teamKillsAlpha: number;
+  teamKillsEcho: number;
+  winnerTeam: string;
 }
 
 let cachedClient: Client | null = null;
@@ -188,5 +193,8 @@ export function getMatchSnapshot(room: Room): MatchSnapshot {
     mapId: typeof s.mapId === "string" ? s.mapId : "praca",
     matchStarted: s.matchStarted === true,
     mapPayload: typeof s.mapPayload === "string" ? s.mapPayload : "",
+    teamKillsAlpha: typeof s.teamKillsAlpha === "number" ? s.teamKillsAlpha : 0,
+    teamKillsEcho: typeof s.teamKillsEcho === "number" ? s.teamKillsEcho : 0,
+    winnerTeam: typeof s.winnerTeam === "string" ? s.winnerTeam : "",
   };
 }

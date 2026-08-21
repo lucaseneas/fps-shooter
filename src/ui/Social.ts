@@ -37,6 +37,8 @@ export interface SocialHooks {
   myRoom(): MyRoomInfo | null;
   /** Chamado quando a conexão social fica pronta (enviar presença). */
   onConnected(): void;
+  /** Pedidos de amizade em tempo real só viram toast fora da partida. */
+  canShowSocialToasts(): boolean;
 }
 
 interface CtxItem {
@@ -82,6 +84,8 @@ export class SocialPanel {
   private awaitingLists = false;
   /** Assinatura das últimas listas — evita re-render sem mudança. */
   private lastListsSig = "";
+  /** Pedidos que chegaram durante a partida — toast ao voltar ao menu. */
+  private deferredRequests: Array<{ userId: number; name: string }> = [];
 
   constructor(hooks: SocialHooks) {
     this.hooks = hooks;
@@ -167,7 +171,7 @@ export class SocialPanel {
         this.updateBadges();
         if (changed) this.render();
       },
-      onRequest: (from) => this.pushRequestCard(from),
+      onRequest: (from) => this.handleIncomingRequest(from),
       onInvite: (invite) => this.pushInviteCard(invite),
       onToast: (message, isError) => this.toast(message, isError),
       onInfo: (userId, profile, presence) => {
@@ -225,6 +229,23 @@ export class SocialPanel {
     $("socialModal").classList.add("hidden");
     this.closeAddFriend();
     this.hideContextMenu();
+  }
+
+  /** Fecha menus/modais soltos (placar da partida, ESC). */
+  dismissPopovers(): void {
+    this.hideContextMenu();
+    this.closeFriendInfo();
+    this.closeAddFriend();
+  }
+
+  /**
+   * Mostra os pedidos de amizade que chegaram durante a partida.
+   * Chamado ao voltar ao lobby/menu.
+   */
+  flushDeferredRequests(): void {
+    if (!this.hooks.canShowSocialToasts()) return;
+    const pending = this.deferredRequests.splice(0);
+    for (const from of pending) this.pushRequestCard(from);
   }
 
   /** Fecha o que estiver aberto por cima. Retorna true se fechou algo. */
@@ -410,7 +431,7 @@ export class SocialPanel {
 
   /** Botão direito num jogador da lista do pré-lobby. */
   openLobbyPlayerMenu(
-    target: { userId: number; name: string },
+    target: { userId: number; name: string; isBot?: boolean },
     x: number,
     y: number
   ): void {
@@ -424,7 +445,14 @@ export class SocialPanel {
     }
     if (!target.userId) {
       this.showContextMenu(
-        [{ label: "Convidado — não pode receber pedidos", disabled: true }],
+        [
+          {
+            label: target.isBot
+              ? "Bot — não pode receber pedidos"
+              : "Convidado — não pode receber pedidos",
+            disabled: true,
+          },
+        ],
         x,
         y
       );
@@ -438,7 +466,13 @@ export class SocialPanel {
     }
     if (this.outgoing.has(target.userId)) {
       this.showContextMenu(
-        [{ label: "Pedido de amizade já enviado", disabled: true }],
+        [
+          {
+            label: "Informações",
+            action: () => this.openFriendInfo(target.userId),
+          },
+          { label: "Pedido de amizade já enviado", disabled: true },
+        ],
         x,
         y
       );
@@ -448,6 +482,10 @@ export class SocialPanel {
     if (incoming) {
       this.showContextMenu(
         [
+          {
+            label: "Informações",
+            action: () => this.openFriendInfo(target.userId),
+          },
           {
             label: "Aceitar pedido de amizade",
             action: () => respondFriendRequest(target.userId, true),
@@ -466,6 +504,10 @@ export class SocialPanel {
 
     this.showContextMenu(
       [
+        {
+          label: "Informações",
+          action: () => this.openFriendInfo(target.userId),
+        },
         {
           label: "Adicionar como amigo",
           action: () => requestFriend(target.userId),
@@ -697,6 +739,16 @@ export class SocialPanel {
 
     container.appendChild(card);
     window.setTimeout(dismiss, opts.timeoutMs ?? (opts.actions ? 30000 : 4500));
+  }
+
+  private handleIncomingRequest(from: { userId: number; name: string }): void {
+    if (this.hooks.canShowSocialToasts()) {
+      this.pushRequestCard(from);
+      return;
+    }
+    if (!this.deferredRequests.some((r) => r.userId === from.userId)) {
+      this.deferredRequests.push(from);
+    }
   }
 
   private pushRequestCard(from: { userId: number; name: string }): void {

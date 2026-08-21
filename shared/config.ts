@@ -1,9 +1,39 @@
 /** Modos de jogo disponíveis. */
 export const GAME_MODES = [
   { id: "ffa", label: "Free-for-All" },
+  { id: "tdm", label: "Mata-Mata em equipe" },
 ] as const;
 
 export type GameModeId = (typeof GAME_MODES)[number]["id"];
+
+export type TeamId = "alpha" | "echo";
+
+export const TEAMS = {
+  alpha: {
+    id: "alpha" as const,
+    label: "Equipe Alfa",
+    short: "Alfa",
+    color: "#4d8dff",
+  },
+  echo: {
+    id: "echo" as const,
+    label: "Equipe Echo",
+    short: "Echo",
+    color: "#e05545",
+  },
+} as const;
+
+export function isTeamId(v: unknown): v is TeamId {
+  return v === "alpha" || v === "echo";
+}
+
+export function isTdmMode(mode: string): boolean {
+  return mode === "tdm";
+}
+
+export function gameModeLabel(mode: string): string {
+  return GAME_MODES.find((m) => m.id === mode)?.label ?? mode;
+}
 
 /** Mapas oficiais disponíveis para as salas. */
 export const MAPS = [

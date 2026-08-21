@@ -39,6 +39,8 @@ export class PlayerState extends Schema {
   @type("boolean") inMatch = false;
   /** Combatente controlado pela IA. */
   @type("boolean") isBot = false;
+  /** Time no Mata-Mata em equipe: "alpha" | "echo" | "" (FFA). */
+  @type("string") team = "";
 
   // Sistema de patentes (nível por XP de carreira):
   /** XP total da carreira — a patente é derivada dele (shared/ranks). */
@@ -76,6 +78,12 @@ export class MatchState extends Schema {
   @type("string") mapPayload = "";
   /** Falso = sala em pré-lobby; verdadeiro = partida em andamento. */
   @type("boolean") matchStarted = false;
+  /** Kills da Equipe Alfa (modo tdm). */
+  @type("number") teamKillsAlpha = 0;
+  /** Kills da Equipe Echo (modo tdm). */
+  @type("number") teamKillsEcho = 0;
+  /** Time vencedor no tdm: "alpha" | "echo" | "". */
+  @type("string") winnerTeam = "";
 }
 
 // --- Sala Social (presença global: amigos online, sala atual, convites) ---

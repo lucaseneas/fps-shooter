@@ -53,5 +53,13 @@ Rota `/maps`, botão **Criação de mapas** na home. Código: `src/ui/MapStudio.
 - Mapas custom: id `custom:…`. Catálogo **global** na tabela Postgres `custom_maps` (todos os jogadores vêem os mesmos). Sem `localStorage`. Publicar exige conta. GET `/api/maps` é público. A Praça oficial **não** se sobrescreve — editar gera cópia.
 - Geometria = AABBs (`BoxDef`). Escada vira degraus `platform`. Colisão/partida usam `customMapToGeometry` → `mapPayload` no estado da sala (o servidor **não** lê localStorage na partida).
 - Peça pode ter `color` (`#rrggbb`) e `texture` (`default` / `none` / `wall` / `bg_wall` / `floor` / `crate` / `post`). Copiar isso para cada `BoxDef` ao converter. No jogo, `createScene.applyBoxMap` agrupa mesh por kind+textura+cor (não merge só por kind).
+- Spawns: `spawns` = Free-for-All (verde); `spawnsAlpha` = Equipe Alfa / norte (azul); `spawnsEcho` = Equipe Echo / sul (vermelho). São listas **separadas**. Publicar exige ≥1 de cada. Sem spawns de time no JSON, a partida TDM usa fallback norte/sul.
 - Não existe `.hidden` global. Hub/tamanho/editor **precisam** de `#pageMaps .hidden { display: none }`. Sem isso o canvas abre empurrado para baixo. Editor visível: `position: absolute; inset: 0`.
 - Botões da página não herdam estilo do lobby: estilizar via `#pageMaps button` (laranja) / `.secondary` / `.map-tool`.
+
+## Mata-Mata em equipe (`tdm`)
+
+- Times: Equipe Alfa (azul, `alpha`) vs Equipe Echo (vermelha, `echo`). Vitória quando a **soma de kills do time** chega a `killsToWin`. Sem fogo amigo.
+- Spawns TDM vêm de `spawnsAlpha` / `spawnsEcho` (não dos spawns FFA).
+- Nicknames: aliados sempre visíveis; inimigos só com a mira em cima (vermelho).
+- Entrada: overlay de equipe; durante a partida, **Tab** abre a troca de equipe. Bots são repartidos igualmente entre os times.

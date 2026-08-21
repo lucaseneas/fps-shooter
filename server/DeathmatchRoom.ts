@@ -2,10 +2,10 @@ import { Room, Client } from "colyseus";
 
 import { MatchState, PlayerState } from "./schema";
 import { BotAi, BotWorld, ShotEvent } from "./BotAi";
-import { CONFIG, GAME_MODES, MAPS } from "../shared/config";
+import { CONFIG, GAME_MODES, MAPS, isTeamId, isTdmMode, TEAMS, type TeamId } from "../shared/config";
 import { KILL_STREAK_REWARDS } from "../shared/killStreaks";
 import { pickBotNames } from "../shared/names";
-import { pickSpawnFarFrom, randomSpawn } from "../shared/spawnPoints";
+import { pickSpawnFarFrom, randomSpawn, spawnsForTeam } from "../shared/spawnPoints";
 import {
   customMapToGeometry,
   defaultPracaGeometry,
@@ -292,6 +292,10 @@ export class DeathmatchRoom extends Room<MatchState> {
       target?.leave(KICK_CLOSE_CODE);
     });
 
+    this.onMessage("setTeam", (client, msg: { team?: unknown }) => {
+      this.handleSetTeam(client, msg?.team);
+    });
+
     this.onMessage("setDebug", (client, msg: { enabled: boolean }) => {
       if (msg?.enabled === true) this.debugClients.add(client.sessionId);
       else this.debugClients.delete(client.sessionId);
@@ -343,6 +347,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       const p = this.state.players.get(id);
       // Só spawna quem realmente entrou na partida (Start/Play).
       if (!p || !p.inMatch || p.alive) return;
+      if (this.isTdm() && !isTeamId(p.team)) return;
       // Morte: o timer de respawn manda; aqui só o spawn inicial / pós-reset.
       if (this.respawnAt.has(id)) return;
       this.respawnPlayer(id);
@@ -385,6 +390,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     p.y = 0;
     p.z = 0;
     this.state.players.set(client.sessionId, p);
+    if (this.isTdm()) p.team = this.smallerTeam();
 
     // Criador (primeiro humano) vira líder da sala.
     if (!this.state.hostId) {
@@ -631,7 +637,10 @@ export class DeathmatchRoom extends Room<MatchState> {
     const p = this.state.players.get(id);
     if (!p) return;
 
-    const spawn = pickSpawnFarFrom(this.deathPos.get(id) ?? null, this.roomMap.spawns);
+    const spawn = pickSpawnFarFrom(
+      this.deathPos.get(id) ?? null,
+      this.spawnPointsFor(p)
+    );
     p.x = spawn.x;
     p.z = spawn.z;
     p.y = 0;
@@ -661,6 +670,9 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     this.state.matchOver = false;
     this.state.winnerName = "";
+    this.state.winnerTeam = "";
+    this.state.teamKillsAlpha = 0;
+    this.state.teamKillsEcho = 0;
     this.state.matchStarted = false;
     this.statsRecorded = false;
     this.matchResetAt = 0;
@@ -687,7 +699,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.history.set(id, []);
       if (this.bots.has(id)) {
         // Bot aguarda o próximo start num spawn limpo.
-        const spawn = randomSpawn(this.roomMap.spawns);
+        const spawn = randomSpawn(this.spawnPointsFor(p));
         p.x = spawn.x;
         p.z = spawn.z;
         p.y = 0;
@@ -720,6 +732,9 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.matchStarted = true;
     this.state.matchOver = false;
     this.state.winnerName = "";
+    this.state.winnerTeam = "";
+    this.state.teamKillsAlpha = 0;
+    this.state.teamKillsEcho = 0;
     this.statsRecorded = false;
     this.matchResetAt = 0;
     this.respawnAt.clear();
@@ -746,6 +761,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     }
 
     // Bots sempre participam — nascem direto nos spawns.
+    if (this.isTdm()) this.rebalanceBotTeams();
     for (const id of this.bots.keys()) {
       const p = this.state.players.get(id);
       if (!p) continue;
@@ -775,7 +791,11 @@ export class DeathmatchRoom extends Room<MatchState> {
       typeof msg.gameMode === "string" &&
       GAME_MODES.some((m) => m.id === msg.gameMode)
     ) {
-      this.state.gameMode = msg.gameMode;
+      const next = msg.gameMode;
+      if (next !== this.state.gameMode) {
+        this.state.gameMode = next;
+        this.applyGameModeTeams();
+      }
     }
     if (typeof msg.killsToWin === "number") {
       this.state.killsToWin = clampInt(msg.killsToWin, 1, 100, this.state.killsToWin);
@@ -886,6 +906,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     const targets: Array<{ id: string; pos: Vec3 }> = [];
     for (const [id, p] of this.state.players) {
       if (id === shooterId || !p.alive) continue;
+      if (this.sameTeam(shooter, p)) continue;
       const pos = this.sampleHistory(id, rewindMs);
       if (pos) targets.push({ id, pos });
     }
@@ -980,6 +1001,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     const target = this.state.players.get(targetId);
     const attacker = this.state.players.get(attackerId);
     if (!target || !target.alive) return false;
+    if (this.sameTeam(attacker, target)) return false;
 
     // Spawn protection / killstreak invincibility.
     if (target.invincibleTimeLeft > 0) return false;
@@ -1027,6 +1049,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     }
 
     const killerName = attacker?.name ?? "?";
+    const killerHealth = attacker ? Math.round(attacker.health) : 0;
     this.broadcast("kill", {
       killerId: attackerId,
       killerName,
@@ -1035,18 +1058,23 @@ export class DeathmatchRoom extends Room<MatchState> {
       weaponName,
     });
 
-    victimClient?.send("died", { killerName, weaponName });
+    victimClient?.send("died", { killerName, weaponName, killerHealth });
 
     this.deathPos.set(targetId, { x: target.x, z: target.z });
     this.respawnAt.set(targetId, Date.now() + CONFIG.respawnDelay * 1000);
 
-    if (attacker && attacker.kills >= this.state.killsToWin) {
-      this.state.matchOver = true;
-      this.state.winnerName = attacker.name;
-      this.matchResetAt = Date.now() + CONFIG.matchResetDelay * 1000;
-      this.awardMatchRewards(attackerId);
-      this.broadcast("matchEnd", { winnerName: attacker.name });
-      void this.persistMatchStats(attackerId);
+    if (this.isTdm() && attacker && isTeamId(attacker.team)) {
+      if (attacker.team === "alpha") this.state.teamKillsAlpha++;
+      else this.state.teamKillsEcho++;
+      const teamKills =
+        attacker.team === "alpha"
+          ? this.state.teamKillsAlpha
+          : this.state.teamKillsEcho;
+      if (teamKills >= this.state.killsToWin) {
+        this.finishMatch(attackerId, attacker.team);
+      }
+    } else if (attacker && attacker.kills >= this.state.killsToWin) {
+      this.finishMatch(attackerId);
     }
     return true;
   }
@@ -1092,7 +1120,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         p.doubleKills * XP_RULES.doubleKill +
         p.tripleKills * XP_RULES.tripleKill +
         p.multiKills * XP_RULES.multiKill +
-        (id === winnerId ? XP_RULES.victory : 0);
+        (this.isMatchWinner(id, p.team, winnerId) ? XP_RULES.victory : 0);
       p.matchXp = earned;
       p.xp += earned;
       this.matchXpEarned.set(id, earned);
@@ -1102,7 +1130,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         doubleKills: p.doubleKills,
         tripleKills: p.tripleKills,
         multiKills: p.multiKills,
-        won: id === winnerId,
+        won: this.isMatchWinner(id, p.team, winnerId),
       });
       p.matchGold = goldEarned;
       p.gold += goldEarned;
@@ -1125,7 +1153,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         recordMatchStats(userId, {
           kills: p.kills,
           deaths: p.deaths,
-          won: sessionId === winnerId,
+          won: this.isMatchWinner(sessionId, p.team, winnerId),
           xpEarned,
           goldEarned,
         })
@@ -1155,6 +1183,7 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     while (this.bots.size > target) this.removeOneBot();
     while (this.bots.size < target) this.addBot();
+    this.rebalanceBotTeams();
   }
 
   private addBot(): void {
@@ -1171,8 +1200,9 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     // Bots sempre usam a skin Padrão
     p.skinId = DEFAULT_SKIN;
+    if (this.isTdm()) p.team = this.smallerTeam();
 
-    const spawn = randomSpawn(this.roomMap.spawns);
+    const spawn = randomSpawn(this.spawnPointsFor(p));
     p.x = spawn.x;
     p.z = spawn.z;
     this.state.players.set(id, p);
@@ -1185,6 +1215,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       broadcastShot: (e: ShotEvent) => this.broadcast("shot", e),
       isMatchOver: () => this.state.matchOver,
       getMap: () => this.roomMap,
+      getSpawns: (team) => [...this.spawnPointsForTeam(team ?? "")],
     };
     this.bots.set(id, new BotAi(id, p, world));
   }
@@ -1198,5 +1229,125 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.history.delete(id);
     this.respawnAt.delete(id);
     this.deathPos.delete(id);
+  }
+
+  private isTdm(): boolean {
+    return isTdmMode(this.state.gameMode);
+  }
+
+  private sameTeam(a: PlayerState | undefined, b: PlayerState | undefined): boolean {
+    if (!this.isTdm() || !a || !b) return false;
+    return isTeamId(a.team) && a.team === b.team;
+  }
+
+  private teamCount(team: TeamId): number {
+    let n = 0;
+    for (const p of this.state.players.values()) {
+      if (p.team === team) n++;
+    }
+    return n;
+  }
+
+  private smallerTeam(): TeamId {
+    return this.teamCount("alpha") <= this.teamCount("echo") ? "alpha" : "echo";
+  }
+
+  private spawnPointsFor(p: PlayerState): readonly { x: number; z: number }[] {
+    return this.spawnPointsForTeam(p.team);
+  }
+
+  private spawnPointsForTeam(team: string): readonly { x: number; z: number }[] {
+    return spawnsForTeam(team, this.roomMap);
+  }
+
+  private applyGameModeTeams(): void {
+    if (!this.isTdm()) {
+      this.state.teamKillsAlpha = 0;
+      this.state.teamKillsEcho = 0;
+      this.state.winnerTeam = "";
+      for (const p of this.state.players.values()) p.team = "";
+      return;
+    }
+    for (const p of this.state.players.values()) {
+      if (!isTeamId(p.team)) p.team = this.smallerTeam();
+    }
+    this.rebalanceBotTeams();
+  }
+
+  private handleSetTeam(client: Client, raw: unknown): void {
+    if (!this.isTdm() || !isTeamId(raw)) return;
+    const id = client.sessionId;
+    const p = this.state.players.get(id);
+    if (!p) return;
+    if (p.team === raw) return;
+    p.team = raw;
+    if (p.alive && p.inMatch && this.state.matchStarted && !this.state.matchOver) {
+      this.respawnPlayer(id);
+    }
+    this.rebalanceBotTeams();
+  }
+
+  /**
+   * Distribui os bots para os totais (humanos + bots) ficarem o mais iguais possível.
+   */
+  private rebalanceBotTeams(): void {
+    if (!this.isTdm()) {
+      for (const id of this.bots.keys()) {
+        const p = this.state.players.get(id);
+        if (p) p.team = "";
+      }
+      return;
+    }
+    let humanAlpha = 0;
+    let humanEcho = 0;
+    for (const [id, p] of this.state.players) {
+      if (this.bots.has(id)) continue;
+      if (p.team === "alpha") humanAlpha++;
+      else if (p.team === "echo") humanEcho++;
+    }
+    const botIds = [...this.bots.keys()];
+    const wantAlpha = Math.round((humanEcho - humanAlpha + botIds.length) / 2);
+    const nAlpha = Math.max(0, Math.min(botIds.length, wantAlpha));
+    botIds.forEach((id, i) => {
+      const p = this.state.players.get(id);
+      if (!p) return;
+      const team: TeamId = i < nAlpha ? "alpha" : "echo";
+      if (p.team === team) return;
+      p.team = team;
+      if (this.state.matchStarted && p.alive && !this.state.matchOver) {
+        this.respawnPlayer(id);
+      } else {
+        const spawn = randomSpawn(this.spawnPointsFor(p));
+        p.x = spawn.x;
+        p.z = spawn.z;
+        p.y = 0;
+      }
+    });
+  }
+
+  private isMatchWinner(id: string, team: string, winnerId: string): boolean {
+    if (this.isTdm()) {
+      return isTeamId(this.state.winnerTeam) && team === this.state.winnerTeam;
+    }
+    return id === winnerId;
+  }
+
+  private finishMatch(winnerId: string, winnerTeam?: TeamId): void {
+    this.state.matchOver = true;
+    if (this.isTdm() && winnerTeam) {
+      this.state.winnerTeam = winnerTeam;
+      this.state.winnerName = TEAMS[winnerTeam].label;
+    } else {
+      this.state.winnerTeam = "";
+      const winner = this.state.players.get(winnerId);
+      this.state.winnerName = winner?.name ?? "?";
+    }
+    this.matchResetAt = Date.now() + CONFIG.matchResetDelay * 1000;
+    this.awardMatchRewards(winnerId);
+    this.broadcast("matchEnd", {
+      winnerName: this.state.winnerName,
+      winnerTeam: this.state.winnerTeam,
+    });
+    void this.persistMatchStats(winnerId);
   }
 }

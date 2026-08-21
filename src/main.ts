@@ -45,7 +45,7 @@ import {
   isSocialConnected,
   sendPresence,
 } from "./net/socialClient";
-import { CONFIG, GAME_MODES, KILLS_TO_WIN_OPTIONS, MAPS } from "../shared/config";
+import { CONFIG, GAME_MODES, KILLS_TO_WIN_OPTIONS, MAPS, TEAMS, gameModeLabel, isTdmMode } from "../shared/config";
 import {
   DEFAULT_LOADOUT,
   LoadoutSlots,
@@ -143,6 +143,14 @@ const botsSlider = document.getElementById("botsSlider") as HTMLInputElement;
 const botsValue = document.getElementById("botsValue") as HTMLSpanElement;
 const botsSettingRow = document.getElementById("botsSettingRow") as HTMLDivElement;
 const botsHostHint = document.getElementById("botsHostHint") as HTMLParagraphElement;
+const settingsLobbyTab = document.getElementById("settingsLobbyTab") as HTMLButtonElement;
+const settingsGameplayPanel = document.getElementById(
+  "settingsGameplayPanel"
+) as HTMLDivElement;
+const settingsLobbyPanel = document.getElementById("settingsLobbyPanel") as HTMLDivElement;
+const settingsDeveloperPanel = document.getElementById(
+  "settingsDeveloperPanel"
+) as HTMLDivElement;
 const volSlider = document.getElementById("volSlider") as HTMLInputElement;
 const volValue = document.getElementById("volValue") as HTMLSpanElement;
 const reticleSelect = document.getElementById("reticleSelect") as HTMLSelectElement;
@@ -181,6 +189,18 @@ const lobbyChatLog = document.getElementById("lobbyChatLog") as HTMLDivElement;
 const lobbyChatForm = document.getElementById("lobbyChatForm") as HTMLFormElement;
 const lobbyChatInput = document.getElementById("lobbyChatInput") as HTMLInputElement;
 const lobbyReadyButton = document.getElementById("lobbyReadyButton") as HTMLButtonElement;
+const lobbyTeams = document.getElementById("lobbyTeams") as HTMLDivElement;
+const lobbyTeamAlpha = document.getElementById("lobbyTeamAlpha") as HTMLButtonElement;
+const lobbyTeamEcho = document.getElementById("lobbyTeamEcho") as HTMLButtonElement;
+const lobbyTeamAlphaList = document.getElementById("lobbyTeamAlphaList") as HTMLDivElement;
+const lobbyTeamEchoList = document.getElementById("lobbyTeamEchoList") as HTMLDivElement;
+const lobbyTeamAlphaCount = document.getElementById("lobbyTeamAlphaCount") as HTMLSpanElement;
+const lobbyTeamEchoCount = document.getElementById("lobbyTeamEchoCount") as HTMLSpanElement;
+const lobbyPlayersHint = document.getElementById("lobbyPlayersHint") as HTMLParagraphElement;
+const teamSwitchConfirm = document.getElementById("teamSwitchConfirm") as HTMLDivElement;
+const teamSwitchConfirmText = document.getElementById("teamSwitchConfirmText") as HTMLParagraphElement;
+const teamSwitchYes = document.getElementById("teamSwitchYes") as HTMLButtonElement;
+const teamSwitchNo = document.getElementById("teamSwitchNo") as HTMLButtonElement;
 const minimapCanvas = document.getElementById("minimap") as HTMLCanvasElement;
 const authTabLogin = document.getElementById("authTabLogin") as HTMLButtonElement;
 const authTabRegister = document.getElementById("authTabRegister") as HTMLButtonElement;
@@ -287,11 +307,35 @@ function isLocalHost(): boolean {
   return hostId === room.sessionId;
 }
 
+type SettingsTab = "gameplay" | "lobby" | "developer";
+let settingsTab: SettingsTab = "gameplay";
+
+function setSettingsTab(tab: SettingsTab): void {
+  if (tab === "lobby" && !isLocalHost()) tab = "gameplay";
+  settingsTab = tab;
+  for (const el of document.querySelectorAll<HTMLElement>("[data-settingstab]")) {
+    el.classList.toggle("active", el.dataset.settingstab === tab);
+  }
+  settingsGameplayPanel.classList.toggle("hidden", tab !== "gameplay");
+  settingsLobbyPanel.classList.toggle("hidden", tab !== "lobby");
+  settingsDeveloperPanel.classList.toggle("hidden", tab !== "developer");
+}
+
+for (const el of document.querySelectorAll<HTMLElement>("[data-settingstab]")) {
+  el.addEventListener("click", () =>
+    setSettingsTab(el.dataset.settingstab as SettingsTab)
+  );
+}
+
 function syncRoomSettingsUi(): void {
+  const host = isLocalHost();
+  settingsLobbyTab.classList.toggle("hidden", !host);
+  if (!host && settingsTab === "lobby") setSettingsTab("gameplay");
+
   if (!room) {
-    botsSlider.disabled = false;
+    botsSlider.disabled = true;
     botsSettingRow.classList.remove("is-locked");
-    botsHostHint.textContent = "Define quantos bots preenchem a sala.";
+    botsHostHint.textContent = "Define quantos bots preenchem os slots vazios.";
     return;
   }
 
@@ -302,12 +346,9 @@ function syncRoomSettingsUi(): void {
   botsSlider.value = String(bots);
   botsValue.textContent = String(bots);
 
-  const host = isLocalHost();
   botsSlider.disabled = !host;
   botsSettingRow.classList.toggle("is-locked", !host);
-  botsHostHint.textContent = host
-    ? "Você é o líder — só você altera os bots desta sala."
-    : "Apenas o líder da sala pode alterar.";
+  botsHostHint.textContent = "Define quantos bots preenchem os slots vazios.";
 }
 
 botsSlider.addEventListener("input", () => {
@@ -383,6 +424,8 @@ let chatTyping = false;
 let loadoutPicking = false;
 let loadoutPickInMatch = false;
 let awaitingSpawn = false;
+let scoreboardOpen = false;
+let teamSwitchOpen = false;
 let freeSpectating = false;
 let preSpawnKitReady = false;
 let lastWeaponIndex = 1;
@@ -829,6 +872,7 @@ const socialPanel = new SocialPanel({
     };
   },
   onConnected: () => pushSocialPresence(),
+  canShowSocialToasts: () => !inGame,
 });
 
 async function enterHome(): Promise<void> {
@@ -898,7 +942,7 @@ function renderRoomList(rooms: RoomListing[]): void {
     const safeName = r.name.replace(/[<>&]/g, (c) =>
       c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;"
     );
-    const modeLabel = r.gameMode === "ffa" ? "Free-for-All" : r.gameMode;
+    const modeLabel = gameModeLabel(r.gameMode);
     const startedLabel = r.matchStarted ? " · <b class='room-live'>Em partida</b>" : "";
     info.innerHTML =
       `<b>${safeName}</b><br />` +
@@ -2397,6 +2441,7 @@ function returnToLobby(): void {
   navigate("/lobby");
   showLobby();
   refreshSessionProfile();
+  socialPanel.flushDeferredRequests();
 }
 
 function showLobby(): void {
@@ -2451,6 +2496,9 @@ function cleanupMatchLocal(): void {
   hud.hideEndScreen();
   hud.setHealth(CONFIG.playerMaxHealth);
   hud.setKills(0);
+  hud.setScoreMode("ffa");
+  hud.setTeamScores(0, 0);
+  closeMatchScoreboard(false);
   hud.clearAllKillStreaks();
 
   settingsModal.classList.add("hidden");
@@ -2474,6 +2522,7 @@ function resetToMenu(errorMsg?: string): void {
     statusEl.textContent = errorMsg;
   }
   navigate("/home");
+  socialPanel.flushDeferredRequests();
 }
 
 function openPauseModal(): void {
@@ -2595,6 +2644,10 @@ function refreshMapSelects(extra?: { value: string; label: string }): void {
 
 mapStudio.setOnMapsChanged(() => refreshMapSelects());
 fillSelect(
+  createGameMode,
+  GAME_MODES.map((m) => ({ value: m.id, label: m.label }))
+);
+fillSelect(
   lobbyModeSelect,
   GAME_MODES.map((m) => ({ value: m.id, label: m.label }))
 );
@@ -2622,6 +2675,14 @@ lobbyMapSelect.addEventListener("change", () => {
 lobbyModeSelect.addEventListener("change", () =>
   sendLobbySetting({ gameMode: lobbyModeSelect.value })
 );
+lobbyTeamAlphaList.parentElement?.addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).closest(".lobby-kick")) return;
+  room?.send("setTeam", { team: "alpha" });
+});
+lobbyTeamEchoList.parentElement?.addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).closest(".lobby-kick")) return;
+  room?.send("setTeam", { team: "echo" });
+});
 lobbyKillsSelect.addEventListener("change", () =>
   sendLobbySetting({ killsToWin: parseInt(lobbyKillsSelect.value, 10) })
 );
@@ -2652,6 +2713,111 @@ lobbyLeaveButton.addEventListener("click", () => {
   void room?.leave();
 });
 
+function syncLobbyTeamPick(gameMode: string, ownTeam: string): void {
+  const tdm = isTdmMode(gameMode);
+  lobbyPlayersList.classList.toggle("hidden", tdm);
+  lobbyTeams.classList.toggle("hidden", !tdm);
+  lobbyTeamAlpha.classList.toggle("active", ownTeam === "alpha");
+  lobbyTeamEcho.classList.toggle("active", ownTeam === "echo");
+  lobbyTeamAlpha.closest(".lobby-team-col")?.classList.toggle("mine", ownTeam === "alpha");
+  lobbyTeamEcho.closest(".lobby-team-col")?.classList.toggle("mine", ownTeam === "echo");
+  lobbyPlayersHint.textContent = tdm
+    ? "Clique na outra equipe para trocar de time. Botão direito num jogador para adicionar como amigo."
+    : "Botão direito num jogador para adicionar como amigo.";
+}
+
+function currentGameMode(): string {
+  return room ? getMatchSnapshot(room).gameMode : "ffa";
+}
+
+function oppositeTeam(team: string): "alpha" | "echo" {
+  return team === "alpha" ? "echo" : "alpha";
+}
+
+function refreshMatchScoreboard(): void {
+  if (!room || !scoreboardOpen || endScreenShown) return;
+  hud.setScoreboardVisible(true, scoreboardRows(room), isTdmMode(currentGameMode()));
+}
+
+function openMatchScoreboard(): void {
+  if (!room || endScreenShown || loadoutPicking) return;
+  scoreboardOpen = true;
+  weapons.setTrigger(false);
+  player.setMovementEnabled(false);
+  player.setLookEnabled(false);
+  if (player.isPointerLocked) player.releasePointerLock();
+  refreshMatchScoreboard();
+}
+
+function closeMatchScoreboard(relock: boolean): void {
+  teamSwitchOpen = false;
+  teamSwitchConfirm.classList.add("hidden");
+  socialPanel.dismissPopovers();
+  if (!scoreboardOpen) {
+    if (!endScreenShown) hud.setScoreboardVisible(false);
+    return;
+  }
+  scoreboardOpen = false;
+  if (!endScreenShown) hud.setScoreboardVisible(false);
+  if (awaitingSpawn) return;
+  player.setLookEnabled(true);
+  player.setMovementEnabled(!playerDead && !endScreenShown);
+  if (relock && inGame && !playerDead && !endScreenShown && !loadoutPicking) {
+    player.requestPointerLock();
+  }
+}
+
+function openTeamSwitchConfirm(): void {
+  if (!room || !scoreboardOpen) return;
+  const own = getOwnSnapshot(room);
+  const next = oppositeTeam(own?.team ?? "alpha");
+  const label = TEAMS[next].label;
+  teamSwitchConfirmText.textContent =
+    `Você vai para a ${label}. Suas kills pessoais continuam, mas só as próximas contam como ponto para o novo time.`;
+  teamSwitchOpen = true;
+  teamSwitchConfirm.classList.remove("hidden");
+}
+
+function closeTeamSwitchConfirm(): void {
+  teamSwitchOpen = false;
+  teamSwitchConfirm.classList.add("hidden");
+}
+
+function confirmTeamSwitch(): void {
+  if (!room) return;
+  const own = getOwnSnapshot(room);
+  room.send("setTeam", { team: oppositeTeam(own?.team ?? "alpha") });
+  closeTeamSwitchConfirm();
+  closeMatchScoreboard(true);
+}
+
+hud.onSwitchTeam = () => openTeamSwitchConfirm();
+hud.onScoreboardPlayerMenu = (target, x, y) =>
+  socialPanel.openLobbyPlayerMenu(target, x, y);
+teamSwitchYes.addEventListener("click", () => confirmTeamSwitch());
+teamSwitchNo.addEventListener("click", () => closeTeamSwitchConfirm());
+
+function updateNametags(r: Room, ownTeam: string): void {
+  const tdm = isTdmMode(getMatchSnapshot(r).gameMode);
+  let aimedId = "";
+  if (!awaitingSpawn && !player.isSpectating) {
+    const ray = player.camera.getForwardRay(90);
+    const hit = scene.pickWithRay(ray, (m) => typeof m.metadata?.remoteAimId === "string");
+    if (hit?.hit && hit.pickedMesh) {
+      aimedId = String(hit.pickedMesh.metadata.remoteAimId);
+    }
+  }
+  const teams = new Map<string, string>();
+  forEachPlayer(r, (p, id) => {
+    teams.set(id, typeof p.team === "string" ? p.team : "");
+  });
+  for (const [id, rp] of remotePlayers) {
+    const team = teams.get(id) ?? "";
+    const ally = tdm && Boolean(ownTeam && team && team === ownTeam);
+    rp.setNameplateRole(ally ? "ally" : "enemy", aimedId === id);
+  }
+}
+
 lobbyChatForm.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = lobbyChatInput.value.trim();
@@ -2673,6 +2839,7 @@ interface LobbyPlayerRow {
   xp: number;
   /** Gold total — exibido no próprio painel do pré-lobby. */
   gold: number;
+  team: string;
 }
 
 function lobbyStatusChip(row: LobbyPlayerRow, matchStarted: boolean): string {
@@ -2684,60 +2851,97 @@ function lobbyStatusChip(row: LobbyPlayerRow, matchStarted: boolean): string {
     : `<span class="lobby-chip waiting">Aguardando</span>`;
 }
 
-function renderLobbyPlayers(
+function createLobbyPlayerRow(
+  row: LobbyPlayerRow,
+  matchStarted: boolean,
+  canKick: boolean
+): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = `lobby-player-row${row.isSelf ? " self" : ""}`;
+
+  const rank = rankForXp(row.xp);
+  const insignia = document.createElement("img");
+  insignia.className = "lobby-rank";
+  insignia.src = rankIconUrl(rank);
+  insignia.alt = rank.name;
+  insignia.title = rank.name;
+
+  const name = document.createElement("span");
+  name.className = "lobby-player-name";
+  name.textContent = row.name;
+
+  const chips = document.createElement("span");
+  chips.className = "lobby-chips";
+  chips.innerHTML =
+    (row.isHost ? `<span class="lobby-chip host">Líder</span>` : "") +
+    lobbyStatusChip(row, matchStarted);
+
+  el.append(insignia, name, chips);
+
+  if (canKick && !row.isSelf) {
+    const kick = document.createElement("button");
+    kick.type = "button";
+    kick.className = "lobby-kick";
+    kick.title = "Remover da sala";
+    kick.textContent = "✕";
+    kick.addEventListener("click", () => {
+      room?.send("kickPlayer", { playerId: row.id });
+    });
+    el.appendChild(kick);
+  }
+
+  if (!row.isSelf) {
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      socialPanel.openLobbyPlayerMenu(
+        { userId: row.userId, name: row.name },
+        e.clientX,
+        e.clientY
+      );
+    });
+  }
+
+  return el;
+}
+
+function fillLobbyTeamColumn(
+  list: HTMLElement,
   rows: LobbyPlayerRow[],
   matchStarted: boolean,
   canKick: boolean
 ): void {
-  lobbyPlayersList.innerHTML = "";
+  list.replaceChildren();
+  if (rows.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "lobby-team-empty";
+    empty.textContent = "Ninguém nesta equipe";
+    list.appendChild(empty);
+    return;
+  }
   for (const row of rows) {
-    const el = document.createElement("div");
-    el.className = `lobby-player-row${row.isSelf ? " self" : ""}`;
+    list.appendChild(createLobbyPlayerRow(row, matchStarted, canKick));
+  }
+}
 
-    const rank = rankForXp(row.xp);
-    const insignia = document.createElement("img");
-    insignia.className = "lobby-rank";
-    insignia.src = rankIconUrl(rank);
-    insignia.alt = rank.name;
-    insignia.title = rank.name;
+function renderLobbyPlayers(
+  rows: LobbyPlayerRow[],
+  matchStarted: boolean,
+  canKick: boolean,
+  tdm: boolean
+): void {
+  if (tdm) {
+    const alpha = rows.filter((r) => r.team !== "echo");
+    const echo = rows.filter((r) => r.team === "echo");
+    lobbyTeamAlphaCount.textContent = String(alpha.length);
+    lobbyTeamEchoCount.textContent = String(echo.length);
+    fillLobbyTeamColumn(lobbyTeamAlphaList, alpha, matchStarted, canKick);
+    fillLobbyTeamColumn(lobbyTeamEchoList, echo, matchStarted, canKick);
+    return;
+  }
 
-    const name = document.createElement("span");
-    name.className = "lobby-player-name";
-    name.textContent = row.name;
-
-    const chips = document.createElement("span");
-    chips.className = "lobby-chips";
-    chips.innerHTML =
-      (row.isHost ? `<span class="lobby-chip host">Líder</span>` : "") +
-      lobbyStatusChip(row, matchStarted);
-
-    el.append(insignia, name, chips);
-
-    if (canKick && !row.isSelf) {
-      const kick = document.createElement("button");
-      kick.type = "button";
-      kick.className = "lobby-kick";
-      kick.title = "Remover da sala";
-      kick.textContent = "✕";
-      kick.addEventListener("click", () => {
-        room?.send("kickPlayer", { playerId: row.id });
-      });
-      el.appendChild(kick);
-    }
-
-    // Botão direito: adicionar como amigo (ou menu de amigo, se já for).
-    if (!row.isSelf) {
-      el.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        socialPanel.openLobbyPlayerMenu(
-          { userId: row.userId, name: row.name },
-          e.clientX,
-          e.clientY
-        );
-      });
-    }
-
-    lobbyPlayersList.appendChild(el);
+  lobbyPlayersList.replaceChildren();
+  for (const row of rows) {
+    lobbyPlayersList.appendChild(createLobbyPlayerRow(row, matchStarted, canKick));
   }
 }
 
@@ -2775,6 +2979,7 @@ function updateLobbyUi(): void {
       inMatch: p.inMatch === true,
       xp: p.xp ?? 0,
       gold: p.gold ?? 0,
+      team: typeof p.team === "string" ? p.team : "",
     });
   });
   rows.sort((a, b) => {
@@ -2834,7 +3039,9 @@ function updateLobbyUi(): void {
     ? ""
     : `${readyCount} de ${rows.length} prontos`;
 
-  renderLobbyPlayers(rows, snap.matchStarted, isHost);
+  const tdm = isTdmMode(snap.gameMode);
+  renderLobbyPlayers(rows, snap.matchStarted, isHost, tdm);
+  syncLobbyTeamPick(snap.gameMode, rows.find((r) => r.isSelf)?.team ?? "");
 
   // Ação principal: Start (líder) / Ready / Play tardio.
   lobbyReadyButton.classList.remove("ready", "play");
@@ -2952,7 +3159,11 @@ function setupRoom(r: Room): void {
     addChatMessage(e.name, e.text);
   });
 
-  r.onMessage("died", (e: { killerName: string; weaponName: string }) => {
+  r.onMessage("died", (e: {
+    killerName: string;
+    weaponName: string;
+    killerHealth?: number;
+  }) => {
     if (!inGame) return;
     closeChat(false);
     playerDead = true;
@@ -2960,7 +3171,8 @@ function setupRoom(r: Room): void {
     player.setMovementEnabled(false);
     weapons.setEnabled(false);
     exitAdsImmediate();
-    hud.showDeathScreen(e.killerName, e.weaponName);
+    hud.showDeathScreen(e.killerName, e.weaponName, e.killerHealth ?? 0);
+    hud.updateDeathTimer(deathCountdown);
     hud.resetKillStreak();
     audio.death();
   });
@@ -3158,6 +3370,16 @@ function reconcile(r: Room): void {
     rp.setInvincible((p.invincibleTimeLeft ?? 0) > 0);
   });
 
+  updateNametags(r, ownSnapshot?.team ?? "");
+
+  const snap = getMatchSnapshot(r);
+  hud.setScoreMode(isTdmMode(snap.gameMode) ? "tdm" : "ffa");
+  hud.setKillsTarget(snap.killsToWin);
+  if (isTdmMode(snap.gameMode)) {
+    hud.setTeamScores(snap.teamKillsAlpha, snap.teamKillsEcho);
+  }
+  if (scoreboardOpen) refreshMatchScoreboard();
+
   for (const [id, rp] of remotePlayers) {
     if (!seen.has(id)) {
       rp.dispose();
@@ -3168,6 +3390,7 @@ function reconcile(r: Room): void {
   const state = r.state as { matchOver?: boolean; winnerName?: string };
   if (state.matchOver && !endScreenShown) {
     endScreenShown = true;
+    closeMatchScoreboard(false);
     player.setMovementEnabled(false);
     weapons.setEnabled(false);
     const own = getOwnSnapshot(r);
@@ -3176,7 +3399,9 @@ function reconcile(r: Room): void {
     const xpAfter = own?.xp ?? 0;
     const rankBefore = rankForXp(Math.max(0, xpAfter - earned));
     const rankAfter = rankForXp(xpAfter);
-    const playerWon = state.winnerName === own?.name;
+    const playerWon = isTdmMode(snap.gameMode)
+      ? Boolean(own?.team && own.team === snap.winnerTeam)
+      : state.winnerName === own?.name;
     const xpLines: Array<{ label: string; xp: number }> = [];
     const goldLines: Array<{ label: string; gold: number }> = [];
     if (earned > 0 && own) {
@@ -3307,6 +3532,9 @@ function scoreboardRows(r: Room): ScoreRow[] {
       isPlayer: id === r.sessionId,
       isHost: id === hostId,
       xp: p.xp ?? 0,
+      team: typeof p.team === "string" ? p.team : "",
+      userId: p.userId ?? 0,
+      isBot: p.isBot === true,
     });
   });
   return rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
@@ -3506,6 +3734,23 @@ window.addEventListener("wheel", (e) => {
   rememberWeaponSwitch(from);
 });
 window.addEventListener("keydown", (e) => {
+  if (e.code === "Tab" && inGame) {
+    e.preventDefault();
+    if (endScreenShown) return;
+    if (socialPanel.handleEscape()) return;
+    if (teamSwitchOpen) {
+      closeTeamSwitchConfirm();
+      return;
+    }
+    if (scoreboardOpen) {
+      closeMatchScoreboard(!awaitingSpawn);
+      return;
+    }
+    if (!loadoutPicking && !chatTyping) {
+      openMatchScoreboard();
+      return;
+    }
+  }
   if (e.code === "Enter" && inGame && player.isPointerLocked) {
     e.preventDefault();
     openChat();
@@ -3541,15 +3786,9 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Digit1") switchTo(0);
   if (e.code === "Digit2") switchTo(1);
   if (e.code === "Digit3") switchTo(2);
-  if (e.code === "Tab") {
-    e.preventDefault();
-    if (room) hud.setScoreboardVisible(true, scoreboardRows(room));
-  }
 });
 window.addEventListener("keyup", (e) => {
-  if (e.code === "Tab" && !endScreenShown) {
-    hud.setScoreboardVisible(false);
-  }
+  if (e.code === "Tab" && inGame) e.preventDefault();
 });
 
 function rememberWeaponSwitch(fromIndex: number): void {
@@ -3602,7 +3841,7 @@ document.addEventListener("pointerlockchange", () => {
     }
   } else if (inGame && !endScreenShown) {
     exitAdsImmediate();
-    if (chatTyping || loadoutPicking) return;
+    if (chatTyping || loadoutPicking || scoreboardOpen || teamSwitchOpen) return;
     if (awaitingSpawn && !freeSpectating) return;
     openPauseModal();
   }
@@ -3648,6 +3887,18 @@ document.addEventListener("pointerlockchange", () => {
     if (chatTyping) {
       e.preventDefault();
       closeChat(true);
+      return;
+    }
+
+    if (teamSwitchOpen) {
+      e.preventDefault();
+      closeTeamSwitchConfirm();
+      return;
+    }
+
+    if (scoreboardOpen) {
+      e.preventDefault();
+      closeMatchScoreboard(!awaitingSpawn);
       return;
     }
 
@@ -3758,6 +4009,7 @@ engine.runRenderLoop(() => {
       audio.remoteFootstep(rp.getFeet());
     }
   }
+  if (room) updateNametags(room, getOwnSnapshot(room)?.team ?? "");
 
   // Som de passos.
   if (player.isMovingOnGround) {
