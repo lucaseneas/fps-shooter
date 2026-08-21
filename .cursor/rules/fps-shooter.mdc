@@ -1,5 +1,5 @@
 ---
-description: Convenções do FPS (armas GLB, ids, skins) para o agente não repetir erros de orientação/escala.
+description: Convenções do FPS (armas GLB, skins, criador de mapas) para o agente não repetir erros.
 alwaysApply: true
 ---
 
@@ -45,3 +45,13 @@ Config por arma: `WEAPON_CONFIGS` (offset, muzzle, sprint, rotation, targetLengt
 ## Loja / inventário 3D
 
 `SkinPreview` tem modos: `character` (só dummy), `weapon` (só arma), `loadout` (dummy + arma, home/lobby).
+
+## Criador de mapas
+
+Rota `/maps`, botão **Criação de mapas** na home. Código: `src/ui/MapStudio.ts` + `src/ui/MapEditor.ts`. Dados: `shared/customMap.ts`.
+
+- Mapas custom: id `custom:…`, gravados em `localStorage` `fps.customMaps`. A Praça oficial **não** se sobrescreve — editar gera cópia.
+- Geometria = AABBs (`BoxDef`). Escada vira degraus `platform`. Colisão/partida usam `customMapToGeometry` → `mapPayload` no estado da sala (o servidor **não** lê localStorage).
+- Peça pode ter `color` (`#rrggbb`) e `texture` (`default` / `none` / `wall` / `bg_wall` / `floor` / `crate` / `post`). Copiar isso para cada `BoxDef` ao converter. No jogo, `createScene.applyBoxMap` agrupa mesh por kind+textura+cor (não merge só por kind).
+- Não existe `.hidden` global. Hub/tamanho/editor **precisam** de `#pageMaps .hidden { display: none }`. Sem isso o canvas abre empurrado para baixo. Editor visível: `position: absolute; inset: 0`.
+- Botões da página não herdam estilo do lobby: estilizar via `#pageMaps button` (laranja) / `.secondary` / `.map-tool`.
