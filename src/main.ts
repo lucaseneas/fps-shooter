@@ -70,7 +70,7 @@ import {
 } from "../shared/weaponSkins";
 import { WeaponSkinStudio, hexToRgb, rgbToHex } from "./ui/WeaponSkinStudio";
 import { MapStudio } from "./ui/MapStudio";
-import { getCustomMap, playableMapOptions } from "./ui/mapStorage";
+import { getCustomMap, playableMapOptions, refreshCustomMaps } from "./ui/mapStorage";
 import {
   customMapToGeometry,
   sanitizeCustomMap,
@@ -698,6 +698,7 @@ authForm.addEventListener("submit", (e) => {
     guestAllowed = false;
     authPassword.value = "";
     applyAccountPrefs(session.user);
+    hydrateMapCatalog();
     if (result.sessionReplaced) {
       setAuthMessage("Seu outro login foi desconectado.");
     } else {
@@ -739,6 +740,7 @@ async function initAuth(): Promise<void> {
     if (restored.ok) {
       session = restored.session;
       applyAccountPrefs(session.user);
+      hydrateMapCatalog();
     } else {
       session = null;
       if (restored.sessionReplaced) {
@@ -937,6 +939,7 @@ function openCreateRoomModal(): void {
   );
   syncCreateRoomForm();
   refreshMapSelects();
+  hydrateMapCatalog();
   createRoomModal.classList.remove("hidden");
   createRoomName.focus();
   createRoomName.select();
@@ -1524,6 +1527,14 @@ let applyingAccountPrefs = false;
 
 /** Migração local→conta roda uma vez por usuário logado. */
 let inventorySyncedForUser: number | null = null;
+
+/** Carrega o catálogo global de mapas (Postgres). */
+function hydrateMapCatalog(): void {
+  void refreshCustomMaps().then(() => {
+    refreshMapSelects();
+    mapStudio.reloadList();
+  });
+}
 
 /** Persiste skin ativa + loadout atuais na conta (apenas autenticado). */
 function syncPrefsToAccount(): void {
@@ -3810,6 +3821,7 @@ requestAnimationFrame(() => paintScopeOverlay());
 void (async () => {
   try {
     await initAuth();
+    hydrateMapCatalog();
     if (session) navigate("/home", true);
     else navigate("/login", true);
   } finally {

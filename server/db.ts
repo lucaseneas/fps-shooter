@@ -96,6 +96,35 @@ export async function migrate(): Promise<void> {
       )
     `);
     console.log("[weapon-skins] tabela weapon_skins pronta");
+
+    // Catálogo global de mapas custom (todos os jogadores vêem os mesmos).
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS custom_maps (
+        id VARCHAR(48) PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        def JSONB NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    // Instalações antigas: PK (user_id, id) → um mapa por id, visível para todos.
+    await db.query(`
+      DELETE FROM custom_maps a
+      USING custom_maps b
+      WHERE a.id = b.id
+        AND a.ctid <> b.ctid
+        AND (
+          a.updated_at < b.updated_at
+          OR (a.updated_at = b.updated_at AND a.ctid < b.ctid)
+        )
+    `);
+    await db.query(`ALTER TABLE custom_maps DROP CONSTRAINT IF EXISTS custom_maps_pkey`);
+    await db.query(`ALTER TABLE custom_maps ADD PRIMARY KEY (id)`);
+    await db.query(`ALTER TABLE custom_maps ALTER COLUMN user_id DROP NOT NULL`);
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS custom_maps_updated_idx
+        ON custom_maps (updated_at DESC)
+    `);
+    console.log("[maps] tabela custom_maps pronta");
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code;
     if (code === "ENETUNREACH" || code === "ENOTFOUND" || code === "ETIMEDOUT") {

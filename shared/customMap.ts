@@ -16,6 +16,8 @@ export type MapSizeOption = (typeof MAP_SIZE_OPTIONS)[number];
 export const MAX_MAP_PIECES = 250;
 export const MAX_SPAWNS = 24;
 export const MIN_SPAWNS = 1;
+/** Teto do catálogo global no Postgres. */
+export const MAX_CUSTOM_MAPS = 80;
 
 export type EditorPieceKind = "wall" | "box" | "pillar" | "platform" | "stair";
 

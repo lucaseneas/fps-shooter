@@ -2,6 +2,7 @@ import { MapEditor, type EditorTool } from "./MapEditor";
 import {
   deleteCustomMap,
   listCustomMaps,
+  refreshCustomMaps,
   saveCustomMap,
 } from "./mapStorage";
 import {
@@ -33,7 +34,7 @@ const TOOLS: Array<{ id: EditorTool; label: string }> = [
 ];
 
 /**
- * Página de criação de mapas: lista, tamanho, editor 3D e gravação local.
+ * Página de criação de mapas: lista, tamanho, editor 3D e publicação no catálogo global.
  */
 export class MapStudio {
   private readonly page: HTMLElement;
@@ -82,6 +83,9 @@ export class MapStudio {
     el<HTMLButtonElement>("mapStudioNew").addEventListener("click", () => {
       this.showSize();
     });
+    el<HTMLButtonElement>("mapStudioRefresh").addEventListener("click", () => {
+      void this.refreshFromServer();
+    });
     el<HTMLButtonElement>("mapSizeCancel").addEventListener("click", () => {
       this.showHub();
     });
@@ -89,7 +93,7 @@ export class MapStudio {
       this.requestLeaveEditor();
     });
     el<HTMLButtonElement>("mapEditorSave").addEventListener("click", () => {
-      this.save();
+      void this.save();
     });
     el<HTMLButtonElement>("mapEditorRotate").addEventListener("click", () => {
       this.editor?.rotateSelected();
@@ -180,6 +184,31 @@ export class MapStudio {
   open(): void {
     this.showHub();
     this.renderList();
+    void refreshCustomMaps().then(() => this.renderList());
+  }
+
+  /** Re-renderiza a lista do hub (ex.: depois do catálogo recarregar). */
+  reloadList(): void {
+    this.renderList();
+  }
+
+  private async refreshFromServer(): Promise<void> {
+    const btn = el<HTMLButtonElement>("mapStudioRefresh");
+    if (btn.disabled) return;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Atualizando…";
+    try {
+      await refreshCustomMaps();
+      this.renderList();
+      this.onMapsChanged?.();
+      this.showToast("Lista de mapas atualizada.");
+    } catch {
+      this.showToast("Falha ao atualizar os mapas.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label || "Atualizar";
+    }
   }
 
   close(): void {
@@ -248,7 +277,7 @@ export class MapStudio {
     this.syncStatus();
   }
 
-  private save(): void {
+  private async save(): Promise<void> {
     const def = this.editor?.current;
     if (!def) return;
     this.editor?.setName(this.nameInput.value);
@@ -258,20 +287,41 @@ export class MapStudio {
       this.statusEl.textContent = "Defina pelo menos 1 spawn.";
       return;
     }
-    const saved = saveCustomMap(latest);
-    this.editor?.load(saved);
-    this.savedSnapshot = JSON.stringify(this.editor?.current);
-    this.statusEl.textContent = "Mapa salvo. Aparece na lista ao criar sala.";
-    this.showToast("Mapa salvo com sucesso!");
-    this.onMapsChanged?.();
+    this.statusEl.textContent = "A gravar…";
+    try {
+      const result = await saveCustomMap(latest);
+      if (!result.ok) {
+        this.statusEl.textContent = result.error;
+        this.showToast(result.error);
+        return;
+      }
+      this.editor?.load(result.map);
+      this.savedSnapshot = JSON.stringify(this.editor?.current);
+      this.statusEl.textContent = "Mapa publicado. Todos os jogadores vêem na lista ao criar sala.";
+      this.showToast("Mapa publicado para todos!");
+      this.onMapsChanged?.();
+    } catch (err) {
+      this.statusEl.textContent =
+        err instanceof Error ? err.message : "Falha ao salvar o mapa.";
+    }
   }
 
   private showToast(message: string): void {
+    for (const node of this.toastContainer.children) {
+      if (node.textContent !== message) continue;
+      const toast = node as HTMLElement & { _toastTimer?: number };
+      if (toast._toastTimer) window.clearTimeout(toast._toastTimer);
+      toast._toastTimer = window.setTimeout(() => toast.remove(), 4000);
+      return;
+    }
     const toast = document.createElement("div");
     toast.className = "map-studio-toast";
     toast.textContent = message;
     this.toastContainer.appendChild(toast);
-    window.setTimeout(() => toast.remove(), 4000);
+    (toast as HTMLElement & { _toastTimer?: number })._toastTimer = window.setTimeout(
+      () => toast.remove(),
+      4000
+    );
   }
 
   private renderList(): void {
@@ -290,9 +340,7 @@ export class MapStudio {
       this.openEditor(pracaToCustomMap());
     });
     official.querySelector("[data-act=dup]")?.addEventListener("click", () => {
-      saveCustomMap(pracaToCustomMap());
-      this.renderList();
-      this.onMapsChanged?.();
+      void this.persistCopy(pracaToCustomMap());
     });
     this.listEl.appendChild(official);
 
@@ -300,7 +348,7 @@ export class MapStudio {
     if (maps.length === 0) {
       const empty = document.createElement("p");
       empty.className = "map-empty";
-      empty.textContent = "Nenhum mapa custom ainda. Crie um novo para começar.";
+      empty.textContent = "Nenhum mapa publicado ainda. Crie um novo para todos verem.";
       this.listEl.appendChild(empty);
       return;
     }
@@ -321,21 +369,33 @@ export class MapStudio {
         this.openEditor(m);
       });
       card.querySelector("[data-act=dup]")?.addEventListener("click", () => {
-        this.duplicateAndSave(m);
+        void this.persistCopy(duplicateCustomMap(m));
       });
       card.querySelector("[data-act=del]")?.addEventListener("click", () => {
         if (!window.confirm(`Excluir “${m.name}”?`)) return;
-        deleteCustomMap(m.id);
-        this.renderList();
-        this.onMapsChanged?.();
+        void this.removeMap(m.id);
       });
       this.listEl.appendChild(card);
     }
   }
 
-  private duplicateAndSave(source: CustomMapDef): void {
-    const copy = duplicateCustomMap(source);
-    saveCustomMap(copy);
+  private async persistCopy(copy: CustomMapDef): Promise<void> {
+    const result = await saveCustomMap(copy);
+    if (!result.ok) {
+      this.showToast(result.error);
+      return;
+    }
+    this.renderList();
+    this.onMapsChanged?.();
+    this.showToast("Cópia publicada para todos.");
+  }
+
+  private async removeMap(id: string): Promise<void> {
+    const result = await deleteCustomMap(id);
+    if (!result.ok) {
+      this.showToast(result.error);
+      return;
+    }
     this.renderList();
     this.onMapsChanged?.();
   }

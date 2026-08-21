@@ -280,3 +280,49 @@ export async function deleteWeaponSkin(id: string): Promise<DeleteSkinResult> {
   if (!result.ok) return { ok: false, error: result.error };
   return { ok: true };
 }
+
+// --- Mapas custom (criador in-game) ---
+
+export async function fetchCustomMaps(): Promise<
+  { ok: true; maps: unknown[] } | { ok: false }
+> {
+  const result = await api<{ maps: unknown[] }>("/api/maps");
+  if (!result.ok || !Array.isArray(result.data.maps)) return { ok: false };
+  return { ok: true, maps: result.data.maps };
+}
+
+export type SaveMapResult =
+  | { ok: true; map: unknown }
+  | { ok: false; error: string; status: number };
+
+export async function saveCustomMapRemote(
+  def: unknown
+): Promise<SaveMapResult> {
+  const token = loadStoredToken();
+  if (!token) return { ok: false, error: "Não autenticado.", status: 401 };
+  const result = await api<{ map: unknown }>("/api/maps", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(def),
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error, status: result.status };
+  }
+  return { ok: true, map: result.data.map };
+}
+
+export async function deleteCustomMapRemote(
+  id: string
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  const token = loadStoredToken();
+  if (!token) return { ok: false, error: "Não autenticado.", status: 401 };
+  const result = await api<{ ok: boolean }>("/api/maps", {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ id }),
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error, status: result.status };
+  }
+  return { ok: true };
+}

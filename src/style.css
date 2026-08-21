@@ -3882,6 +3882,12 @@ kbd {
   border-radius: 9px;
 }
 
+#pageMaps button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+  filter: none;
+}
+
 .map-studio-hub,
 .map-studio-size {
   max-width: 1100px;

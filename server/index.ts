@@ -20,6 +20,11 @@ import {
   saveCustomWeaponSkin,
   deleteCustomWeaponSkin,
 } from "./weaponSkinsStore";
+import {
+  listAllMaps,
+  saveCatalogMap,
+  deleteCatalogMap,
+} from "./customMapsStore";
 
 const port = Number(process.env.PORT) || CONFIG.serverPort;
 /** Render (e outros PaaS) exigem escutar em 0.0.0.0, não só localhost. */
@@ -40,12 +45,12 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-function readJson(req: IncomingMessage): Promise<unknown> {
+function readJson(req: IncomingMessage, maxBytes = 32_768): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => {
       chunks.push(c);
-      if (chunks.reduce((n, b) => n + b.length, 0) > 32_768) {
+      if (chunks.reduce((n, b) => n + b.length, 0) > maxBytes) {
         reject(new Error("body too large"));
         req.destroy();
       }
@@ -59,6 +64,16 @@ function readJson(req: IncomingMessage): Promise<unknown> {
       }
     });
     req.on("error", reject);
+  });
+}
+
+function sendUnauthorized(res: ServerResponse, reason?: string): void {
+  const replaced = reason === "session_replaced";
+  sendJson(res, 401, {
+    error: replaced
+      ? "Sessão encerrada — entrou noutro dispositivo."
+      : "Não autenticado.",
+    code: replaced ? AUTH_SESSION_REPLACED : undefined,
   });
 }
 
@@ -244,6 +259,62 @@ async function handleApi(
       sendJson(res, 400, { error: "JSON inválido." });
     }
     return true;
+  }
+
+  // Catálogo global de mapas custom. GET é público; gravar exige conta.
+  if (path === "/api/maps") {
+    if (!isAuthEnabled()) {
+      sendJson(res, 503, { error: "Banco de dados indisponível." });
+      return true;
+    }
+
+    if (req.method === "GET") {
+      try {
+        const maps = await listAllMaps();
+        sendJson(res, 200, { maps });
+      } catch (err) {
+        console.error("[maps] list:", err);
+        sendJson(res, 500, { error: "Falha ao listar mapas." });
+      }
+      return true;
+    }
+
+    try {
+      const auth = await authenticateToken(bearerToken(req));
+      if (!auth.ok) {
+        sendUnauthorized(res, auth.reason);
+        return true;
+      }
+
+      if (req.method === "POST") {
+        const body = await readJson(req, 262_144);
+        const result = await saveCatalogMap(auth.account.id, body);
+        if (typeof result === "string") {
+          sendJson(res, 400, { error: result });
+          return true;
+        }
+        sendJson(res, 200, { map: result });
+        return true;
+      }
+
+      if (req.method === "DELETE") {
+        const body = (await readJson(req)) as { id?: unknown };
+        const result = await deleteCatalogMap(body.id);
+        if (result !== true) {
+          sendJson(res, 400, { error: result });
+          return true;
+        }
+        sendJson(res, 200, { ok: true });
+        return true;
+      }
+
+      sendJson(res, 405, { error: "Método não suportado." });
+      return true;
+    } catch (err) {
+      console.error("[maps]", path, err);
+      sendJson(res, 400, { error: "JSON inválido." });
+      return true;
+    }
   }
 
   // Inventário: migra itens locais (convidado/localStorage) para a conta.
