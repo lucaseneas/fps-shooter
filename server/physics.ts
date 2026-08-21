@@ -44,6 +44,9 @@ export function moveWithCollisions(
 /**
  * Testa se o segmento A→B é bloqueado por alguma AABB do mapa (slab method).
  * Usado para linha de visão dos bots.
+ *
+ * Caixas cujo topo fica abaixo dos dois olhos (plataformas, caixas baixas)
+ * não bloqueiam — o bot enxerga por cima, como um jogador em pé.
  */
 export function segmentBlocked(
   ax: number,
@@ -58,10 +61,17 @@ export function segmentBlocked(
   const dy = by - ay;
   const dz = bz - az;
   const boxes = (map ?? getActiveMap()).boxes;
+  const minEye = Math.min(ay, by) - 0.05;
+  const maxEye = Math.max(ay, by) + 0.12;
 
   for (const b of boxes) {
-    const min = [b.x - b.w / 2, b.y - b.h / 2, b.z - b.d / 2];
-    const max = [b.x + b.w / 2, b.y + b.h / 2, b.z + b.d / 2];
+    const top = b.y + b.h / 2;
+    const bottom = b.y - b.h / 2;
+    if (top < minEye) continue;
+    if (bottom > maxEye) continue;
+
+    const min = [b.x - b.w / 2, bottom, b.z - b.d / 2];
+    const max = [b.x + b.w / 2, top, b.z + b.d / 2];
     const origin = [ax, ay, az];
     const dir = [dx, dy, dz];
 

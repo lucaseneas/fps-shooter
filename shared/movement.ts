@@ -26,7 +26,7 @@ export const GRAVITY = 22;
 /** Timestep fixo da simulação (60Hz). */
 export const FIXED_DT = 1 / 60;
 /** Altura máxima de degrau que o player sobe andando. */
-const STEP_HEIGHT = 0.55;
+export const STEP_HEIGHT = 0.55;
 const EPS = 1e-4;
 
 export interface PlayerInput {
