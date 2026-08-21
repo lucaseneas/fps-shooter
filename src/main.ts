@@ -122,7 +122,6 @@ const hudRoot = document.getElementById("hud") as HTMLDivElement;
 const appBoot = document.getElementById("appBoot") as HTMLDivElement;
 const bootStatus = document.getElementById("bootStatus") as HTMLParagraphElement;
 const settingsButton = document.getElementById("settingsButton") as HTMLButtonElement;
-const homeSettingsButton = document.getElementById("homeSettingsButton") as HTMLButtonElement;
 const resumeButton = document.getElementById("resumeButton") as HTMLButtonElement;
 const quitButton = document.getElementById("quitButton") as HTMLButtonElement;
 const closeSettingsButton = document.getElementById("closeSettingsButton") as HTMLButtonElement;
@@ -783,6 +782,7 @@ function applyClientWorldMap(): void {
 
 function applyRoute(route: AppRoute): void {
   setHudVisible(route === "/play" && inGame);
+  settingsButton.classList.toggle("hidden", route === "/login" || route === "/play");
   if (route !== "/maps") mapStudio.close();
 
   if (route === "/play") {
@@ -2725,7 +2725,6 @@ function addChatMessage(name: string, text: string): void {
 }
 
 settingsButton.addEventListener("click", openMenuSettings);
-homeSettingsButton.addEventListener("click", openMenuSettings);
 closeSettingsButton.addEventListener("click", () => {
   settingsModal.classList.add("hidden");
 });

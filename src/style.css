@@ -1368,10 +1368,10 @@ body {
 }
 
 .page-settings-btn {
-  position: absolute;
+  position: fixed;
   top: 18px;
   right: 20px;
-  z-index: 2;
+  z-index: 25;
   width: 46px;
   height: 46px;
   font-size: 22px;
@@ -1382,6 +1382,10 @@ body {
   border-radius: 12px;
   cursor: pointer;
   transition: transform 0.2s ease, color 0.15s ease;
+}
+
+.page-settings-btn.hidden {
+  display: none;
 }
 
 .page-settings-btn:hover {
