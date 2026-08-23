@@ -312,6 +312,10 @@ export class RemotePlayer {
     this.visual.setWeapon(weaponId);
   }
 
+  setWeaponSkin(skinId: string): void {
+    this.visual.setWeaponSkin(skinId || "");
+  }
+
   private applyCrouchPose(): void {
     const t = this.crouchT;
     const bodyH = STAND_BODY_H + (CROUCH_BODY_H - STAND_BODY_H) * t;

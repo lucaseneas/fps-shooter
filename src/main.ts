@@ -1,10 +1,12 @@
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Vector3 } from "@babylonjs/core/Maths/math";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Room } from "colyseus.js";
 
 import { createScene, applyBoxMap } from "./scene/createScene";
 import { FpsController } from "./player/FpsController";
 import { ViewModel } from "./player/ViewModel";
+import { PlayerVisual } from "./player/PlayerVisual";
 import { WeaponSystem } from "./game/WeaponSystem";
 import { EffectsManager } from "./game/effects";
 import { Hud, ScoreRow } from "./ui/Hud";
@@ -270,7 +272,11 @@ const weapons = new WeaponSystem(
   player.camera,
   effects,
   "self",
-  () => viewModel.getMuzzleWorldPosition()
+  () => viewModel.getMuzzleWorldPosition(),
+  () => ({
+    origin: player.getAimOrigin(),
+    baseDir: player.getAimDirection(),
+  })
 );
 viewModel.setWeapon(weapons.weapon);
 
@@ -285,6 +291,7 @@ function loadSensitivity(): void {
 
 let baseSensitivity = 1;
 let adsAmount = 0;
+let lastThirdPersonPeek = false;
 const ADS_SENS_SCALE = 0.38;
 
 function applySensitivity(value: number): void {
@@ -577,6 +584,12 @@ let lastWeaponIndex = 1;
 let pingMs: number | null = null;
 let serverRttMs = 0;
 let shopPreview: SkinPreview | null = null;
+/** Dummy local visível ao segurar V (visão frontal). */
+let localPlayerVisual: PlayerVisual | null = null;
+let localVisualRoot: TransformNode | null = null;
+let localVisualWeaponId = "";
+let localVisualWeaponSkinId = "";
+let localVisualSkinId = "";
 let homePreview: SkinPreview | null = null;
 let lobbyPreview: SkinPreview | null = null;
 let inventoryPreview: SkinPreview | null = null;
@@ -1478,6 +1491,66 @@ function exitPreSpawn(): void {
   viewModel.setVisible(true);
   viewModel.setWeapon(weapons.weapon);
   applyEquippedSkinToViewModel(weapons.weapon.id);
+  syncVisualToServer();
+  ensureLocalPlayerVisual();
+}
+
+const LOCAL_VISUAL_ROOT_Y = 0.9;
+
+function ensureLocalPlayerVisual(): void {
+  if (localPlayerVisual) return;
+  localVisualRoot = new TransformNode("localVisualRoot", scene);
+  localVisualRoot.parent = player.getBody();
+  localVisualRoot.position.y = LOCAL_VISUAL_ROOT_Y;
+  localPlayerVisual = new PlayerVisual(scene, "local_visual", localVisualRoot);
+  localVisualSkinId = getActiveSkin();
+  localVisualWeaponId = weapons.weapon.id;
+  localVisualWeaponSkinId = getEquippedWeaponSkinId(weapons.weapon.id) ?? "";
+  localPlayerVisual.setSkin(localVisualSkinId);
+  localPlayerVisual.setWeapon(localVisualWeaponId);
+  localPlayerVisual.setWeaponSkin(localVisualWeaponSkinId);
+  localVisualRoot.setEnabled(false);
+}
+
+function disposeLocalPlayerVisual(): void {
+  localPlayerVisual?.dispose();
+  localPlayerVisual = null;
+  localVisualRoot = null;
+  localVisualWeaponId = "";
+  localVisualWeaponSkinId = "";
+  localVisualSkinId = "";
+}
+
+function updateLocalPlayerVisual(dt: number): void {
+  if (!localPlayerVisual || !localVisualRoot) return;
+
+  const peeking = player.isThirdPersonPeeking;
+  localVisualRoot.setEnabled(peeking);
+  if (!peeking) return;
+
+  const skinId = getActiveSkin();
+  if (skinId !== localVisualSkinId) {
+    localVisualSkinId = skinId;
+    localPlayerVisual.setSkin(skinId);
+  }
+  const weaponId = weapons.weapon.id;
+  if (weaponId !== localVisualWeaponId) {
+    localVisualWeaponId = weaponId;
+    localPlayerVisual.setWeapon(weaponId);
+  }
+  const weaponSkinId = getEquippedWeaponSkinId(weaponId) ?? "";
+  if (weaponSkinId !== localVisualWeaponSkinId) {
+    localVisualWeaponSkinId = weaponSkinId;
+    localPlayerVisual.setWeaponSkin(weaponSkinId);
+  }
+
+  localPlayerVisual.setPose({
+    isMoving: player.isMovingOnGround,
+    isCrouching: player.isCrouching,
+    speedRatio: player.isRunning ? 1.2 : 0.85,
+    isAlive: !playerDead,
+  });
+  localPlayerVisual.update(dt);
 }
 
 function openLoadoutModal(inMatch: boolean): void {
@@ -1694,12 +1767,23 @@ function getEquippedWeaponSkinId(weaponId: WeaponId): string | null {
   return def && def.weaponId === weaponId ? id : null;
 }
 
+/** Informa arma + skin equipada para os outros jogadores verem. */
+function syncVisualToServer(): void {
+  if (!room) return;
+  const weaponId = weapons.weapon.id;
+  room.send("sync_visual", {
+    weaponId,
+    weaponSkinId: getEquippedWeaponSkinId(weaponId) ?? "",
+  });
+}
+
 function setEquippedWeaponSkin(weaponId: WeaponId, skinId: string | null): void {
   const next = { ...loadEquippedWeaponSkins() };
   if (skinId) next[weaponId] = skinId;
   else delete next[weaponId];
   localStorage.setItem(ACTIVE_WEAPON_SKINS_KEY, JSON.stringify(next));
   applyEquippedSkinToViewModel(weaponId);
+  syncVisualToServer();
 }
 
 function applyEquippedSkinToViewModel(weaponId: WeaponId): void {
@@ -2532,6 +2616,7 @@ function enterLobby(r: Room): void {
 
   // Envia a skin atualmente equipada no menu
   r.send("change_skin", getActiveSkin());
+  syncVisualToServer();
   pushSocialPresence();
 
   navigate("/lobby");
@@ -2627,6 +2712,9 @@ function cleanupMatchLocal(): void {
   player.exitSpectatorOverview();
   viewModel.setVisible(true);
   viewModel.setInvincible(false);
+  disposeLocalPlayerVisual();
+  player.setThirdPersonPeekAllowed(false);
+  lastThirdPersonPeek = false;
   hud.setInvincibleVignette(false);
 
   for (const rp of remotePlayers.values()) rp.dispose();
@@ -2945,7 +3033,7 @@ teamSwitchNo.addEventListener("click", () => closeTeamSwitchConfirm());
 function updateNametags(r: Room, ownTeam: string): void {
   const tdm = isTdmMode(getMatchSnapshot(r).gameMode);
   let aimedId = "";
-  if (!awaitingSpawn && !player.isSpectating) {
+  if (!awaitingSpawn && !player.isSpectating && !player.isThirdPersonPeeking) {
     const ray = player.camera.getForwardRay(90);
     const hit = scene.pickWithRay(ray, (m) => typeof m.metadata?.remoteAimId === "string");
     if (hit?.hit && hit.pickedMesh) {
@@ -3551,6 +3639,8 @@ function reconcile(r: Room): void {
       rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
     }
     rp.setSkin(p.skinId || "skin_default");
+    rp.setWeapon(p.weaponId || "m4a1");
+    rp.setWeaponSkin(p.weaponSkinId || "");
     rp.setWallhack(ownHasWallhack);
     rp.setInvincible((p.invincibleTimeLeft ?? 0) > 0);
   });
@@ -3693,6 +3783,7 @@ function handleOwnState(p: PlayerSnapshot): void {
   weapons.setNoRecoil(p.activeStreak === "no_recoil");
   const invincible = (p.invincibleTimeLeft ?? 0) > 0;
   viewModel.setInvincible(invincible);
+  localPlayerVisual?.setInvincible(invincible);
   hud.setInvincibleVignette(invincible);
 }
 
@@ -3750,6 +3841,7 @@ weapons.onStateChanged = () => {
   viewModel.setReloading(weapons.isReloading);
   if (weapons.isReloading && !wasReloading) audio.reload();
   wasReloading = weapons.isReloading;
+  syncVisualToServer();
 };
 
 const HIP_FOV = 1.15;
@@ -3877,10 +3969,14 @@ function updateAds(dt: number): void {
     player.camera.fov = fov;
   }
 
-  if (adsAmount === prevAmount && adsAmount === target) return;
+  const peeking = player.isThirdPersonPeeking;
+  const peekChanged = peeking !== lastThirdPersonPeek;
+  lastThirdPersonPeek = peeking;
 
-  viewModel.setVisible(adsAmount < 0.45);
-  setScopeOverlay(adsAmount > 0.5);
+  if (adsAmount === prevAmount && adsAmount === target && !peekChanged) return;
+
+  viewModel.setVisible(adsAmount < 0.45 && !peeking);
+  setScopeOverlay(adsAmount > 0.5 && !peeking);
   setCrosshairScoped(adsAmount > 0.35);
   player.setSensitivity(
     baseSensitivity * (1 - adsAmount * (1 - ADS_SENS_SCALE)),
@@ -3981,6 +4077,7 @@ function rememberWeaponSwitch(fromIndex: number): void {
   viewModel.setWeapon(weapons.weapon);
   applyEquippedSkinToViewModel(weapons.weapon.id);
   player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
+  localVisualWeaponId = "";
   exitAds();
 }
 
@@ -4154,8 +4251,23 @@ engine.runRenderLoop(() => {
   }
   if (dt * 1000 > frameMaxMs) frameMaxMs = dt * 1000;
 
+  const canThirdPersonPeek =
+    !awaitingSpawn &&
+    !playerDead &&
+    !endScreenShown &&
+    !loadoutPicking &&
+    !scoreboardOpen &&
+    !chatTyping &&
+    !player.isSpectating &&
+    !freeSpectating;
+  player.setThirdPersonPeekAllowed(canThirdPersonPeek);
+
   player.update(dt);
   player.updateRecoil(dt);
+
+  updateLocalPlayerVisual(dt);
+  crosshairEl.style.visibility = player.isThirdPersonPeeking ? "hidden" : "";
+
   audio.setListener({
     x: player.getHead().x,
     y: player.getHead().y,

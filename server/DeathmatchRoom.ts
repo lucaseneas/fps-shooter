@@ -17,6 +17,7 @@ import {
   getWeapon,
   damageFalloff,
   weaponMaxRange,
+  resolveWeaponId,
 } from "../shared/weapons";
 import {
   BodyState,
@@ -309,6 +310,24 @@ export class DeathmatchRoom extends Room<MatchState> {
         p.skinId = skinId.slice(0, 32);
       }
     });
+
+    /** Arma + skin de arma visíveis para os outros jogadores. */
+    this.onMessage(
+      "sync_visual",
+      (client, msg: { weaponId?: unknown; weaponSkinId?: unknown }) => {
+        const p = this.state.players.get(client.sessionId);
+        if (!p) return;
+        if (typeof msg?.weaponId === "string") {
+          const w = resolveWeaponId(msg.weaponId);
+          if (w) p.weaponId = w;
+        }
+        if (msg?.weaponSkinId === null || msg?.weaponSkinId === "") {
+          p.weaponSkinId = "";
+        } else if (typeof msg?.weaponSkinId === "string") {
+          p.weaponSkinId = msg.weaponSkinId.slice(0, 64);
+        }
+      }
+    );
 
     /**
      * Convidados informam o XP guardado no navegador para a patente
@@ -873,6 +892,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     const shooter = this.state.players.get(shooterId);
     const weapon = getWeapon(msg?.weaponId);
     if (!shooter || !shooter.alive || !weapon) return;
+    shooter.weaponId = weapon.id;
     if (!Array.isArray(msg.dirs) || msg.dirs.length === 0) return;
     if (msg.dirs.length > weapon.pellets) return;
 

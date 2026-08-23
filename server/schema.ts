@@ -16,6 +16,10 @@ export class PlayerState extends Schema {
   @type("boolean") crouch = false;
   /** Skin do jogador */
   @type("string") skinId = "skin_default";
+  /** Arma equipada (visual para outros jogadores). */
+  @type("string") weaponId = "m4a1";
+  /** Skin de arma equipada na arma atual (vazio = padrão). */
+  @type("string") weaponSkinId = "";
   // Reconciliação do movimento (apenas humanos):
   /** Velocidade vertical da simulação server-side. */
   @type("number") vy = 0;

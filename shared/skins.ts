@@ -34,6 +34,12 @@ export const SKINS: SkinDef[] = [
     price: 300,
     desc: "Um pato elegante pronto para o combate.",
   },
+  {
+    id: "skin-black-knight",
+    name: "Black Knight",
+    price: 1000,
+    desc: "Armadura negra de cavaleiro — sombras e aço no campo de batalha.",
+  },
 ];
 
 export function isValidSkin(id: string): boolean {

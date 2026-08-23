@@ -29,6 +29,8 @@ export interface PlayerSnapshot {
   /** Streaks liberados aguardando ativação (ArraySchema no runtime). */
   availableStreaks: string[];
   skinId: string;
+  weaponId: string;
+  weaponSkinId: string;
 
   // Pré-lobby
   ready: boolean;

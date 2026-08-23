@@ -26,6 +26,9 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 /** Velocidade de transição da câmera ao agachar/levantar. */
 const CROUCH_CAM_SPEED = 12;
+/** Distância da câmera frontal (segurar V) em relação ao personagem. */
+const THIRD_PERSON_DIST = 2.8;
+const THIRD_PERSON_HEIGHT = 1.8;
 /**
  * Erro de predição acima disso (m) é dessincronia real (perda de input,
  * respawn) e vira snap seco, sem suavização.
@@ -190,6 +193,9 @@ export class FpsController {
   private eyeY = EYE_HEIGHT;
   /** fps = jogando · overview = topo pré-spawn · freefly = espectador livre. */
   private cameraMode: "fps" | "overview" | "freefly" = "fps";
+  /** Segurar V — visão frontal do personagem (só câmera; mira permanece em FP). */
+  private thirdPersonPeekAllowed = false;
+  private thirdPersonPeeking = false;
 
   constructor(
     scene: Scene,
@@ -376,6 +382,21 @@ export class FpsController {
 
   get isFreeFlying(): boolean {
     return this.cameraMode === "freefly";
+  }
+
+  get isThirdPersonPeeking(): boolean {
+    return this.thirdPersonPeeking;
+  }
+
+  /** Habilita segurar V durante a partida (desligado em menus/morte). */
+  setThirdPersonPeekAllowed(on: boolean): void {
+    this.thirdPersonPeekAllowed = on;
+    if (!on) this.thirdPersonPeeking = false;
+  }
+
+  /** Mesh dos pés — ancora o dummy de terceira pessoa. */
+  getBody(): Mesh {
+    return this.body;
   }
 
   /** Visão de cima do mapa (pré-spawn / escolha de kit). */
@@ -598,7 +619,24 @@ export class FpsController {
 
   /** Posição do olho (origem do hitscan). */
   getHead(): Vector3 {
+    return this.getAimOrigin();
+  }
+
+  /** Origem da mira — independe da câmera renderizada (ex.: visão frontal com V). */
+  getAimOrigin(): Vector3 {
     return new Vector3(this.sim.x, this.sim.y + this.eyeY, this.sim.z);
+  }
+
+  /** Direção da mira a partir de yaw/pitch — usada pelo hitscan durante a visão frontal. */
+  getAimDirection(): Vector3 {
+    const pitch = Scalar.Clamp(
+      this.basePitch + this.recoilOffset,
+      -this.maxPitch,
+      this.maxPitch
+    );
+    const yaw = this.yaw + this.recoilYawOffset;
+    const cosP = Math.cos(pitch);
+    return new Vector3(Math.sin(yaw) * cosP, -Math.sin(pitch), Math.cos(yaw) * cosP);
   }
 
   private onPointerLockChange = (): void => {
@@ -772,6 +810,12 @@ export class FpsController {
     const targetEye = this.isCrouching ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
     this.eyeY += (targetEye - this.eyeY) * Math.min(1, dt * CROUCH_CAM_SPEED);
 
+    this.thirdPersonPeeking =
+      this.thirdPersonPeekAllowed &&
+      this.cameraMode === "fps" &&
+      this.movementEnabled &&
+      this.keys.has("KeyV");
+
     this.syncVisual(this.movementEnabled ? this.accumulator / FIXED_DT : 1);
   }
 
@@ -878,6 +922,22 @@ export class FpsController {
     );
     const yaw = this.yaw + this.recoilYawOffset;
 
+    if (this.thirdPersonPeeking) {
+      this.body.rotation.y = this.yaw;
+      const fx = Math.sin(this.yaw);
+      const fz = Math.cos(this.yaw);
+      const eyeLevel = y + THIRD_PERSON_HEIGHT;
+      this.camera.position.set(
+        x + fx * THIRD_PERSON_DIST,
+        eyeLevel,
+        z + fz * THIRD_PERSON_DIST
+      );
+      // Mesma altura dos olhos — visão horizontal, como um inimigo em frente.
+      this.camera.setTarget(new Vector3(x, eyeLevel, z));
+      return;
+    }
+
+    this.body.rotation.y = 0;
     this.camera.position.set(x, y + this.eyeY, z);
     this.camera.rotation.set(pitch, yaw, 0);
   }

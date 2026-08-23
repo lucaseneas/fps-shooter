@@ -1,5 +1,5 @@
 import { Scene } from "@babylonjs/core/scene";
-import { Vector3, Quaternion } from "@babylonjs/core/Maths/math";
+import { Vector3, Quaternion, Color3 } from "@babylonjs/core/Maths/math";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -9,8 +9,16 @@ import { Material } from "@babylonjs/core/Materials/material";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 
-import { WEAPON_ASSETS, weaponModelTransform } from "./ViewModel";
+import { WEAPON_ASSETS, weaponModelTransform, applyWeaponSkinParts, weaponTint, applyWeaponTint } from "./ViewModel";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { getWeaponSkin } from "../../shared/weaponSkins";
 import { MuzzleFlash } from "../game/effects";
+
+/** Escala extra na visão em terceira pessoa — evita o braço cobrir a arma. */
+const THIRD_PERSON_WEAPON_SCALE = 1.24;
+/** Posição da arma na mão (x=direita, y=altura, z=frente). */
+const GUN_ROOT_STAND = new Vector3(0.36, 0.60, 0.52);
+const GUN_ROOT_CROUCH_Y = 0.44;
 
 export interface PlayerVisualPose {
   isMoving: boolean;
@@ -41,6 +49,10 @@ export class PlayerVisual {
   private gunRoot: TransformNode;
   private currentWeaponModel: Mesh | null = null;
   private currentWeaponId = "m4a1";
+  private loadedWeaponId = "";
+  private currentWeaponSkinId = "";
+  private pendingWeaponSkinId = "";
+  private originalColors = new Map<string, Map<string, Color3>>();
 
   private muzzleFlash: MuzzleFlash;
   private recoilKick = 0;
@@ -61,7 +73,7 @@ export class PlayerVisual {
     // Ponto de encaixe da arma (sempre apontada para a frente)
     this.gunRoot = new TransformNode(`${name}_gunRoot`, scene);
     this.gunRoot.parent = this.root;
-    this.gunRoot.position = new Vector3(0.34, 0.42, 0.45);
+    this.gunRoot.position.copyFrom(GUN_ROOT_STAND);
 
     this.muzzleFlash = new MuzzleFlash(scene, this.gunRoot, { size: 0.32 });
     this.muzzleFlash.setLocalPosition(new Vector3(0, 0.02, 0.65));
@@ -127,12 +139,15 @@ export class PlayerVisual {
   }
 
   setWeapon(weaponId: string): void {
-    if (!weaponId) return;
+    if (!weaponId || weaponId === this.loadedWeaponId) return;
     this.currentWeaponId = weaponId;
+    this.pendingWeaponSkinId = this.currentWeaponSkinId;
     const assetUrl = WEAPON_ASSETS[weaponId] || WEAPON_ASSETS.m4a1;
     const scene = this.root.getScene();
 
     SceneLoader.LoadAssetContainerAsync("", assetUrl, scene).then((container) => {
+      if (weaponId !== this.currentWeaponId) return;
+
       if (this.currentWeaponModel) {
         this.currentWeaponModel.dispose(false, true);
         this.currentWeaponModel = null;
@@ -145,18 +160,77 @@ export class PlayerVisual {
       const offsetNode = new TransformNode(`gunOffset_${weaponId}`, scene);
       offsetNode.parent = this.gunRoot;
       offsetNode.rotationQuaternion = Quaternion.FromEulerVector(transform.rotation);
-      offsetNode.scaling.setAll(transform.scale * 0.85);
+      offsetNode.scaling.setAll(transform.scale * THIRD_PERSON_WEAPON_SCALE);
 
       model.parent = offsetNode;
       this.currentWeaponModel = model;
 
+      const originals = new Map<string, Color3>();
       model.getChildMeshes(false).forEach((m) => {
         m.isPickable = false;
+        if (m.material) {
+          m.material = m.material.clone(`pvMat_${weaponId}_${m.name}`);
+        }
+        originals.set(m.name, this.readMeshColor(m).clone());
       });
+      this.originalColors.set(weaponId, originals);
 
       const length = weaponId === "knife" ? 0.2 : weaponId === "awp" ? 0.9 : 0.65;
       this.muzzleFlash.setLocalPosition(new Vector3(0, 0.02, length));
+      this.loadedWeaponId = weaponId;
+      this.applyStoredWeaponSkin();
     }).catch(console.error);
+  }
+
+  /** Id da skin equipada na arma atual (vazio = padrão). */
+  setWeaponSkin(skinId: string): void {
+    const next = skinId || "";
+    if (next === this.currentWeaponSkinId) return;
+    this.currentWeaponSkinId = next;
+    this.pendingWeaponSkinId = next;
+    this.applyStoredWeaponSkin();
+  }
+
+  private readMeshColor(m: AbstractMesh): Color3 {
+    const mat = m.material as unknown as {
+      albedoColor?: Color3;
+      diffuseColor?: Color3;
+    } | null;
+    return mat?.albedoColor?.clone() ?? mat?.diffuseColor?.clone() ?? new Color3(0.55, 0.55, 0.58);
+  }
+
+  private restoreOriginalColors(weaponId: string): void {
+    const model = this.currentWeaponModel;
+    const originals = this.originalColors.get(weaponId);
+    if (!model || !originals || weaponId !== this.currentWeaponId) return;
+    for (const m of model.getChildMeshes()) {
+      const c = originals.get(m.name);
+      if (!c) continue;
+      const mat = m.material as unknown as {
+        albedoColor?: Color3;
+        diffuseColor?: Color3;
+      } | null;
+      if (mat?.albedoColor !== undefined) mat.albedoColor = c.clone();
+      else if (mat?.diffuseColor !== undefined) mat.diffuseColor = c.clone();
+    }
+  }
+
+  private applyStoredWeaponSkin(): void {
+    const weaponId = this.currentWeaponId;
+    const model = this.currentWeaponModel;
+    if (!model || weaponId !== this.currentWeaponId) return;
+
+    this.restoreOriginalColors(weaponId);
+    const skinId = this.pendingWeaponSkinId;
+    if (skinId) {
+      const skin = getWeaponSkin(skinId);
+      if (skin && skin.weaponId === weaponId) {
+        applyWeaponSkinParts(this.root.getScene(), model, skin.parts);
+        return;
+      }
+    }
+    const tint = weaponTint(weaponId);
+    if (tint) applyWeaponTint(this.root.getScene(), model, tint);
   }
 
   triggerShoot(): void {
@@ -178,11 +252,11 @@ export class PlayerVisual {
     }
 
     const isCrouching = this.lastPose.isCrouching;
-    const targetGunY = (isCrouching ? 0.28 : 0.42) + this.recoilKick * 0.08;
-    const targetGunZ = 0.45 - this.recoilKick * 0.12;
+    const targetGunY = (isCrouching ? GUN_ROOT_CROUCH_Y : GUN_ROOT_STAND.y) + this.recoilKick * 0.08;
+    const targetGunZ = GUN_ROOT_STAND.z - this.recoilKick * 0.12;
     const targetGunPitch = -this.recoilKick * 0.6;
 
-    this.gunRoot.position.set(0.34, targetGunY, targetGunZ);
+    this.gunRoot.position.set(GUN_ROOT_STAND.x, targetGunY, targetGunZ);
     this.gunRoot.rotation.set(targetGunPitch, 0, 0);
   }
 

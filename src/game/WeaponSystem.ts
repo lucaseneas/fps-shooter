@@ -35,6 +35,11 @@ export interface FireData {
   localHits: HitInfo[];
 }
 
+export interface AimSample {
+  origin: Vector3;
+  baseDir: Vector3;
+}
+
 interface AmmoState {
   mag: number;
   reserve: number;
@@ -95,7 +100,8 @@ export class WeaponSystem {
     camera: UniversalCamera,
     effects: EffectsManager,
     private readonly ownerId: string,
-    private readonly muzzlePosProvider?: () => Vector3
+    private readonly muzzlePosProvider?: () => Vector3,
+    private readonly aimProvider?: () => AimSample
   ) {
     this.scene = scene;
     this.camera = camera;
@@ -399,8 +405,13 @@ export class WeaponSystem {
     this.cooldown = this.weapon.fireInterval;
     if (!this.weapon.auto) this.semiAutoLock = true;
 
-    const origin = this.camera.globalPosition.clone();
-    const baseDir = this.camera.getDirection(Vector3.Forward());
+    const aim =
+      this.aimProvider?.() ?? {
+        origin: this.camera.globalPosition.clone(),
+        baseDir: this.camera.getDirection(Vector3.Forward()),
+      };
+    const origin = aim.origin;
+    const baseDir = aim.baseDir;
 
     const hits: HitInfo[] = [];
     const dirs: Vector3[] = [];
