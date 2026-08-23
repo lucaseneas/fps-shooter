@@ -97,6 +97,9 @@ export function sanitizeTextureId(v: unknown): MapTextureId {
   return typeof v === "string" && TEXTURE_IDS.has(v) ? (v as MapTextureId) : "default";
 }
 
+export const MIN_PIECE_ELEV = 0;
+export const MAX_PIECE_ELEV = 40;
+
 export interface EditorPiece {
   id: string;
   kind: EditorPieceKind;
@@ -106,6 +109,8 @@ export interface EditorPiece {
   w: number;
   h: number;
   d: number;
+  /** Altura da base acima do chão (0 = apoiado no chão). */
+  elev: number;
   /** 0 / 90 / 180 / 270 — só muda o AABB em múltiplos de 90°. */
   yawDeg: number;
   color?: string;
@@ -176,6 +181,31 @@ function clamp(n: number, min: number, max: number): number {
 export function clampMapAxis(n: number): number {
   if (!Number.isFinite(n)) return MAP_SIZE;
   return Math.round(clamp(n, MIN_MAP_AXIS, MAX_MAP_AXIS));
+}
+
+export function clampElev(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return clamp(n, MIN_PIECE_ELEV, MAX_PIECE_ELEV);
+}
+
+/** Centro Y do AABB a partir da elevação da base. */
+export function centerYFromElev(h: number, elev: number): number {
+  return clampElev(elev) + Math.max(0.2, h) / 2;
+}
+
+export function pieceElev(p: Pick<EditorPiece, "kind" | "y" | "h" | "elev">): number {
+  if (typeof p.elev === "number" && Number.isFinite(p.elev)) return clampElev(p.elev);
+  return inferElevFromY(p.kind, p.h, p.y);
+}
+
+function inferElevFromY(kind: EditorPieceKind, h: number, y: number): number {
+  if (kind === "stair" && Math.abs(y - h) < 0.051) return 0;
+  return clampElev(y - h / 2);
+}
+
+export function applyPieceElev(p: EditorPiece, elev: number): void {
+  p.elev = clampElev(elev);
+  p.y = centerYFromElev(p.h, p.elev);
 }
 
 export function mapAxes(def: Pick<CustomMapDef, "size" | "sizeX" | "sizeZ">): {
@@ -283,6 +313,7 @@ export function pracaToCustomMap(): CustomMapDef {
       w: b.w,
       h: b.h,
       d: b.d,
+      elev: clampElev(b.y - b.h / 2),
       yawDeg: 0,
     });
   }
@@ -320,6 +351,7 @@ export function stairToBoxes(p: EditorPiece): BoxDef[] {
   const actualStep = rise / steps;
   const length = Math.max(1, p.d);
   const width = Math.max(0.8, p.w);
+  const elev = pieceElev(p);
   const yaw = yawTo90(p.yawDeg);
   const alongX = yaw === 90 ? 1 : yaw === 270 ? -1 : 0;
   const alongZ = yaw === 0 ? 1 : yaw === 180 ? -1 : 0;
@@ -332,7 +364,7 @@ export function stairToBoxes(p: EditorPiece): BoxDef[] {
     const swapped = yaw === 90 || yaw === 270;
     boxes.push({
       x: p.x + alongX * along,
-      y: h / 2,
+      y: elev + h / 2,
       z: p.z + alongZ * along,
       w: swapped ? stepLen : width,
       h,
@@ -412,15 +444,22 @@ function sanitizePiece(raw: unknown): EditorPiece | null {
   if (typeof kind !== "string" || !KINDS.has(kind as EditorPieceKind)) return null;
   const preset = PIECE_PRESETS[kind as EditorPieceKind];
   const id = typeof o.id === "string" && o.id.length > 0 ? o.id.slice(0, 24) : newPieceId();
+  const h = num(o.h, preset.h, 0.2, 20);
+  const yRaw = num(o.y, preset.h / 2, 0.05, 80);
+  const elev =
+    o.elev !== undefined
+      ? num(o.elev, 0, MIN_PIECE_ELEV, MAX_PIECE_ELEV)
+      : inferElevFromY(kind as EditorPieceKind, h, yRaw);
   return {
     id,
     kind: kind as EditorPieceKind,
     x: num(o.x, 0, -200, 200),
-    y: num(o.y, preset.h / 2, 0.05, 40),
+    y: centerYFromElev(h, elev),
     z: num(o.z, 0, -200, 200),
     w: num(o.w, preset.w, 0.4, 80),
-    h: num(o.h, preset.h, 0.2, 20),
+    h,
     d: num(o.d, preset.d, 0.4, 80),
+    elev,
     yawDeg: yawTo90(num(o.yawDeg, 0, 0, 360)),
     color: sanitizeHexColor(o.color),
     texture: sanitizeTextureId(o.texture),

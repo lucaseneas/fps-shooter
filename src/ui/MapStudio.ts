@@ -143,6 +143,7 @@ export class MapStudio {
   private readonly wInput: HTMLInputElement;
   private readonly hInput: HTMLInputElement;
   private readonly dInput: HTMLInputElement;
+  private readonly elevInput: HTMLInputElement;
   private readonly xInput: HTMLInputElement;
   private readonly zInput: HTMLInputElement;
   private readonly colorInput: HTMLInputElement;
@@ -173,6 +174,7 @@ export class MapStudio {
     this.wInput = el("mapEditorW");
     this.hInput = el("mapEditorH");
     this.dInput = el("mapEditorD");
+    this.elevInput = el("mapEditorElev");
     this.xInput = el("mapEditorX");
     this.zInput = el("mapEditorZ");
     this.colorInput = el("mapEditorColor");
@@ -300,15 +302,18 @@ export class MapStudio {
       this.editor?.setBrush(
         Number(this.wInput.value) || 1,
         Number(this.hInput.value) || 1,
-        Number(this.dInput.value) || 1
+        Number(this.dInput.value) || 1,
+        Number(this.elevInput.value) || 0
       );
     };
     this.wInput.addEventListener("input", dimHandler);
     this.hInput.addEventListener("input", dimHandler);
     this.dInput.addEventListener("input", dimHandler);
+    this.elevInput.addEventListener("input", dimHandler);
     this.wInput.addEventListener("change", () => this.editor?.commit());
     this.hInput.addEventListener("change", () => this.editor?.commit());
     this.dInput.addEventListener("change", () => this.editor?.commit());
+    this.elevInput.addEventListener("change", () => this.editor?.commit());
     const posHandler = () => {
       this.editor?.setSelectedPosition(
         Number(this.xInput.value) || 0,
@@ -601,10 +606,11 @@ export class MapStudio {
   private syncInspector(): void {
     const ed = this.editor;
     const sel = ed?.selected ?? null;
-    const brush = ed?.brushSize ?? PIECE_PRESETS.wall;
+    const brush = ed?.brushSize ?? { ...PIECE_PRESETS.wall, elev: 0 };
     this.wInput.value = String(brush.w);
     this.hInput.value = String(brush.h);
     this.dInput.value = String(brush.d);
+    this.elevInput.value = String(brush.elev);
     const def = ed?.current;
     const tool = ed?.currentTool ?? "select";
     const placing = isObjectTool(tool);

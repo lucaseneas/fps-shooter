@@ -4819,6 +4819,10 @@ kbd {
   grid-template-columns: 1fr 1fr;
 }
 
+.map-elev-row {
+  grid-template-columns: 1fr;
+}
+
 #pageMaps .map-tool {
   padding: 8px 6px;
   font-size: 12px;

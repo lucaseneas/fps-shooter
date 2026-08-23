@@ -17,11 +17,15 @@ import {
   KIND_DEFAULT_HEX,
   PIECE_PRESETS,
   aabbAfterYaw,
+  applyPieceElev,
   borderBoxes,
+  centerYFromElev,
+  clampElev,
   clampMapAxis,
   cloneCustomMap,
   mapAxes,
   newPieceId,
+  pieceElev,
   snapTo,
   stairToBoxes,
   textureUrlFor,
@@ -105,7 +109,10 @@ export class MapEditor {
   private def: CustomMapDef | null = null;
   private tool: EditorTool = "select";
   private selection: EditorSelection = null;
-  private brush: { w: number; h: number; d: number } = { ...PIECE_PRESETS.wall };
+  private brush: { w: number; h: number; d: number; elev: number } = {
+    ...PIECE_PRESETS.wall,
+    elev: 0,
+  };
   private brushColor: string | undefined;
   private brushTexture: MapTextureId = "default";
   private readonly textures = new Map<string, Texture>();
@@ -186,7 +193,7 @@ export class MapEditor {
     return this.tool;
   }
 
-  get brushSize(): { w: number; h: number; d: number } {
+  get brushSize(): { w: number; h: number; d: number; elev: number } {
     return { ...this.brush };
   }
 
@@ -232,24 +239,25 @@ export class MapEditor {
     if (tool !== "select") this.selection = null;
     if (tool !== "select" && !isSpawnTool(tool)) {
       const p = PIECE_PRESETS[tool];
-      this.brush = { w: p.w, h: p.h, d: p.d };
+      this.brush = { w: p.w, h: p.h, d: p.d, elev: this.brush.elev };
     }
     this.emitSelect();
     this.updateGhost();
   }
 
-  setBrush(w: number, h: number, d: number): void {
+  setBrush(w: number, h: number, d: number, elev: number = this.brush.elev): void {
     this.brush = {
       w: Math.max(0.4, w),
       h: Math.max(0.2, h),
       d: Math.max(0.4, d),
+      elev: clampElev(elev),
     };
     const piece = this.selectedPiece();
     if (piece) {
       piece.w = this.brush.w;
       piece.h = this.brush.h;
       piece.d = this.brush.d;
-      piece.y = piece.kind === "stair" ? this.brush.h : this.brush.h / 2;
+      applyPieceElev(piece, this.brush.elev);
       this.rebuildPieces();
       this.emitChange();
     }
@@ -706,11 +714,12 @@ export class MapEditor {
       id: newPieceId(),
       kind,
       x,
-      y: kind === "stair" ? this.brush.h : this.brush.h / 2,
+      y: centerYFromElev(this.brush.h || preset.h, this.brush.elev),
       z,
       w: this.brush.w || preset.w,
       h: this.brush.h || preset.h,
       d: this.brush.d || preset.d,
+      elev: this.brush.elev,
       yawDeg: 0,
       color: this.brushColor,
       texture: this.brushTexture,
@@ -769,7 +778,7 @@ export class MapEditor {
       { width: this.brush.w, height: this.brush.h, depth: this.brush.d },
       this.scene
     );
-    mesh.position = new Vector3(x, this.brush.h / 2, z);
+    mesh.position = new Vector3(x, centerYFromElev(this.brush.h, this.brush.elev), z);
     mesh.material = this.mat(`ghost_${this.tool}`, KIND_COLOR[this.tool], 0.35);
     mesh.isPickable = false;
     this.ghost = mesh;
@@ -796,7 +805,7 @@ export class MapEditor {
       h = p.h + 0.12;
       d = dim.d + 0.12;
       if (p.kind === "stair") {
-        y = p.h / 2;
+        y = centerYFromElev(p.h, pieceElev(p));
         h = p.h + 0.12;
         d = p.d + 0.12;
         w = p.w + 0.12;
@@ -848,7 +857,7 @@ export class MapEditor {
   private emitSelect(): void {
     const p = this.selectedPiece();
     if (p) {
-      this.brush = { w: p.w, h: p.h, d: p.d };
+      this.brush = { w: p.w, h: p.h, d: p.d, elev: pieceElev(p) };
       this.brushColor = p.color;
       this.brushTexture = p.texture ?? "default";
     }
