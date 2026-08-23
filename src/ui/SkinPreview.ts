@@ -12,13 +12,23 @@ import { Color4, Color3 } from "@babylonjs/core/Maths/math.color";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import "@babylonjs/loaders/glTF";
 
-import { WEAPON_ASSETS, weaponModelTransform, weaponTint, applyWeaponTint } from "../player/ViewModel";
+import {
+  WEAPON_ASSETS,
+  weaponModelTransform,
+  weaponTint,
+  applyWeaponTint,
+} from "../player/ViewModel";
+import {
+  THIRD_PERSON_WEAPON_SCALE,
+  THIRD_PERSON_GUN_ROOT,
+  THIRD_PERSON_DUMMY_Y,
+  THIRD_PERSON_CHARACTER_CENTER_Y,
+  cleanThirdPersonAnimKey,
+} from "../player/PlayerVisual";
 import type { WeaponSkinDef } from "../../shared/weaponSkins";
-
-/** Ponto de encaixe da arma na mão direita do dummy (mesma pose do RemotePlayer). */
-const GUN_ATTACH_POS = new Vector3(0.32, 1.22, 0.3);
 
 export type PreviewMode = "character" | "weapon" | "loadout";
 
@@ -28,6 +38,7 @@ export class SkinPreview {
   private scene: Scene;
   private camera: ArcRotateCamera;
   private dummyMesh: TransformNode | null = null;
+  private characterRoot: TransformNode | null = null;
   private skinMat: PBRMaterial | StandardMaterial | null = null;
   private isRunning = false;
   private controlsAttached = false;
@@ -35,6 +46,8 @@ export class SkinPreview {
   private mode: PreviewMode = "loadout";
 
   private gunRoot: TransformNode | null = null;
+  private readonly animGroups = new Map<string, AnimationGroup>();
+  private currentAnimKey = "";
   private readonly weaponNodes = new Map<string, TransformNode>();
   private readonly weaponModels = new Map<string, Mesh>();
   private readonly originalColors = new Map<string, Map<string, Color3>>();
@@ -54,7 +67,7 @@ export class SkinPreview {
       Math.PI / 2,
       Math.PI / 2.1,
       3.2,
-      new Vector3(0, 0.9, 0),
+      new Vector3(0, THIRD_PERSON_CHARACTER_CENTER_Y, 0),
       this.scene
     );
     this.camera.minZ = 0.01;
@@ -83,7 +96,7 @@ export class SkinPreview {
       this.camera.alpha = Math.PI / 2;
       this.camera.beta = Math.PI / 2.4;
     } else {
-      this.camera.setTarget(new Vector3(0, 0.9, 0));
+      this.camera.setTarget(new Vector3(0, THIRD_PERSON_CHARACTER_CENTER_Y, 0));
       this.camera.radius = 3.2;
       this.camera.lowerRadiusLimit = 2.0;
       this.camera.upperRadiusLimit = 4.5;
@@ -98,8 +111,22 @@ export class SkinPreview {
     try {
       const container = await SceneLoader.LoadAssetContainerAsync("", "/assets/player/player_dummy.glb", this.scene);
       const inst = container.instantiateModelsToScene();
+
+      this.characterRoot = new TransformNode("previewCharacterRoot", this.scene);
+      this.characterRoot.position.y = THIRD_PERSON_CHARACTER_CENTER_Y;
+
       this.dummyMesh = inst.rootNodes[0] as TransformNode;
-      this.dummyMesh.position.y = 0;
+      this.dummyMesh.parent = this.characterRoot;
+      this.dummyMesh.position.y = THIRD_PERSON_DUMMY_Y;
+
+      if (inst.animationGroups) {
+        for (const ag of inst.animationGroups) {
+          const key = cleanThirdPersonAnimKey(ag.name);
+          this.animGroups.set(key, ag);
+          this.animGroups.set(ag.name, ag);
+          ag.stop();
+        }
+      }
 
       this.dummyMesh.getChildMeshes().forEach((m) => {
         if (m.material) {
@@ -114,10 +141,42 @@ export class SkinPreview {
       }
 
       this.setSkin(this.currentSkin);
+      this.syncCharacterAnimation();
       this.updateVisible();
     } catch (e) {
       console.error("[SkinPreview] Falha ao carregar player_dummy.glb:", e);
     }
+  }
+
+  private syncCharacterAnimation(): void {
+    if (this.mode === "weapon") {
+      this.stopPreviewAnimations();
+      return;
+    }
+    this.playPreviewAnimation("Idle");
+  }
+
+  private playPreviewAnimation(animName: string): void {
+    if (this.animGroups.size === 0) return;
+
+    const key = cleanThirdPersonAnimKey(animName);
+    const targetAg = this.animGroups.get(key) || this.animGroups.get(animName);
+    if (!targetAg) return;
+
+    if (this.currentAnimKey === key && targetAg.isPlaying) return;
+
+    for (const [k, ag] of this.animGroups.entries()) {
+      if (k !== key && ag.isPlaying) ag.stop();
+    }
+
+    this.currentAnimKey = key;
+    targetAg.speedRatio = 1;
+    targetAg.start(true, 1, targetAg.from, targetAg.to, false);
+  }
+
+  private stopPreviewAnimations(): void {
+    for (const ag of this.animGroups.values()) ag.stop();
+    this.currentAnimKey = "";
   }
 
   private placeGunRoot(): void {
@@ -125,9 +184,12 @@ export class SkinPreview {
     if (this.mode === "weapon") {
       this.gunRoot.parent = null;
       this.gunRoot.position.set(0, -0.05, 0);
-    } else if (this.dummyMesh) {
-      this.gunRoot.parent = this.dummyMesh;
-      this.gunRoot.position = GUN_ATTACH_POS.clone();
+      this.gunRoot.rotation.set(0, 0, 0);
+    } else if (this.characterRoot) {
+      // Mesma hierarquia do PlayerVisual: arma no root do personagem, não no dummy.
+      this.gunRoot.parent = this.characterRoot;
+      this.gunRoot.position.copyFrom(THIRD_PERSON_GUN_ROOT);
+      this.gunRoot.rotation.set(0, 0, 0);
     }
   }
 
@@ -136,6 +198,7 @@ export class SkinPreview {
     this.mode = mode;
     this.applyCameraForMode();
     this.placeGunRoot();
+    this.syncCharacterAnimation();
     this.updateVisible();
   }
 
@@ -193,7 +256,7 @@ export class SkinPreview {
         const model = inst.rootNodes[0] as Mesh;
         const transform = weaponModelTransform(id, model);
         gunOffset.rotationQuaternion = Quaternion.FromEulerVector(transform.rotation);
-        gunOffset.scaling.setAll(transform.scale);
+        gunOffset.scaling.setAll(transform.scale * THIRD_PERSON_WEAPON_SCALE);
 
         model.parent = gunOffset;
 
@@ -278,6 +341,7 @@ export class SkinPreview {
     if (this.isRunning) return;
     this.isRunning = true;
     this.applyCameraForMode();
+    this.syncCharacterAnimation();
     if (!this.controlsAttached) {
       this.camera.attachControl(this.canvas, false);
       this.controlsAttached = true;
@@ -290,6 +354,7 @@ export class SkinPreview {
   public stop() {
     if (!this.isRunning) return;
     this.isRunning = false;
+    this.stopPreviewAnimations();
     this.engine.stopRenderLoop();
     if (this.controlsAttached) {
       this.camera.detachControl();

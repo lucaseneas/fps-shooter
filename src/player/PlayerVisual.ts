@@ -15,10 +15,25 @@ import { getWeaponSkin } from "../../shared/weaponSkins";
 import { MuzzleFlash } from "../game/effects";
 
 /** Escala extra na visão em terceira pessoa — evita o braço cobrir a arma. */
-const THIRD_PERSON_WEAPON_SCALE = 1.24;
-/** Posição da arma na mão (x=direita, y=altura, z=frente). */
-const GUN_ROOT_STAND = new Vector3(0.36, 0.60, 0.52);
-const GUN_ROOT_CROUCH_Y = 0.44;
+export const THIRD_PERSON_WEAPON_SCALE = 1.24;
+/** Posição da arma no root do jogador (x=direita, y=altura, z=frente). */
+export const THIRD_PERSON_GUN_ROOT = new Vector3(0.36, 0.60, 0.60);
+export const THIRD_PERSON_GUN_CROUCH_Y = 0.44;
+/** Offset Y do dummy em relação ao root (pés no chão). */
+export const THIRD_PERSON_DUMMY_Y = -0.9;
+/** Centro do personagem em pé (altura do root / alvo da câmera no preview). */
+export const THIRD_PERSON_CHARACTER_CENTER_Y = 0.9;
+
+export function cleanThirdPersonAnimKey(name: string): string {
+  let s = name.trim().toLowerCase();
+  if (s.startsWith("clone of ")) s = s.substring(9).trim();
+  if (s.includes("|")) s = s.split("|").pop()!.trim();
+  s = s.replace(/^(playerrig_|armature_|player_|rig_)/, "");
+  return s.replace(/[^a-z0-9]/g, "");
+}
+
+const GUN_ROOT_STAND = THIRD_PERSON_GUN_ROOT;
+const GUN_ROOT_CROUCH_Y = THIRD_PERSON_GUN_CROUCH_Y;
 
 export interface PlayerVisualPose {
   isMoving: boolean;
@@ -28,11 +43,7 @@ export interface PlayerVisualPose {
 }
 
 function cleanAnimKey(name: string): string {
-  let s = name.trim().toLowerCase();
-  if (s.startsWith("clone of ")) s = s.substring(9).trim();
-  if (s.includes("|")) s = s.split("|").pop()!.trim();
-  s = s.replace(/^(playerrig_|armature_|player_|rig_)/, "");
-  return s.replace(/[^a-z0-9]/g, "");
+  return cleanThirdPersonAnimKey(name);
 }
 
 export class PlayerVisual {
@@ -83,7 +94,7 @@ export class PlayerVisual {
       const inst = container.instantiateModelsToScene();
       this.dummyMesh = inst.rootNodes[0] as TransformNode;
       this.dummyMesh.parent = this.root;
-      this.dummyMesh.position.y = -0.9; // Base no chão (origem = pés)
+      this.dummyMesh.position.y = THIRD_PERSON_DUMMY_Y; // Base no chão (origem = pés)
       this.dummyMesh.setEnabled(this.alive);
 
       // Indexar todos os grupos de animação
