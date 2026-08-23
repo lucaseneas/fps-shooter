@@ -912,7 +912,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       if (pos) targets.push({ id, pos });
     }
 
-    const ends: Array<{ x: number; y: number; z: number }> = [];
+    const ends: Array<{ x: number; y: number; z: number; hit: boolean; head: boolean }> = [];
     let confirmedHit = false;
     let confirmedHeadshot = false;
 
@@ -968,6 +968,8 @@ export class DeathmatchRoom extends Room<MatchState> {
         x: origin.x + dir.x * tBest,
         y: origin.y + dir.y * tBest,
         z: origin.z + dir.z * tBest,
+        hit: hitId !== null,
+        head: hitId !== null && hitPart === "head",
       });
 
       if (hitId) {

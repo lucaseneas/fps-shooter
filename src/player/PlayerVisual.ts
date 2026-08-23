@@ -1,7 +1,6 @@
 import { Scene } from "@babylonjs/core/scene";
-import { Vector3, Color3, Quaternion } from "@babylonjs/core/Maths/math";
+import { Vector3, Quaternion } from "@babylonjs/core/Maths/math";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -11,6 +10,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 
 import { WEAPON_ASSETS, weaponModelTransform } from "./ViewModel";
+import { MuzzleFlash } from "../game/effects";
 
 export interface PlayerVisualPose {
   isMoving: boolean;
@@ -42,8 +42,7 @@ export class PlayerVisual {
   private currentWeaponModel: Mesh | null = null;
   private currentWeaponId = "m4a1";
 
-  private muzzleFlashMesh: Mesh | null = null;
-  private flashTimeout = 0;
+  private muzzleFlash: MuzzleFlash;
   private recoilKick = 0;
 
   private invincible = false;
@@ -64,21 +63,8 @@ export class PlayerVisual {
     this.gunRoot.parent = this.root;
     this.gunRoot.position = new Vector3(0.34, 0.42, 0.45);
 
-    // Muzzle Flash visual para disparos
-    const flashMat = new StandardMaterial(`${name}_flashMat`, scene);
-    flashMat.emissiveColor = new Color3(1, 0.85, 0.2);
-    flashMat.disableLighting = true;
-    flashMat.alpha = 0.9;
-    this.muzzleFlashMesh = MeshBuilder.CreateSphere(
-      `${name}_muzzleFlash`,
-      { diameter: 0.25, segments: 6 },
-      scene
-    );
-    this.muzzleFlashMesh.parent = this.gunRoot;
-    this.muzzleFlashMesh.position = new Vector3(0, 0, 0.65);
-    this.muzzleFlashMesh.material = flashMat;
-    this.muzzleFlashMesh.isPickable = false;
-    this.muzzleFlashMesh.setEnabled(false);
+    this.muzzleFlash = new MuzzleFlash(scene, this.gunRoot, { size: 0.32 });
+    this.muzzleFlash.setLocalPosition(new Vector3(0, 0.02, 0.65));
 
     // Carregar modelo base Minecraft
     SceneLoader.LoadAssetContainerAsync("", "/assets/player/player_dummy.glb", scene).then((container) => {
@@ -168,27 +154,25 @@ export class PlayerVisual {
         m.isPickable = false;
       });
 
-      if (this.muzzleFlashMesh) {
-        const length = weaponId === "knife" ? 0.2 : weaponId === "awp" ? 0.9 : 0.65;
-        this.muzzleFlashMesh.position.set(0, 0.02, length);
-      }
+      const length = weaponId === "knife" ? 0.2 : weaponId === "awp" ? 0.9 : 0.65;
+      this.muzzleFlash.setLocalPosition(new Vector3(0, 0.02, length));
     }).catch(console.error);
   }
 
   triggerShoot(): void {
     this.recoilKick = 0.35;
 
-    if (this.currentWeaponId !== "knife" && this.muzzleFlashMesh) {
-      this.muzzleFlashMesh.setEnabled(true);
-      this.muzzleFlashMesh.scaling.setAll(0.8 + Math.random() * 0.4);
-      window.clearTimeout(this.flashTimeout);
-      this.flashTimeout = window.setTimeout(() => {
-        this.muzzleFlashMesh?.setEnabled(false);
-      }, 45);
+    if (this.currentWeaponId !== "knife") {
+      const heavy =
+        this.currentWeaponId === "shotgun" ||
+        this.currentWeaponId === "magnum" ||
+        this.currentWeaponId === "awp";
+      this.muzzleFlash.trigger(heavy ? 1.4 : 1);
     }
   }
 
   update(dt: number): void {
+    this.muzzleFlash.update(dt);
     if (this.recoilKick > 0) {
       this.recoilKick = Math.max(0, this.recoilKick - dt * 10.0);
     }
@@ -280,14 +264,13 @@ export class PlayerVisual {
   }
 
   dispose(): void {
-    window.clearTimeout(this.flashTimeout);
     for (const ag of this.animGroups.values()) {
       ag.dispose();
     }
     this.animGroups.clear();
     this.skinTexture?.dispose();
     this.currentWeaponModel?.dispose(false, true);
-    this.muzzleFlashMesh?.dispose(false, true);
+    this.muzzleFlash.dispose();
     this.root.dispose(false, true);
   }
 }

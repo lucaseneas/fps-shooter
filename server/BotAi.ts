@@ -38,6 +38,7 @@ export interface ShotEvent {
   shooterId: string;
   targetId: string;
   hit: boolean;
+  headshot: boolean;
   /** Ponto final do tracer no cliente. */
   endX: number;
   endY: number;
@@ -448,20 +449,21 @@ export class BotAi {
 
     const headY = this.eyeY(target);
     const missOffset = () => (Math.random() - 0.5) * (1.2 + dist * 0.04);
+    const part = hit && Math.random() < HEADSHOT_CHANCE ? "head" : "body";
 
     this.world.broadcastShot({
       shooterId: this.id,
       targetId: hit ? this.targetId ?? "" : "",
       hit,
+      headshot: hit && part === "head",
       endX: target.x + (hit ? 0 : missOffset()),
-      endY: headY + (hit ? -0.3 : missOffset() * 0.5),
+      endY: hit ? (part === "head" ? headY : headY - 0.3) : headY + missOffset() * 0.5,
       endZ: target.z + (hit ? 0 : missOffset()),
     });
 
     if (!hit) return;
 
     const rifle = getWeapon("m4a1")!;
-    const part = Math.random() < HEADSHOT_CHANCE ? "head" : "body";
     const base = part === "head" ? rifle.damageHead : rifle.damageBody;
     const damage = base * damageFalloff(dist, rifle) * BOT_DAMAGE_SCALE;
     this.world.applyDamage(this.targetId!, damage, this.id, rifle.name);

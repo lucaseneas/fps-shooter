@@ -484,6 +484,8 @@ export class WeaponSystem {
         ? pick.pickedPoint
         : origin.add(dir.scale(range));
 
+    let travelMs = 0;
+
     if (withTracer) {
       const muzzle = this.muzzlePosProvider
         ? this.muzzlePosProvider()
@@ -491,18 +493,19 @@ export class WeaponSystem {
             .add(this.camera.getDirection(Vector3.Right()).scale(0.25))
             .add(new Vector3(0, -0.2, 0))
             .add(dir.scale(0.6));
-      this.effects.spawnTracer(muzzle, end);
+      travelMs = this.effects.spawnTracer(muzzle, end);
     }
 
     if (!pick?.hit || !pick.pickedMesh || !pick.pickedPoint) {
       return { info: null, end };
     }
 
+    const hitNormal = pick.getNormal(true, true);
     const meta = pick.pickedMesh.metadata;
     if (meta?.hitbox) {
-      this.effects.spawnImpact(pick.pickedPoint, true);
-      const distance = Vector3.Distance(origin, pick.pickedPoint);
       const part: "head" | "body" = meta.hitbox.part;
+      this.effects.spawnImpact(pick.pickedPoint, true, dir, hitNormal, travelMs, part === "head");
+      const distance = Vector3.Distance(origin, pick.pickedPoint);
       const base =
         part === "head" ? this.weapon.damageHead : this.weapon.damageBody;
       return {
@@ -515,7 +518,7 @@ export class WeaponSystem {
       };
     }
 
-    this.effects.spawnImpact(pick.pickedPoint, false);
+    this.effects.spawnImpact(pick.pickedPoint, false, dir, hitNormal, travelMs);
     return { info: null, end };
   }
 }

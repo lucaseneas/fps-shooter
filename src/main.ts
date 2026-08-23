@@ -3354,6 +3354,7 @@ function setupRoom(r: Room): void {
     shooterId: string;
     targetId: string;
     hit: boolean;
+    headshot?: boolean;
     endX: number;
     endY: number;
     endZ: number;
@@ -3362,8 +3363,9 @@ function setupRoom(r: Room): void {
     const from = shooterHead(e.shooterId);
     if (!from) return;
     const end = new Vector3(e.endX, e.endY, e.endZ);
-    effects.spawnTracer(from, end);
-    effects.spawnImpact(end, e.hit);
+    const incoming = end.subtract(from);
+    const travel = effects.spawnTracer(from, end);
+    effects.spawnImpact(end, e.hit, incoming, null, travel, Boolean(e.headshot));
     audio.remoteShot(from);
     const rp = remotePlayers.get(e.shooterId);
     rp?.visual.triggerShoot();
@@ -3371,13 +3373,17 @@ function setupRoom(r: Room): void {
 
   r.onMessage("remoteShots", (e: {
     shooterId: string;
-    ends: Array<{ x: number; y: number; z: number }>;
+    ends: Array<{ x: number; y: number; z: number; hit?: boolean; head?: boolean }>;
   }) => {
     if (!inGame) return;
     const from = shooterHead(e.shooterId);
     if (!from) return;
     for (const end of e.ends) {
-      effects.spawnTracer(from, new Vector3(end.x, end.y, end.z));
+      const to = new Vector3(end.x, end.y, end.z);
+      const travel = effects.spawnTracer(from, to);
+      const onFlesh = Boolean(end.hit) || impactHitsPlayer(to, e.shooterId);
+      const headshot = Boolean(end.head) || (onFlesh && impactHitsHead(to, e.shooterId));
+      effects.spawnImpact(to, onFlesh, to.subtract(from), null, travel, headshot);
     }
     audio.remoteShot(from);
     const rp = remotePlayers.get(e.shooterId);
@@ -3478,6 +3484,40 @@ function setupRoom(r: Room): void {
           : undefined
     );
   });
+}
+
+function impactHitsHead(at: Vector3, shooterId: string): boolean {
+  const nearHead = (feet: Vector3): boolean => {
+    const dx = at.x - feet.x;
+    const dz = at.z - feet.z;
+    if (dx * dx + dz * dz > 0.55 * 0.55) return false;
+    const localY = at.y - feet.y;
+    return localY > 1.42 && localY < 2.15;
+  };
+
+  if (nearHead(player.getFeet())) return true;
+  for (const [id, rp] of remotePlayers) {
+    if (id === shooterId) continue;
+    if (nearHead(rp.getFeet())) return true;
+  }
+  return false;
+}
+
+function impactHitsPlayer(at: Vector3, shooterId: string): boolean {
+  const nearFeet = (feet: Vector3): boolean => {
+    const dx = at.x - feet.x;
+    const dz = at.z - feet.z;
+    if (dx * dx + dz * dz > 0.85 * 0.85) return false;
+    const localY = at.y - feet.y;
+    return localY > -0.15 && localY < 2.15;
+  };
+
+  if (nearFeet(player.getFeet())) return true;
+  for (const [id, rp] of remotePlayers) {
+    if (id === shooterId) continue;
+    if (nearFeet(rp.getFeet())) return true;
+  }
+  return false;
 }
 
 function shooterHead(shooterId: string): Vector3 | null {

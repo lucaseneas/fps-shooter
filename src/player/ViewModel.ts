@@ -9,6 +9,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 
 import { WeaponDef } from "../../shared/weapons";
+import { MuzzleFlash } from "../game/effects";
 
 function easeOutCubic(t: number): number {
   const u = 1 - t;
@@ -251,8 +252,7 @@ export class ViewModel {
   private readonly bodyMat: StandardMaterial;
   private readonly bodyMesh: Mesh;
   private readonly barrel: Mesh;
-  private readonly flash: Mesh;
-  private flashTimeout = 0;
+  private readonly muzzleFlash: MuzzleFlash;
   private melee = false;
   private currentWeaponId = "m4a1";
   private isInvincible = false;
@@ -303,20 +303,14 @@ export class ViewModel {
     this.barrel.material = this.bodyMat;
     this.barrel.parent = this.fallbackRoot;
 
-    const flashMat = new StandardMaterial("vmFlashMat", scene);
-    flashMat.emissiveColor = new Color3(1, 0.85, 0.2);
-    flashMat.disableLighting = true;
-    this.flash = MeshBuilder.CreateSphere(
-      "vmFlash",
-      { diameter: 0.12, segments: 4 },
-      scene
-    );
-    this.flash.material = flashMat;
-    this.flash.position = new Vector3(0, 0.05, 0.6);
-    this.flash.parent = this.root;
-    this.flash.setEnabled(false);
+    this.muzzleFlash = new MuzzleFlash(scene, this.root, {
+      withLight: true,
+      renderingGroupId: 2,
+      size: 0.13,
+    });
+    this.muzzleFlash.setLocalPosition(new Vector3(0, 0.05, 0.6));
 
-    for (const m of [this.bodyMesh, this.barrel, this.flash]) {
+    for (const m of [this.bodyMesh, this.barrel]) {
       m.isPickable = false;
       m.renderingGroupId = 2;
     }
@@ -509,14 +503,11 @@ export class ViewModel {
 
     if (this.melee) return;
 
-    // Posiciona o muzzle flash exatamente na ponta do cano da arma atual
     const cfg = WEAPON_CONFIGS[this.currentWeaponId] ?? DEFAULT_CONFIG;
-    this.flash.position.copyFrom(cfg.muzzle);
-
-    this.flash.setEnabled(true);
-    this.flash.scaling.setAll(0.7 + Math.random() * 0.4);
-    window.clearTimeout(this.flashTimeout);
-    this.flashTimeout = window.setTimeout(() => this.flash.setEnabled(false), 45);
+    this.muzzleFlash.setLocalPosition(cfg.muzzle);
+    const id = this.currentWeaponId;
+    const heavy = id === "shotgun" || id === "magnum" || id === "awp";
+    this.muzzleFlash.trigger(heavy ? 1.45 : 1);
   }
 
   setReloading(on: boolean): void {
@@ -529,6 +520,7 @@ export class ViewModel {
   }
 
   update(dt: number): void {
+    this.muzzleFlash.update(dt);
     this.kick = Math.max(0, this.kick - dt * 6);
     const targetDip = this.reloading ? 1 : 0;
     this.reloadDip += (targetDip - this.reloadDip) * Math.min(1, dt * 8);
