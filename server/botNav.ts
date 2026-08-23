@@ -56,11 +56,10 @@ export class BotNavGrid {
 
   static build(map: MapCollision): BotNavGrid {
     const cell = NAV_CELL;
-    const bound = map.playBound;
-    const originX = -bound;
-    const originZ = -bound;
-    const cols = Math.max(1, Math.ceil((bound * 2) / cell));
-    const rows = cols;
+    const originX = map.playMinX;
+    const originZ = map.playMinZ;
+    const cols = Math.max(1, Math.ceil((map.playMaxX - map.playMinX) / cell));
+    const rows = Math.max(1, Math.ceil((map.playMaxZ - map.playMinZ) / cell));
     const n = cols * rows;
     const walkable = new Uint8Array(n);
     const standY = new Float32Array(n);
@@ -229,7 +228,9 @@ function capsuleBlocked(
   z: number,
   map: MapCollision
 ): boolean {
-  if (Math.abs(x) > map.playBound || Math.abs(z) > map.playBound) return true;
+  if (x < map.playMinX || x > map.playMaxX || z < map.playMinZ || z > map.playMaxZ) {
+    return true;
+  }
   const head = feet + PLAYER_HEIGHT * 0.92;
   const r = PLAYER_RADIUS * 0.82;
   for (const b of map.boxes) {

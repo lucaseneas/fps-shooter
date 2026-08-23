@@ -421,7 +421,17 @@
       <div id="mapStudioSize" class="map-studio-size hidden">
         <div class="map-size-card">
           <h2>Tamanho do mapa</h2>
-          <p>O plano abre vazio, com bordas. Depois você coloca paredes, caixas e os spawns do FFA e do Mata-Mata em equipe.</p>
+          <p>Escolha a largura (X) e a profundidade (Z). Você também pode alterar isso depois, durante a edição.</p>
+          <div class="map-size-custom">
+            <label>X (largura)
+              <input id="mapSizeX" type="number" min="20" max="200" step="1" value="80" />
+            </label>
+            <label>Z (profundidade)
+              <input id="mapSizeZ" type="number" min="20" max="200" step="1" value="80" />
+            </label>
+          </div>
+          <button type="button" id="mapSizeCreate">Criar mapa</button>
+          <p class="skins-hint">Atalhos quadrados</p>
           <div class="map-size-grid">
             <button type="button" data-map-size="40">40 × 40</button>
             <button type="button" data-map-size="60">60 × 60</button>
@@ -439,24 +449,37 @@
             <label class="studio-label" for="mapEditorName">Nome</label>
             <input id="mapEditorName" type="text" maxlength="32" />
           </div>
+          <p class="studio-label">Tamanho do mapa</p>
+          <div class="map-dims map-world-size">
+            <label>X <input id="mapEditorSizeX" type="number" min="20" max="200" step="1" /></label>
+            <label>Z <input id="mapEditorSizeZ" type="number" min="20" max="200" step="1" /></label>
+          </div>
           <p class="studio-label">Ferramentas</p>
           <div id="mapEditorTools" class="map-tools"></div>
-          <p id="mapEditorSel" class="skins-hint">Clique no chão para colocar</p>
+          <p class="studio-label">Objetos</p>
+          <div class="map-picker">
+            <select id="mapEditorObject"></select>
+            <canvas id="mapEditorObjectPreview" class="map-object-preview" width="72" height="56"></canvas>
+          </div>
           <div class="map-dims">
             <label>W <input id="mapEditorW" type="number" min="0.5" max="80" step="0.5" /></label>
             <label>H <input id="mapEditorH" type="number" min="0.2" max="20" step="0.5" /></label>
             <label>D <input id="mapEditorD" type="number" min="0.5" max="80" step="0.5" /></label>
           </div>
+          <p class="studio-label">Spawns</p>
+          <div class="map-picker">
+            <select id="mapEditorSpawn">
+              <option value="">Nenhum</option>
+              <option value="spawn">Spawn FFA</option>
+              <option value="spawnAlpha">Spawn Alfa</option>
+              <option value="spawnEcho">Spawn Echo</option>
+            </select>
+            <span id="mapEditorSpawnPreview" class="map-spawn-preview" data-spawn=""></span>
+          </div>
+          <p id="mapEditorSel" class="skins-hint">Clique no chão para colocar</p>
           <div class="map-dims">
             <label>X <input id="mapEditorX" type="number" step="1" disabled /></label>
             <label>Z <input id="mapEditorZ" type="number" step="1" disabled /></label>
-          </div>
-          <div id="mapEditorLook" class="map-look">
-            <label class="studio-label" for="mapEditorTexture">Aparência</label>
-            <div class="map-look-row">
-              <input type="color" id="mapEditorColor" value="#525f75" title="Cor" />
-              <select id="mapEditorTexture"></select>
-            </div>
           </div>
           <div class="map-editor-actions">
             <button type="button" id="mapEditorRotate" class="secondary">Girar 90° (R)</button>
@@ -475,6 +498,16 @@
         <div class="map-editor-view">
           <canvas id="mapEditorCanvas"></canvas>
         </div>
+        <aside id="mapEditorLookPanel" class="map-editor-side map-editor-look-side">
+          <p class="studio-label">Aparência</p>
+          <p class="skins-hint">Cor e textura da peça</p>
+          <div id="mapEditorLook" class="map-look">
+            <div class="map-look-row">
+              <input type="color" id="mapEditorColor" value="#525f75" title="Cor" />
+              <select id="mapEditorTexture"></select>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
 

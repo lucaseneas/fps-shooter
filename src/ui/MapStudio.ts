@@ -9,10 +9,15 @@ import {
   KIND_DEFAULT_HEX,
   MAP_SIZE_OPTIONS,
   MAP_TEXTURES,
+  MIN_MAP_AXIS,
+  MAX_MAP_AXIS,
+  clampMapAxis,
   duplicateCustomMap,
   makeEmptyMap,
+  mapAxes,
   pracaToCustomMap,
   type CustomMapDef,
+  type EditorPieceKind,
   type MapTextureId,
 } from "../../shared/customMap";
 import { PIECE_PRESETS } from "../../shared/customMap";
@@ -25,18 +30,22 @@ function el<T extends HTMLElement>(id: string): T {
 
 const TOOLS: Array<{ id: EditorTool; label: string }> = [
   { id: "select", label: "Selecionar" },
+];
+
+const OBJECT_OPTIONS: Array<{ id: EditorPieceKind; label: string }> = [
   { id: "wall", label: "Parede" },
   { id: "box", label: "Caixa" },
   { id: "pillar", label: "Pilar" },
   { id: "platform", label: "Plataforma" },
   { id: "stair", label: "Escada" },
-  { id: "spawn", label: "Spawn FFA" },
-  { id: "spawnAlpha", label: "Spawn Alfa" },
-  { id: "spawnEcho", label: "Spawn Echo" },
 ];
 
 function isSpawnTool(tool: EditorTool): boolean {
   return tool === "spawn" || tool === "spawnAlpha" || tool === "spawnEcho";
+}
+
+function isObjectTool(tool: EditorTool): tool is EditorPieceKind {
+  return OBJECT_OPTIONS.some((o) => o.id === tool);
 }
 
 const SPAWN_LABEL: Record<"ffa" | "alpha" | "echo", string> = {
@@ -44,6 +53,80 @@ const SPAWN_LABEL: Record<"ffa" | "alpha" | "echo", string> = {
   alpha: "Alfa",
   echo: "Echo",
 };
+
+function shadeHex(hex: string, factor: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const v = parseInt(m[1], 16);
+  const r = Math.round(Math.min(255, ((v >> 16) & 255) * factor));
+  const g = Math.round(Math.min(255, ((v >> 8) & 255) * factor));
+  const b = Math.round(Math.min(255, (v & 255) * factor));
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawIsoBox(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  w: number,
+  d: number,
+  h: number,
+  hex: string
+): void {
+  const hw = w / 2;
+  const hd = d / 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - h - hd);
+  ctx.lineTo(cx + hw, cy - h);
+  ctx.lineTo(cx, cy - h + hd);
+  ctx.lineTo(cx - hw, cy - h);
+  ctx.closePath();
+  ctx.fillStyle = shadeHex(hex, 1.18);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - hw, cy - h);
+  ctx.lineTo(cx, cy - h + hd);
+  ctx.lineTo(cx, cy + hd);
+  ctx.lineTo(cx - hw, cy);
+  ctx.closePath();
+  ctx.fillStyle = shadeHex(hex, 0.72);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx + hw, cy - h);
+  ctx.lineTo(cx, cy - h + hd);
+  ctx.lineTo(cx, cy + hd);
+  ctx.lineTo(cx + hw, cy);
+  ctx.closePath();
+  ctx.fillStyle = shadeHex(hex, 0.9);
+  ctx.fill();
+}
+
+function drawObjectPreview(canvas: HTMLCanvasElement, kind: EditorPieceKind | ""): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!kind) {
+    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(10, 10, w - 20, h - 20);
+    ctx.setLineDash([]);
+    return;
+  }
+  const hex = KIND_DEFAULT_HEX[kind];
+  const cx = w / 2;
+  const cy = h * 0.72;
+  if (kind === "wall") drawIsoBox(ctx, cx, cy, 44, 10, 22, hex);
+  else if (kind === "box") drawIsoBox(ctx, cx, cy, 22, 22, 18, hex);
+  else if (kind === "pillar") drawIsoBox(ctx, cx, cy, 14, 14, 28, hex);
+  else if (kind === "platform") drawIsoBox(ctx, cx, cy, 40, 28, 6, hex);
+  else {
+    drawIsoBox(ctx, cx + 8, cy, 26, 10, 8, hex);
+    drawIsoBox(ctx, cx, cy - 5, 26, 10, 14, hex);
+    drawIsoBox(ctx, cx - 8, cy - 10, 26, 10, 20, hex);
+  }
+}
 
 /**
  * Página de criação de mapas: lista, tamanho, editor 3D e publicação no catálogo global.
@@ -66,6 +149,14 @@ export class MapStudio {
   private readonly textureSelect: HTMLSelectElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly toastContainer: HTMLElement;
+  private readonly objectSelect: HTMLSelectElement;
+  private readonly spawnSelect: HTMLSelectElement;
+  private readonly objectPreview: HTMLCanvasElement;
+  private readonly spawnPreview: HTMLElement;
+  private readonly sizePaneX: HTMLInputElement;
+  private readonly sizePaneZ: HTMLInputElement;
+  private readonly editorSizeX: HTMLInputElement;
+  private readonly editorSizeZ: HTMLInputElement;
   private editor: MapEditor | null = null;
   private savedSnapshot = "";
   private onMapsChanged: (() => void) | null = null;
@@ -88,6 +179,14 @@ export class MapStudio {
     this.textureSelect = el("mapEditorTexture");
     this.canvas = el("mapEditorCanvas");
     this.toastContainer = el("mapStudioToastContainer");
+    this.objectSelect = el("mapEditorObject");
+    this.spawnSelect = el("mapEditorSpawn");
+    this.objectPreview = el("mapEditorObjectPreview");
+    this.spawnPreview = el("mapEditorSpawnPreview");
+    this.sizePaneX = el("mapSizeX");
+    this.sizePaneZ = el("mapSizeZ");
+    this.editorSizeX = el("mapEditorSizeX");
+    this.editorSizeZ = el("mapEditorSizeZ");
 
     el<HTMLButtonElement>("mapStudioBack").addEventListener("click", () => {
       this.requestLeaveHub();
@@ -100,6 +199,15 @@ export class MapStudio {
     });
     el<HTMLButtonElement>("mapSizeCancel").addEventListener("click", () => {
       this.showHub();
+    });
+    el<HTMLButtonElement>("mapSizeCreate").addEventListener("click", () => {
+      this.openEditor(
+        makeEmptyMap(
+          "Mapa novo",
+          clampMapAxis(Number(this.sizePaneX.value) || 80),
+          clampMapAxis(Number(this.sizePaneZ.value) || 80)
+        )
+      );
     });
     el<HTMLButtonElement>("mapEditorClose").addEventListener("click", () => {
       this.requestLeaveEditor();
@@ -118,7 +226,9 @@ export class MapStudio {
       btn.addEventListener("click", () => {
         const size = Number(btn.dataset.mapSize);
         if (!MAP_SIZE_OPTIONS.includes(size as (typeof MAP_SIZE_OPTIONS)[number])) return;
-        this.openEditor(makeEmptyMap("Mapa novo", size));
+        this.sizePaneX.value = String(size);
+        this.sizePaneZ.value = String(size);
+        this.openEditor(makeEmptyMap("Mapa novo", size, size));
       });
     });
 
@@ -137,6 +247,50 @@ export class MapStudio {
       });
       tools.appendChild(b);
     }
+
+    this.objectSelect.replaceChildren();
+    const noneObj = document.createElement("option");
+    noneObj.value = "";
+    noneObj.textContent = "Nenhum";
+    this.objectSelect.appendChild(noneObj);
+    for (const o of OBJECT_OPTIONS) {
+      const opt = document.createElement("option");
+      opt.value = o.id;
+      opt.textContent = o.label;
+      this.objectSelect.appendChild(opt);
+    }
+    this.objectSelect.addEventListener("change", () => {
+      const kind = this.objectSelect.value;
+      if (!kind) {
+        this.editor?.setTool("select");
+      } else {
+        this.spawnSelect.value = "";
+        this.editor?.setTool(kind as EditorTool);
+      }
+      this.syncTools();
+      this.syncInspector();
+    });
+    this.spawnSelect.addEventListener("change", () => {
+      const spawn = this.spawnSelect.value;
+      if (!spawn) {
+        this.editor?.setTool("select");
+      } else {
+        this.objectSelect.value = "";
+        this.editor?.setTool(spawn as EditorTool);
+      }
+      this.syncTools();
+      this.syncInspector();
+    });
+    drawObjectPreview(this.objectPreview, "");
+
+    const applyEditorSize = () => {
+      this.editor?.setMapSize(
+        Number(this.editorSizeX.value) || 80,
+        Number(this.editorSizeZ.value) || 80
+      );
+    };
+    this.editorSizeX.addEventListener("change", applyEditorSize);
+    this.editorSizeZ.addEventListener("change", applyEditorSize);
 
     this.nameInput.addEventListener("change", () => {
       this.editor?.setName(this.nameInput.value);
@@ -267,6 +421,12 @@ export class MapStudio {
     this.sizePane.classList.remove("hidden");
     this.editorPane.classList.add("hidden");
     this.page.classList.remove("map-page-editor");
+    this.sizePaneX.value = "80";
+    this.sizePaneZ.value = "80";
+    this.sizePaneX.min = String(MIN_MAP_AXIS);
+    this.sizePaneZ.min = String(MIN_MAP_AXIS);
+    this.sizePaneX.max = String(MAX_MAP_AXIS);
+    this.sizePaneZ.max = String(MAX_MAP_AXIS);
   }
 
   private openEditor(def: CustomMapDef): void {
@@ -284,6 +444,9 @@ export class MapStudio {
     requestAnimationFrame(() => this.editor?.resize());
     this.savedSnapshot = JSON.stringify(this.editor.current);
     this.nameInput.value = def.name;
+    const axes = mapAxes(def);
+    this.editorSizeX.value = String(axes.sizeX);
+    this.editorSizeZ.value = String(axes.sizeZ);
     this.syncTools();
     this.syncInspector();
     this.syncStatus();
@@ -376,9 +539,10 @@ export class MapStudio {
       const card = document.createElement("article");
       card.className = "map-card";
       const when = new Date(m.updatedAt).toLocaleString("pt-BR");
+      const axes = mapAxes(m);
       card.innerHTML = `
         <h3></h3>
-        <p>${m.size}×${m.size} · ${m.pieces.length} peças · ${m.spawns.length} FFA · ${m.spawnsAlpha.length} Alfa · ${m.spawnsEcho.length} Echo<br>${when}</p>
+        <p>${axes.sizeX}×${axes.sizeZ} · ${m.pieces.length} peças · ${m.spawns.length} FFA · ${m.spawnsAlpha.length} Alfa · ${m.spawnsEcho.length} Echo<br>${when}</p>
         <div class="map-card-actions">
           <button type="button" data-act="edit">Editar</button>
           <button type="button" class="secondary" data-act="dup">Duplicar</button>
@@ -425,6 +589,13 @@ export class MapStudio {
     this.page.querySelectorAll<HTMLButtonElement>(".map-tool").forEach((b) => {
       b.classList.toggle("active", b.dataset.tool === tool);
     });
+    this.objectSelect.value = isObjectTool(tool) ? tool : "";
+    this.spawnSelect.value = isSpawnTool(tool) ? tool : "";
+    this.spawnPreview.dataset.spawn = this.spawnSelect.value;
+    drawObjectPreview(
+      this.objectPreview,
+      isObjectTool(tool) ? tool : ""
+    );
   }
 
   private syncInspector(): void {
@@ -436,8 +607,7 @@ export class MapStudio {
     this.dInput.value = String(brush.d);
     const def = ed?.current;
     const tool = ed?.currentTool ?? "select";
-    const placing =
-      tool !== "select" && !isSpawnTool(tool);
+    const placing = isObjectTool(tool);
     if (sel?.type === "piece" && def) {
       const p = def.pieces.find((x) => x.id === sel.id);
       this.selLabel.textContent = p
@@ -447,7 +617,11 @@ export class MapStudio {
       this.zInput.value = p ? String(p.z) : "0";
       this.xInput.disabled = !p;
       this.zInput.disabled = !p;
-      this.setLookEnabled(Boolean(p), p?.color ?? (p ? KIND_DEFAULT_HEX[p.kind] : "#888888"), p?.texture ?? "default");
+      this.setLookEnabled(
+        Boolean(p),
+        p?.color ?? (p ? KIND_DEFAULT_HEX[p.kind] : "#888888"),
+        p?.texture ?? "default"
+      );
     } else if (sel?.type === "spawn" && def) {
       const list =
         sel.list === "alpha"
@@ -464,15 +638,17 @@ export class MapStudio {
       this.setLookEnabled(false);
     } else {
       if (tool === "select") {
-        this.selLabel.textContent = "Clique numa peça ou escolha uma ferramenta";
+        this.selLabel.textContent = "Clique numa peça ou escolha um objeto / spawn";
       } else if (tool === "spawn") {
         this.selLabel.textContent = "Clique no chão para spawn Free-for-All (verde)";
       } else if (tool === "spawnAlpha") {
         this.selLabel.textContent = "Clique no chão para spawn da Equipe Alfa (azul, norte)";
       } else if (tool === "spawnEcho") {
         this.selLabel.textContent = "Clique no chão para spawn da Equipe Echo (vermelho, sul)";
-      } else {
+      } else if (isObjectTool(tool)) {
         this.selLabel.textContent = `Clique no chão para colocar ${PIECE_PRESETS[tool].label.toLowerCase()}`;
+      } else {
+        this.selLabel.textContent = "Clique numa peça ou escolha um objeto / spawn";
       }
       this.xInput.value = "";
       this.zInput.value = "";
@@ -504,6 +680,9 @@ export class MapStudio {
       return;
     }
     const dirty = this.isDirty() ? " · não salvo" : " · salvo";
-    this.statusEl.textContent = `${def.size}×${def.size} · ${def.pieces.length} peças · ${def.spawns.length} FFA · ${def.spawnsAlpha.length} Alfa · ${def.spawnsEcho.length} Echo${dirty}`;
+    const axes = mapAxes(def);
+    this.statusEl.textContent = `${axes.sizeX}×${axes.sizeZ} · ${def.pieces.length} peças · ${def.spawns.length} FFA · ${def.spawnsAlpha.length} Alfa · ${def.spawnsEcho.length} Echo${dirty}`;
+    this.editorSizeX.value = String(axes.sizeX);
+    this.editorSizeZ.value = String(axes.sizeZ);
   }
 }

@@ -10,32 +10,41 @@ export class Minimap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly size: number;
   private scale: number;
-  private mapSize: number;
+  private mapSizeX: number;
+  private mapSizeZ: number;
+  private offsetX = 0;
+  private offsetY = 0;
   private boxes: readonly BoxDef[];
   private background: HTMLCanvasElement;
 
   constructor(canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
     this.size = canvas.width;
-    this.mapSize = MAP_SIZE;
+    this.mapSizeX = MAP_SIZE;
+    this.mapSizeZ = MAP_SIZE;
     this.scale = this.size / MAP_SIZE;
     this.boxes = MAP_BOXES;
     this.background = this.prerenderBackground();
   }
 
-  rebuild(boxes: readonly BoxDef[], mapSize: number): void {
+  rebuild(boxes: readonly BoxDef[], mapSizeX: number, mapSizeZ: number = mapSizeX): void {
     this.boxes = boxes;
-    this.mapSize = mapSize;
-    this.scale = this.size / Math.max(8, mapSize);
+    this.mapSizeX = Math.max(8, mapSizeX);
+    this.mapSizeZ = Math.max(8, mapSizeZ);
+    this.scale = this.size / Math.max(this.mapSizeX, this.mapSizeZ);
+    const drawnW = this.mapSizeX * this.scale;
+    const drawnH = this.mapSizeZ * this.scale;
+    this.offsetX = (this.size - drawnW) / 2;
+    this.offsetY = (this.size - drawnH) / 2;
     this.background = this.prerenderBackground();
   }
 
   private toPx(wx: number): number {
-    return (wx + this.mapSize / 2) * this.scale;
+    return this.offsetX + (wx + this.mapSizeX / 2) * this.scale;
   }
 
   private toPy(wz: number): number {
-    return this.size - (wz + this.mapSize / 2) * this.scale;
+    return this.offsetY + this.mapSizeZ * this.scale - (wz + this.mapSizeZ / 2) * this.scale;
   }
 
   private prerenderBackground(): HTMLCanvasElement {

@@ -37,8 +37,8 @@ export function moveWithCollisions(
     }
   }
 
-  pos.x = Math.max(-geo.playBound, Math.min(geo.playBound, pos.x));
-  pos.z = Math.max(-geo.playBound, Math.min(geo.playBound, pos.z));
+  pos.x = Math.max(geo.playMinX, Math.min(geo.playMaxX, pos.x));
+  pos.z = Math.max(geo.playMinZ, Math.min(geo.playMaxZ, pos.z));
 }
 
 /**

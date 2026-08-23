@@ -71,25 +71,27 @@ function disposeMapWorld(scene: Scene): void {
 export function applyBoxMap(
   scene: Scene,
   boxes: readonly BoxDef[],
-  mapSize: number
+  mapSizeX: number,
+  mapSizeZ: number = mapSizeX
 ): void {
   disposeMapWorld(scene);
-  scene.fogStart = Math.max(20, mapSize * 0.75);
-  scene.fogEnd = Math.max(60, mapSize * 2.1);
-  createGround(scene, mapSize);
+  const fogSize = Math.max(mapSizeX, mapSizeZ);
+  scene.fogStart = Math.max(20, fogSize * 0.75);
+  scene.fogEnd = Math.max(60, fogSize * 2.1);
+  createGround(scene, mapSizeX, mapSizeZ);
   createMapBoxes(scene, boxes);
 }
 
-function createGround(scene: Scene, mapSize: number): void {
+function createGround(scene: Scene, mapSizeX: number, mapSizeZ: number): void {
   const ground = MeshBuilder.CreateGround(
     "ground",
-    { width: mapSize, height: mapSize },
+    { width: mapSizeX, height: mapSizeZ },
     scene
   );
   const mat = new StandardMaterial("groundMat", scene);
   const floorTex = new Texture("/assets/textures/texture_floor.png", scene);
-  floorTex.uScale = mapSize / 4;
-  floorTex.vScale = mapSize / 4;
+  floorTex.uScale = mapSizeX / 4;
+  floorTex.vScale = mapSizeZ / 4;
   mat.diffuseTexture = floorTex;
   mat.specularColor = new Color3(0.02, 0.02, 0.02);
   mat.freeze();

@@ -7,7 +7,13 @@ export interface MapCollision {
   label: string;
   boxes: BoxDef[];
   mapSize: number;
+  mapSizeX: number;
+  mapSizeZ: number;
   playBound: number;
+  playMinX: number;
+  playMaxX: number;
+  playMinZ: number;
+  playMaxZ: number;
   spawns: SpawnPoint[];
   spawnsAlpha: SpawnPoint[];
   spawnsEcho: SpawnPoint[];
@@ -19,7 +25,13 @@ export function geometryToCollision(geo: MapGeometry, label?: string): MapCollis
     label: label ?? geo.id,
     boxes: geo.boxes,
     mapSize: geo.mapSize,
+    mapSizeX: geo.mapSizeX,
+    mapSizeZ: geo.mapSizeZ,
     playBound: geometryPlayBound(geo),
+    playMinX: geo.playMinX,
+    playMaxX: geo.playMaxX,
+    playMinZ: geo.playMinZ,
+    playMaxZ: geo.playMaxZ,
     spawns: geo.spawns.length > 0 ? geo.spawns : [{ x: 0, z: 0 }],
     spawnsAlpha: geo.spawnsAlpha ?? [],
     spawnsEcho: geo.spawnsEcho ?? [],

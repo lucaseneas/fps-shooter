@@ -18,7 +18,9 @@ import {
   PIECE_PRESETS,
   aabbAfterYaw,
   borderBoxes,
+  clampMapAxis,
   cloneCustomMap,
+  mapAxes,
   newPieceId,
   snapTo,
   stairToBoxes,
@@ -274,6 +276,24 @@ export class MapEditor {
     this.def.name = name.trim().slice(0, 32) || this.def.name;
   }
 
+  setMapSize(sizeX: number, sizeZ: number): void {
+    if (!this.def) return;
+    const nextX = clampMapAxis(sizeX);
+    const nextZ = clampMapAxis(sizeZ);
+    const { sizeX: curX, sizeZ: curZ } = mapAxes(this.def);
+    if (nextX === curX && nextZ === curZ) return;
+    this.def.sizeX = nextX;
+    this.def.sizeZ = nextZ;
+    this.def.size = Math.max(nextX, nextZ);
+    for (const p of this.def.pieces) this.clampPiece(p);
+    for (const s of this.def.spawns) this.clampSpawn(s);
+    for (const s of this.def.spawnsAlpha ?? []) this.clampSpawn(s);
+    for (const s of this.def.spawnsEcho ?? []) this.clampSpawn(s);
+    this.rebuildWorld();
+    this.fitCamera();
+    this.markDirty();
+  }
+
   setSelectedPosition(x: number, z: number): void {
     if (!this.def) return;
     if (this.selection?.type === "piece") {
@@ -385,7 +405,7 @@ export class MapEditor {
   }
 
   private fitCamera(): void {
-    const size = this.def?.size ?? 80;
+    const { sizeX, sizeZ } = this.def ? mapAxes(this.def) : { sizeX: 80, sizeZ: 80 };
     this.camera.alpha = -Math.PI / 2;
     this.camera.beta = 0.18;
     this.camera.setTarget(new Vector3(0, 0, 0));
@@ -393,13 +413,13 @@ export class MapEditor {
     const height = Math.max(1, this.engine.getRenderHeight());
     const width = Math.max(1, this.engine.getRenderWidth());
     const aspect = width / height;
-    const half = size / 2;
     const pad = 1.12;
-    const radiusV = (half * pad) / Math.tan(fov / 2);
-    const radiusH = (half * pad) / (Math.tan(fov / 2) * aspect);
+    const radiusV = ((sizeZ / 2) * pad) / Math.tan(fov / 2);
+    const radiusH = ((sizeX / 2) * pad) / (Math.tan(fov / 2) * aspect);
     this.camera.radius = Math.max(radiusV, radiusH);
-    this.camera.lowerRadiusLimit = size * 0.2;
-    this.camera.upperRadiusLimit = size * 4;
+    const span = Math.max(sizeX, sizeZ);
+    this.camera.lowerRadiusLimit = span * 0.2;
+    this.camera.upperRadiusLimit = span * 4;
   }
 
   private rebuildWorld(): void {
@@ -461,8 +481,12 @@ export class MapEditor {
 
   private buildGround(): void {
     if (!this.def) return;
-    const size = this.def.size;
-    const ground = MeshBuilder.CreateGround("ed_ground", { width: size, height: size }, this.scene);
+    const { sizeX, sizeZ } = mapAxes(this.def);
+    const ground = MeshBuilder.CreateGround(
+      "ed_ground",
+      { width: sizeX, height: sizeZ },
+      this.scene
+    );
     const grid = new GridMaterial("ed_grid", this.scene);
     grid.majorUnitFrequency = 5;
     grid.minorUnitVisibility = 0.45;
@@ -478,7 +502,8 @@ export class MapEditor {
 
   private buildBorders(): void {
     if (!this.def) return;
-    for (const b of borderBoxes(this.def.size)) {
+    const { sizeX, sizeZ } = mapAxes(this.def);
+    for (const b of borderBoxes(sizeX, sizeZ)) {
       const mesh = MeshBuilder.CreateBox(
         "ed_border",
         { width: b.w, height: b.h, depth: b.d },
@@ -701,18 +726,21 @@ export class MapEditor {
 
   private clampPiece(p: EditorPiece): void {
     if (!this.def) return;
+    const { sizeX, sizeZ } = mapAxes(this.def);
     const dim = aabbAfterYaw(p.w, p.d, p.yawDeg);
-    const limitX = this.def.size / 2 - dim.w / 2 - 1;
-    const limitZ = this.def.size / 2 - dim.d / 2 - 1;
+    const limitX = Math.max(0, sizeX / 2 - dim.w / 2 - 1);
+    const limitZ = Math.max(0, sizeZ / 2 - dim.d / 2 - 1);
     p.x = Math.max(-limitX, Math.min(limitX, p.x));
     p.z = Math.max(-limitZ, Math.min(limitZ, p.z));
   }
 
   private clampSpawn(s: SpawnPoint): void {
     if (!this.def) return;
-    const bound = this.def.size / 2 - 3;
-    s.x = Math.max(-bound, Math.min(bound, s.x));
-    s.z = Math.max(-bound, Math.min(bound, s.z));
+    const { sizeX, sizeZ } = mapAxes(this.def);
+    const boundX = Math.max(0, sizeX / 2 - 3);
+    const boundZ = Math.max(0, sizeZ / 2 - 3);
+    s.x = Math.max(-boundX, Math.min(boundX, s.x));
+    s.z = Math.max(-boundZ, Math.min(boundZ, s.z));
   }
 
   private updateGhost(): void {

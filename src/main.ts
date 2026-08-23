@@ -765,8 +765,8 @@ function applyClientWorldMap(): void {
         if (def) {
           const geo = customMapToGeometry(def);
           setActiveMapGeometry(geo, def.name);
-          applyBoxMap(scene, geo.boxes, geo.mapSize);
-          minimap.rebuild(geo.boxes, geo.mapSize);
+          applyBoxMap(scene, geo.boxes, geo.mapSizeX, geo.mapSizeZ);
+          minimap.rebuild(geo.boxes, geo.mapSizeX, geo.mapSizeZ);
           return;
         }
       } catch {
@@ -776,8 +776,8 @@ function applyClientWorldMap(): void {
   }
   resetActiveMap();
   const active = getActiveMap();
-  applyBoxMap(scene, active.boxes, active.mapSize);
-  minimap.rebuild(active.boxes, active.mapSize);
+  applyBoxMap(scene, active.boxes, active.mapSizeX, active.mapSizeZ);
+  minimap.rebuild(active.boxes, active.mapSizeX, active.mapSizeZ);
 }
 
 function applyRoute(route: AppRoute): void {

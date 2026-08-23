@@ -12,6 +12,8 @@ import { SPAWN_POINTS, SPAWN_POINTS_ALPHA, SPAWN_POINTS_ECHO } from "./spawnPoin
 export const CUSTOM_MAP_PREFIX = "custom:";
 export const MAP_SIZE_OPTIONS = [40, 60, 80, 100, 120] as const;
 export type MapSizeOption = (typeof MAP_SIZE_OPTIONS)[number];
+export const MIN_MAP_AXIS = 20;
+export const MAX_MAP_AXIS = 200;
 
 export const MAX_MAP_PIECES = 250;
 export const MAX_SPAWNS = 24;
@@ -113,7 +115,12 @@ export interface EditorPiece {
 export interface CustomMapDef {
   id: string;
   name: string;
+  /** Compat: max(sizeX, sizeZ). Mapas antigos só tinham este campo (quadrado). */
   size: number;
+  /** Largura no eixo X. */
+  sizeX: number;
+  /** Profundidade no eixo Z. */
+  sizeZ: number;
   pieces: EditorPiece[];
   /** Spawns do Free-for-All. */
   spawns: SpawnPoint[];
@@ -166,6 +173,21 @@ function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
+export function clampMapAxis(n: number): number {
+  if (!Number.isFinite(n)) return MAP_SIZE;
+  return Math.round(clamp(n, MIN_MAP_AXIS, MAX_MAP_AXIS));
+}
+
+export function mapAxes(def: Pick<CustomMapDef, "size" | "sizeX" | "sizeZ">): {
+  sizeX: number;
+  sizeZ: number;
+} {
+  return {
+    sizeX: clampMapAxis(def.sizeX ?? def.size),
+    sizeZ: clampMapAxis(def.sizeZ ?? def.size),
+  };
+}
+
 function num(v: unknown, fallback: number, min: number, max: number): number {
   const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
   if (!Number.isFinite(n)) return fallback;
@@ -191,44 +213,50 @@ export function aabbAfterYaw(
   return yawTo90(yawDeg) % 180 === 90 ? { w: d, d: w } : { w, d };
 }
 
-export function defaultSpawnsForSize(size: number): SpawnPoint[] {
-  const inset = size / 2 - 6;
+export function defaultSpawnsForSize(sizeX: number, sizeZ: number = sizeX): SpawnPoint[] {
+  const insetX = sizeX / 2 - 6;
+  const insetZ = sizeZ / 2 - 6;
   return [
-    { x: 0, z: -inset },
-    { x: inset, z: 0 },
-    { x: 0, z: inset },
-    { x: -inset, z: 0 },
+    { x: 0, z: -insetZ },
+    { x: insetX, z: 0 },
+    { x: 0, z: insetZ },
+    { x: -insetX, z: 0 },
   ];
 }
 
 /** Spawns TDM padrão: Alfa no norte (+Z), Echo no sul (−Z). */
-export function defaultTeamSpawnsForSize(size: number): {
+export function defaultTeamSpawnsForSize(
+  sizeX: number,
+  sizeZ: number = sizeX
+): {
   alpha: SpawnPoint[];
   echo: SpawnPoint[];
 } {
-  const inset = size / 2 - 6;
+  const insetX = Math.min(6, sizeX / 2 - 4);
+  const insetZ = sizeZ / 2 - 6;
   return {
     alpha: [
-      { x: -6, z: inset },
-      { x: 6, z: inset },
+      { x: -insetX, z: insetZ },
+      { x: insetX, z: insetZ },
     ],
     echo: [
-      { x: -6, z: -inset },
-      { x: 6, z: -inset },
+      { x: -insetX, z: -insetZ },
+      { x: insetX, z: -insetZ },
     ],
   };
 }
 
-export function makeEmptyMap(name: string, size: number): CustomMapDef {
-  const safeSize = MAP_SIZE_OPTIONS.includes(size as MapSizeOption)
-    ? size
-    : MAP_SIZE;
+export function makeEmptyMap(name: string, sizeX: number, sizeZ: number = sizeX): CustomMapDef {
+  const x = clampMapAxis(sizeX);
+  const z = clampMapAxis(sizeZ);
   return {
     id: newCustomMapId(),
     name: name.trim().slice(0, 32) || "Mapa novo",
-    size: safeSize,
+    size: Math.max(x, z),
+    sizeX: x,
+    sizeZ: z,
     pieces: [],
-    spawns: defaultSpawnsForSize(safeSize),
+    spawns: defaultSpawnsForSize(x, z),
     spawnsAlpha: [],
     spawnsEcho: [],
     updatedAt: Date.now(),
@@ -262,6 +290,8 @@ export function pracaToCustomMap(): CustomMapDef {
     id: newCustomMapId(),
     name: "Cópia da Praça",
     size: MAP_SIZE,
+    sizeX: MAP_SIZE,
+    sizeZ: MAP_SIZE,
     pieces,
     spawns: SPAWN_POINTS.map((s) => ({ x: s.x, z: s.z })),
     spawnsAlpha: SPAWN_POINTS_ALPHA.map((s) => ({ x: s.x, z: s.z })),
@@ -270,15 +300,16 @@ export function pracaToCustomMap(): CustomMapDef {
   };
 }
 
-export function borderBoxes(size: number): BoxDef[] {
-  const half = size / 2;
+export function borderBoxes(sizeX: number, sizeZ: number = sizeX): BoxDef[] {
+  const halfX = sizeX / 2;
+  const halfZ = sizeZ / 2;
   const t = 1;
   const h = WALL_HEIGHT;
   return [
-    { x: 0, y: h / 2, z: half, w: size, h, d: t, kind: "border" },
-    { x: 0, y: h / 2, z: -half, w: size, h, d: t, kind: "border" },
-    { x: half, y: h / 2, z: 0, w: t, h, d: size, kind: "border" },
-    { x: -half, y: h / 2, z: 0, w: t, h, d: size, kind: "border" },
+    { x: 0, y: h / 2, z: halfZ, w: sizeX, h, d: t, kind: "border" },
+    { x: 0, y: h / 2, z: -halfZ, w: sizeX, h, d: t, kind: "border" },
+    { x: halfX, y: h / 2, z: 0, w: t, h, d: sizeZ, kind: "border" },
+    { x: -halfX, y: h / 2, z: 0, w: t, h, d: sizeZ, kind: "border" },
   ];
 }
 
@@ -338,18 +369,20 @@ function pieceToBoxes(p: EditorPiece): BoxDef[] {
 }
 
 export function customMapToBoxes(def: CustomMapDef): BoxDef[] {
-  const boxes = borderBoxes(def.size);
+  const { sizeX, sizeZ } = mapAxes(def);
+  const boxes = borderBoxes(sizeX, sizeZ);
   for (const p of def.pieces) boxes.push(...pieceToBoxes(p));
   return boxes;
 }
 
 export function customMapToGeometry(def: CustomMapDef): MapGeometry {
   const boxes = customMapToBoxes(def);
-  const half = def.size / 2;
-  const play = half - 1.5;
+  const { sizeX, sizeZ } = mapAxes(def);
+  const playX = sizeX / 2 - 1.5;
+  const playZ = sizeZ / 2 - 1.5;
   const spawns =
-    def.spawns.length > 0 ? def.spawns : defaultSpawnsForSize(def.size);
-  const teamFallback = defaultTeamSpawnsForSize(def.size);
+    def.spawns.length > 0 ? def.spawns : defaultSpawnsForSize(sizeX, sizeZ);
+  const teamFallback = defaultTeamSpawnsForSize(sizeX, sizeZ);
   const spawnsAlpha =
     def.spawnsAlpha.length > 0 ? def.spawnsAlpha : teamFallback.alpha;
   const spawnsEcho =
@@ -359,13 +392,13 @@ export function customMapToGeometry(def: CustomMapDef): MapGeometry {
     boxes,
     obbs: [],
     ramps: [],
-    playMinX: -play,
-    playMaxX: play,
-    playMinZ: -play,
-    playMaxZ: play,
-    mapSizeX: def.size,
-    mapSizeZ: def.size,
-    mapSize: def.size,
+    playMinX: -playX,
+    playMaxX: playX,
+    playMinZ: -playZ,
+    playMaxZ: playZ,
+    mapSizeX: sizeX,
+    mapSizeZ: sizeZ,
+    mapSize: Math.max(sizeX, sizeZ),
     spawns: spawns.map((s) => ({ x: s.x, z: s.z })),
     spawnsAlpha: spawnsAlpha.map((s) => ({ x: s.x, z: s.z })),
     spawnsEcho: spawnsEcho.map((s) => ({ x: s.x, z: s.z })),
@@ -394,13 +427,14 @@ function sanitizePiece(raw: unknown): EditorPiece | null {
   };
 }
 
-function sanitizeSpawn(raw: unknown, size: number): SpawnPoint | null {
+function sanitizeSpawn(raw: unknown, sizeX: number, sizeZ: number): SpawnPoint | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  const bound = size / 2 - 2;
+  const boundX = sizeX / 2 - 2;
+  const boundZ = sizeZ / 2 - 2;
   return {
-    x: num(o.x, 0, -bound, bound),
-    z: num(o.z, 0, -bound, bound),
+    x: num(o.x, 0, -boundX, boundX),
+    z: num(o.z, 0, -boundZ, boundZ),
   };
 }
 
@@ -408,12 +442,9 @@ function sanitizeSpawn(raw: unknown, size: number): SpawnPoint | null {
 export function sanitizeCustomMap(raw: unknown): CustomMapDef | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  const sizeRaw = num(o.size, MAP_SIZE, 20, 200);
-  const size = (MAP_SIZE_OPTIONS as readonly number[]).includes(sizeRaw)
-    ? sizeRaw
-    : MAP_SIZE_OPTIONS.reduce((best, n) =>
-        Math.abs(n - sizeRaw) < Math.abs(best - sizeRaw) ? n : best
-      );
+  const sizeX = clampMapAxis(num(o.sizeX ?? o.size, MAP_SIZE, MIN_MAP_AXIS, MAX_MAP_AXIS));
+  const sizeZ = clampMapAxis(num(o.sizeZ ?? o.size, MAP_SIZE, MIN_MAP_AXIS, MAX_MAP_AXIS));
+  const size = Math.max(sizeX, sizeZ);
   const id =
     typeof o.id === "string" && isCustomMapId(o.id)
       ? o.id.slice(0, 48)
@@ -429,27 +460,29 @@ export function sanitizeCustomMap(raw: unknown): CustomMapDef | null {
     if (s) pieces.push(s);
     if (pieces.length >= MAX_MAP_PIECES) break;
   }
-  const spawns = sanitizeSpawnList(o.spawns, size);
+  const spawns = sanitizeSpawnList(o.spawns, sizeX, sizeZ);
   if (spawns.length < MIN_SPAWNS) {
-    spawns.push(...defaultSpawnsForSize(size));
+    spawns.push(...defaultSpawnsForSize(sizeX, sizeZ));
   }
   return {
     id,
     name,
     size,
+    sizeX,
+    sizeZ,
     pieces,
     spawns: spawns.slice(0, MAX_SPAWNS),
-    spawnsAlpha: sanitizeSpawnList(o.spawnsAlpha, size),
-    spawnsEcho: sanitizeSpawnList(o.spawnsEcho, size),
+    spawnsAlpha: sanitizeSpawnList(o.spawnsAlpha, sizeX, sizeZ),
+    spawnsEcho: sanitizeSpawnList(o.spawnsEcho, sizeX, sizeZ),
     updatedAt: num(o.updatedAt, Date.now(), 0, Date.now() + 1e12),
   };
 }
 
-function sanitizeSpawnList(raw: unknown, size: number): SpawnPoint[] {
+function sanitizeSpawnList(raw: unknown, sizeX: number, sizeZ: number): SpawnPoint[] {
   const src = Array.isArray(raw) ? raw : [];
   const out: SpawnPoint[] = [];
   for (const s of src) {
-    const sp = sanitizeSpawn(s, size);
+    const sp = sanitizeSpawn(s, sizeX, sizeZ);
     if (sp) out.push(sp);
     if (out.length >= MAX_SPAWNS) break;
   }
@@ -457,10 +490,13 @@ function sanitizeSpawnList(raw: unknown, size: number): SpawnPoint[] {
 }
 
 export function cloneCustomMap(def: CustomMapDef): CustomMapDef {
+  const { sizeX, sizeZ } = mapAxes(def);
   return {
     id: def.id,
     name: def.name,
-    size: def.size,
+    size: Math.max(sizeX, sizeZ),
+    sizeX,
+    sizeZ,
     pieces: def.pieces.map((p) => ({ ...p })),
     spawns: def.spawns.map((s) => ({ ...s })),
     spawnsAlpha: (def.spawnsAlpha ?? []).map((s) => ({ ...s })),

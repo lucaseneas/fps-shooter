@@ -83,7 +83,6 @@ export function stepPlayer(
 ): void {
   const geo = map ?? getActiveMap();
   const boxes = geo.boxes;
-  const playBound = geo.playBound;
   const dt = FIXED_DT;
   const prevFeet = s.y;
 
@@ -137,8 +136,8 @@ export function stepPlayer(
     }
   }
 
-  s.x = clamp(s.x, -playBound, playBound);
-  s.z = clamp(s.z, -playBound, playBound);
+  s.x = clamp(s.x, geo.playMinX, geo.playMaxX);
+  s.z = clamp(s.z, geo.playMinZ, geo.playMaxZ);
 
   // --- Pulo ---
   if (input.jump && s.grounded) {

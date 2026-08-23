@@ -4630,6 +4630,42 @@ kbd {
   line-height: 1.45;
 }
 
+.map-size-custom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.map-size-custom label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b97a3;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.map-size-custom input,
+.map-editor-side select {
+  font-family: inherit;
+  background: rgba(10, 14, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #e8ecf1;
+  padding: 9px 10px;
+  font-size: 14px;
+  outline: none;
+  width: 100%;
+  min-width: 0;
+}
+
+.map-size-custom input:focus,
+.map-editor-side select:focus {
+  border-color: var(--accent);
+}
+
 .map-size-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -4652,6 +4688,10 @@ kbd {
 
 .map-size-grid button:last-child {
   grid-column: 1 / -1;
+}
+
+#mapSizeCreate {
+  width: 100%;
 }
 
 #mapSizeCancel {
@@ -4680,6 +4720,12 @@ kbd {
   background: rgba(8, 11, 16, 0.94);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   overflow: auto;
+}
+
+.map-editor-look-side {
+  width: 260px;
+  border-right: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .map-editor-side input[type="text"],
@@ -4720,8 +4766,57 @@ kbd {
 
 .map-tools {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 6px;
+}
+
+.map-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-picker select {
+  flex: 1;
+}
+
+.map-object-preview {
+  width: 72px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(10, 14, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: block;
+}
+
+.map-spawn-preview {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #3a424c;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25);
+}
+
+.map-spawn-preview[data-spawn="spawn"] {
+  background: #40d96b;
+  border-color: #7aef9a;
+}
+
+.map-spawn-preview[data-spawn="spawnAlpha"] {
+  background: #4d8dff;
+  border-color: #8eb6ff;
+}
+
+.map-spawn-preview[data-spawn="spawnEcho"] {
+  background: #e05545;
+  border-color: #ff8a7a;
+}
+
+.map-world-size {
+  grid-template-columns: 1fr 1fr;
 }
 
 #pageMaps .map-tool {
