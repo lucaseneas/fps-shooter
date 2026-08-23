@@ -86,6 +86,11 @@ export class SocialPanel {
   private lastListsSig = "";
   /** Pedidos que chegaram durante a partida — toast ao voltar ao menu. */
   private deferredRequests: Array<{ userId: number; name: string }> = [];
+  /** Amigos que ficaram online durante a partida — toast ao voltar ao menu. */
+  private deferredOnlineFriends: Array<{ userId: number; name: string }> = [];
+  /** Snapshot da última presença conhecida (evita toast na conexão inicial). */
+  private previouslyOnlineFriends = new Set<number>();
+  private presenceBaselineReady = false;
 
   constructor(hooks: SocialHooks) {
     this.hooks = hooks;
@@ -168,6 +173,12 @@ export class SocialPanel {
         this.friends = friends;
         this.requests = requests;
         this.outgoing = new Set(outgoing.map((o) => o.userId));
+        // Quem já está online na lista não deve gerar toast de "entrou online".
+        for (const friend of friends) {
+          if (presenceFor(friend.userId)) {
+            this.previouslyOnlineFriends.add(friend.userId);
+          }
+        }
         this.updateBadges();
         if (changed) this.render();
       },
@@ -179,7 +190,10 @@ export class SocialPanel {
           this.showFriendInfo(profile, presence);
         }
       },
-      onPresence: () => this.render(),
+      onPresence: () => {
+        this.handlePresenceChange();
+        this.render();
+      },
       onSessionReplaced: (message) => this.hooks.onSessionReplaced(message),
       onDisconnect: () => {
         // Reconecta sozinho se o painel estiver em uso.
@@ -209,6 +223,9 @@ export class SocialPanel {
     this.outgoing.clear();
     this.awaitingLists = false;
     this.lastListsSig = "";
+    this.deferredOnlineFriends = [];
+    this.previouslyOnlineFriends.clear();
+    this.presenceBaselineReady = false;
     this.updateBadges();
     this.close();
   }
@@ -246,6 +263,8 @@ export class SocialPanel {
     if (!this.hooks.canShowSocialToasts()) return;
     const pending = this.deferredRequests.splice(0);
     for (const from of pending) this.pushRequestCard(from);
+    const online = this.deferredOnlineFriends.splice(0);
+    for (const friend of online) this.pushFriendOnlineToast(friend);
   }
 
   /** Fecha o que estiver aberto por cima. Retorna true se fechou algo. */
@@ -689,6 +708,51 @@ export class SocialPanel {
   }
 
   // --- Notificações ---
+
+  /** Detecta amigos que acabaram de ficar online (transição offline → online). */
+  private handlePresenceChange(): void {
+    const currentlyOnline = new Set<number>();
+    for (const friend of this.friends) {
+      if (presenceFor(friend.userId)) currentlyOnline.add(friend.userId);
+    }
+
+    if (!this.presenceBaselineReady) {
+      this.previouslyOnlineFriends = currentlyOnline;
+      this.presenceBaselineReady = true;
+      return;
+    }
+
+    for (const friend of this.friends) {
+      if (
+        currentlyOnline.has(friend.userId) &&
+        !this.previouslyOnlineFriends.has(friend.userId)
+      ) {
+        this.notifyFriendOnline(friend);
+      }
+    }
+
+    this.previouslyOnlineFriends = currentlyOnline;
+  }
+
+  private notifyFriendOnline(friend: FriendEntry): void {
+    if (this.hooks.canShowSocialToasts()) {
+      this.pushFriendOnlineToast(friend);
+      return;
+    }
+    if (!this.deferredOnlineFriends.some((f) => f.userId === friend.userId)) {
+      this.deferredOnlineFriends.push({
+        userId: friend.userId,
+        name: friend.name,
+      });
+    }
+  }
+
+  private pushFriendOnlineToast(friend: { userId: number; name: string }): void {
+    this.pushCard({
+      title: "Amigo online",
+      body: `${friend.name} entrou online.`,
+    });
+  }
 
   private pushCard(opts: {
     title: string;
