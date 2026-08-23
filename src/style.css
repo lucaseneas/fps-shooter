@@ -523,6 +523,41 @@ body {
   }
 }
 
+/* ---------- Vinheta de vida baixa (sangue) ---------- */
+#lowHealthVignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  background:
+    radial-gradient(
+      ellipse at center,
+      rgba(60, 0, 0, 0.08) 0%,
+      rgba(120, 8, 8, 0.42) 58%,
+      rgba(170, 18, 18, 0.72) 100%
+    ),
+    radial-gradient(
+      ellipse 90% 55% at 50% 100%,
+      rgba(140, 10, 10, 0.55) 0%,
+      transparent 72%
+    );
+}
+
+#lowHealthVignette.critical {
+  animation: lowHealthPulse 1.35s ease-in-out infinite;
+}
+
+@keyframes lowHealthPulse {
+  0%,
+  100% {
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    filter: brightness(1.18) saturate(1.12);
+  }
+}
+
 /* ---------- Vinheta de dano ---------- */
 #damageVignette {
   position: absolute;

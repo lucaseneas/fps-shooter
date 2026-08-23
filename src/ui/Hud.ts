@@ -95,6 +95,7 @@ export class Hud {
   private readonly killBadge = el<HTMLDivElement>("killBadge");
   private readonly killStars = el<HTMLDivElement>("killStars");
   private readonly killBadgeLabel = el<HTMLSpanElement>("killBadgeLabel");
+  private readonly lowHealthVignette = el<HTMLDivElement>("lowHealthVignette");
   private readonly damageVignette = el<HTMLDivElement>("damageVignette");
   private readonly damageDirection = el<HTMLDivElement>("damageDirection");
   private readonly wallhackVignette = el<HTMLDivElement>("wallhackVignette");
@@ -169,6 +170,24 @@ export class Hud {
     this.healthFill.style.background =
       pct > 0.5 ? "#6fd66f" : pct > 0.25 ? "#e8c14a" : "#e05545";
     this.healthText.textContent = String(Math.ceil(current));
+    this.updateLowHealthVignette(pct);
+  }
+
+  /** Escurece/avermelha a tela conforme a vida cai (efeito de sangue). */
+  private updateLowHealthVignette(healthPct: number): void {
+    const startAt = 0.65;
+    const maxOpacity = 0.78;
+
+    if (healthPct >= startAt) {
+      this.lowHealthVignette.style.opacity = "0";
+      this.lowHealthVignette.classList.remove("critical");
+      return;
+    }
+
+    const t = (startAt - healthPct) / startAt;
+    const opacity = t * t * maxOpacity;
+    this.lowHealthVignette.style.opacity = String(opacity);
+    this.lowHealthVignette.classList.toggle("critical", healthPct < 0.25);
   }
 
   /** Atualiza os 3 slots do kit (principal / secundária / melee). */

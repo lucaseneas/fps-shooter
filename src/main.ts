@@ -3880,20 +3880,10 @@ window.addEventListener("wheel", (e) => {
 window.addEventListener("keydown", (e) => {
   if (e.code === "Tab" && inGame) {
     e.preventDefault();
-    if (endScreenShown) return;
-    if (socialPanel.handleEscape()) return;
-    if (teamSwitchOpen) {
-      closeTeamSwitchConfirm();
-      return;
-    }
-    if (scoreboardOpen) {
-      closeMatchScoreboard(!awaitingSpawn);
-      return;
-    }
-    if (!loadoutPicking && !chatTyping) {
-      openMatchScoreboard();
-      return;
-    }
+    if (endScreenShown || e.repeat) return;
+    if (loadoutPicking || chatTyping) return;
+    openMatchScoreboard();
+    return;
   }
   if (e.code === "Enter" && inGame && player.isPointerLocked) {
     e.preventDefault();
@@ -3932,7 +3922,17 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Digit3") switchTo(2);
 });
 window.addEventListener("keyup", (e) => {
-  if (e.code === "Tab" && inGame) e.preventDefault();
+  if (e.code === "Tab" && inGame) {
+    e.preventDefault();
+    if (endScreenShown) return;
+    closeTeamSwitchConfirm();
+    closeMatchScoreboard(!awaitingSpawn);
+  }
+});
+window.addEventListener("blur", () => {
+  if (!inGame || endScreenShown || !scoreboardOpen) return;
+  closeTeamSwitchConfirm();
+  closeMatchScoreboard(!awaitingSpawn);
 });
 
 function rememberWeaponSwitch(fromIndex: number): void {
