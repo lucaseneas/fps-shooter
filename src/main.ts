@@ -3467,12 +3467,12 @@ function setupRoom(r: Room): void {
     if (!inGame) return;
     const from = shooterHead(e.shooterId);
     if (!from) return;
+    const rp = remotePlayers.get(e.shooterId);
     const end = new Vector3(e.endX, e.endY, e.endZ);
     const incoming = end.subtract(from);
-    const travel = effects.spawnTracer(from, end);
+    const travel = effects.spawnTracer(from, end, rp?.isPredator === true);
     effects.spawnImpact(end, e.hit, incoming, null, travel, Boolean(e.headshot));
     audio.remoteShot(from);
-    const rp = remotePlayers.get(e.shooterId);
     rp?.visual.triggerShoot();
   });
 
@@ -3483,15 +3483,15 @@ function setupRoom(r: Room): void {
     if (!inGame) return;
     const from = shooterHead(e.shooterId);
     if (!from) return;
+    const rp = remotePlayers.get(e.shooterId);
     for (const end of e.ends) {
       const to = new Vector3(end.x, end.y, end.z);
-      const travel = effects.spawnTracer(from, to);
+      const travel = effects.spawnTracer(from, to, rp?.isPredator === true);
       const onFlesh = Boolean(end.hit) || impactHitsPlayer(to, e.shooterId);
       const headshot = Boolean(end.head) || (onFlesh && impactHitsHead(to, e.shooterId));
       effects.spawnImpact(to, onFlesh, to.subtract(from), null, travel, headshot);
     }
     audio.remoteShot(from);
-    const rp = remotePlayers.get(e.shooterId);
     rp?.visual.triggerShoot();
   });
 
@@ -3781,7 +3781,8 @@ function setLocalPredator(on: boolean, p?: PlayerSnapshot): void {
     player.setPitch(0.62);
     lastKnownHealth = typeof p?.heliHp === "number" ? p.heliHp : PREDATOR.hp;
     hud.setHealth(lastKnownHealth, PREDATOR.hp);
-    viewModel.setVisible(false);
+    viewModel.setWeapon(weapons.weapon);
+    viewModel.setVisible(true);
     if (!localHeli) localHeli = new HelicopterVisual(scene, "local");
     localHeli.setEnabled(true);
     audio.startHeliRotor();
@@ -4025,8 +4026,18 @@ function exitAdsImmediate(): void {
 }
 
 function updateAds(dt: number): void {
-  if (awaitingSpawn || localPredator) {
+  if (awaitingSpawn) {
     viewModel.setVisible(false);
+    return;
+  }
+  if (localPredator) {
+    viewModel.setVisible(true);
+    if (lastAdsFov !== HIP_FOV) {
+      lastAdsFov = HIP_FOV;
+      player.camera.fov = HIP_FOV;
+    }
+    setScopeOverlay(false);
+    setCrosshairScoped(false);
     return;
   }
 

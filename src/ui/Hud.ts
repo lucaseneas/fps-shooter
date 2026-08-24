@@ -101,6 +101,7 @@ export class Hud {
   private readonly damageDirection = el<HTMLDivElement>("damageDirection");
   private readonly wallhackVignette = el<HTMLDivElement>("wallhackVignette");
   private readonly predatorVignette = el<HTMLDivElement>("predatorVignette");
+  private readonly hudRoot = el<HTMLDivElement>("hud");
   private readonly invincibleVignette = el<HTMLDivElement>("invincibleVignette");
   private readonly streakActivePanel = el<HTMLDivElement>("streakActivePanel");
   private readonly streakActiveBar = el<HTMLDivElement>("streakActiveBar");
@@ -191,6 +192,8 @@ export class Hud {
   setPredatorHud(on: boolean): void {
     this.predatorHud = on;
     this.healthPanel.classList.toggle("heli", on);
+    this.hudRoot.classList.toggle("predator", on);
+    this.predatorVignette.classList.toggle("hidden", !on);
     if (on) {
       this.weaponName.textContent = "Minigun";
       this.ammoMag.textContent = "∞";

@@ -22,6 +22,8 @@ const TMP_CONE = new Vector3();
 /** Velocidade visual do rastro (m/s). Alta de propósito: o jogo é hitscan. */
 const TRACER_SPEED = 3600;
 const TRACER_STREAK = 3.4;
+const TRACER_SPEED_HEAVY = 1650;
+const TRACER_STREAK_HEAVY = 9.2;
 const SPARK_GRAVITY = 38;
 
 type FxKind = "tracer" | "debug" | "spark" | "puff" | "flash" | "drop";
@@ -248,6 +250,7 @@ export class MuzzleFlash {
 export class EffectsManager {
   private readonly scene: Scene;
   private readonly tracerMat: StandardMaterial;
+  private readonly heavyTracerMat: StandardMaterial;
   private readonly debugMat: StandardMaterial;
   private readonly sparkMat: StandardMaterial;
   private readonly puffMat: StandardMaterial;
@@ -268,6 +271,7 @@ export class EffectsManager {
     this.scene = scene;
 
     this.tracerMat = additiveMat("tracerMat", scene, new Color3(1, 0.72, 0.28));
+    this.heavyTracerMat = additiveMat("heavyTracerMat", scene, new Color3(1, 0.95, 0.55));
     this.debugMat = additiveMat("debugTracerMat", scene, new Color3(0.2, 0.65, 1));
     this.sparkMat = additiveMat("sparkMat", scene, new Color3(1, 0.78, 0.35));
     this.puffMat = additiveMat("puffMat", scene, new Color3(0.55, 0.5, 0.42), true);
@@ -279,7 +283,7 @@ export class EffectsManager {
   }
 
   /** Rastro curto que viaja do cano até o impacto. Devolve o tempo de voo (ms). */
-  spawnTracer(from: Vector3, to: Vector3): number {
+  spawnTracer(from: Vector3, to: Vector3, heavy = false): number {
     const dir = to.subtract(from);
     const pathLen = dir.length();
     if (pathLen < 0.8) return 0;
@@ -287,11 +291,13 @@ export class EffectsManager {
     dir.scaleInPlace(1 / pathLen);
     const start = from.add(dir.scale(Math.min(0.22, pathLen * 0.06)));
     const remain = Vector3.Distance(start, to);
-    const travelMs = (remain / TRACER_SPEED) * 1000;
-    const streakLen = Math.min(TRACER_STREAK, remain * 0.45);
+    const speed = heavy ? TRACER_SPEED_HEAVY : TRACER_SPEED;
+    const streakMax = heavy ? TRACER_STREAK_HEAVY : TRACER_STREAK;
+    const travelMs = (remain / speed) * 1000;
+    const streakLen = Math.min(streakMax, remain * (heavy ? 0.7 : 0.45));
 
     const mesh = this.take(this.tracerPool, () => this.makeTracer());
-    mesh.material = this.tracerMat;
+    mesh.material = heavy ? this.heavyTracerMat : this.tracerMat;
     mesh.setEnabled(true);
     mesh.visibility = 1;
 
@@ -302,21 +308,25 @@ export class EffectsManager {
     const tip = start.add(dir.scale(Math.min(0.35, remain * 0.12)));
     this.placeStreak(mesh, start, tip);
     head.position.copyFrom(tip);
-    head.scaling.setAll(0.16);
+    const radius = heavy ? 4.2 : 1;
+    const headSize = heavy ? 0.52 : 0.16;
+    mesh.scaling.x = radius;
+    mesh.scaling.z = radius;
+    head.scaling.setAll(headSize);
 
     this.live.push({
       kind: "tracer",
       mesh,
       head,
       born: performance.now(),
-      life: travelMs + 28,
+      life: travelMs + (heavy ? 70 : 28),
       from: start,
       to: to.clone(),
-      vel: dir,
+      vel: dir.scale(speed),
       pathLen: remain,
       streakLen,
-      scale0: 1,
-      scale1: 1,
+      scale0: radius,
+      scale1: headSize,
       gravity: 0,
     });
     return travelMs;
@@ -568,18 +578,21 @@ export class EffectsManager {
 
     switch (fx.kind) {
       case "tracer": {
-        const travel = (elapsed / 1000) * TRACER_SPEED;
+        const speed = Math.max(1, fx.vel.length());
+        const travel = (elapsed / 1000) * speed;
         const headDist = Math.min(fx.pathLen, travel);
         const tailDist = Math.max(0, headDist - fx.streakLen);
         Vector3.LerpToRef(fx.from, fx.to, tailDist / fx.pathLen, TMP_A);
         Vector3.LerpToRef(fx.from, fx.to, headDist / fx.pathLen, TMP_B);
         this.placeStreak(fx.mesh, TMP_A, TMP_B);
+        fx.mesh.scaling.x = fx.scale0;
+        fx.mesh.scaling.z = fx.scale0;
         if (fx.head) {
           fx.head.position.copyFrom(TMP_B);
-          const pulse = 0.16 + Math.sin(elapsed * 0.08) * 0.02;
+          const pulse = fx.scale1 + Math.sin(elapsed * 0.08) * fx.scale1 * 0.12;
           fx.head.scaling.setAll(pulse);
         }
-        const fade = headDist >= fx.pathLen ? 1 - Math.min(1, (travel - fx.pathLen) / (TRACER_SPEED * 0.045)) : 1;
+        const fade = headDist >= fx.pathLen ? 1 - Math.min(1, (travel - fx.pathLen) / (speed * 0.045)) : 1;
         fx.mesh.visibility = fade;
         if (fx.head) fx.head.visibility = fade;
         break;

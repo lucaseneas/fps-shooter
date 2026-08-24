@@ -149,6 +149,12 @@ const WEAPON_CONFIGS: Record<string, WeaponViewModelConfig> = {
     rotation: new Vector3(Math.PI, 0, 0.35),
     scale: 1.3,
   },
+  minigun: {
+    offset: new Vector3(0, 0, 0),
+    muzzle: new Vector3(0, 0.02, 0.98),
+    sprintPitch: 0,
+    sprintPosOffset: new Vector3(0, 0, 0),
+  },
 };
 
 /**
@@ -279,10 +285,13 @@ export class ViewModel {
   private readonly bodyMat: StandardMaterial;
   private readonly bodyMesh: Mesh;
   private readonly barrel: Mesh;
+  private readonly minigunRoot: TransformNode;
+  private readonly minigunHub: TransformNode;
   private readonly muzzleFlash: MuzzleFlash;
   private melee = false;
   private currentWeaponId = "m4a1";
   private isInvincible = false;
+  private minigunSpin = 0;
 
   private kick = 0;
   private reloadDip = 0;
@@ -337,6 +346,10 @@ export class ViewModel {
     });
     this.muzzleFlash.setLocalPosition(new Vector3(0, 0.05, 0.6));
 
+    const minigun = this.buildMinigunView();
+    this.minigunRoot = minigun.root;
+    this.minigunHub = minigun.hub;
+
     for (const m of [this.bodyMesh, this.barrel]) {
       m.isPickable = false;
       m.renderingGroupId = 2;
@@ -346,6 +359,86 @@ export class ViewModel {
     for (const [id, url] of Object.entries(WEAPON_ASSETS)) {
       this.loadWeaponModel(id, url);
     }
+  }
+
+  /** Minigun em primeira pessoa, centrada na mira (assento do artilheiro). */
+  private buildMinigunView(): { root: TransformNode; hub: TransformNode } {
+    const root = new TransformNode("vmMinigun", this.scene);
+    root.parent = this.root;
+    root.setEnabled(false);
+
+    const gunMat = new StandardMaterial("vmMinigunMat", this.scene);
+    gunMat.diffuseColor = new Color3(0.14, 0.15, 0.13);
+    gunMat.specularColor = new Color3(0.22, 0.22, 0.2);
+    gunMat.emissiveColor = new Color3(0.04, 0.04, 0.035);
+
+    const metalMat = new StandardMaterial("vmMinigunMetal", this.scene);
+    metalMat.diffuseColor = new Color3(0.22, 0.2, 0.16);
+    metalMat.specularColor = new Color3(0.28, 0.24, 0.14);
+    metalMat.emissiveColor = new Color3(0.05, 0.045, 0.03);
+
+    const attach = (mesh: Mesh, mat: StandardMaterial, parent: TransformNode) => {
+      mesh.material = mat;
+      mesh.parent = parent;
+      mesh.isPickable = false;
+      mesh.renderingGroupId = 2;
+    };
+
+    const housing = MeshBuilder.CreateBox(
+      "vmMinigunBody",
+      { width: 0.22, height: 0.18, depth: 0.32 },
+      this.scene
+    );
+    housing.position.set(0, -0.02, 0.04);
+    attach(housing, gunMat, root);
+
+    const cradle = MeshBuilder.CreateBox(
+      "vmMinigunCradle",
+      { width: 0.28, height: 0.08, depth: 0.18 },
+      this.scene
+    );
+    cradle.position.set(0, -0.12, 0.02);
+    attach(cradle, metalMat, root);
+
+    const hub = new TransformNode("vmMinigunHub", this.scene);
+    hub.parent = root;
+    hub.position.set(0, 0.01, 0.22);
+
+    const ring = MeshBuilder.CreateCylinder(
+      "vmMinigunRing",
+      { height: 0.08, diameter: 0.12, tessellation: 10 },
+      this.scene
+    );
+    ring.rotation.x = Math.PI / 2;
+    attach(ring, metalMat, hub);
+
+    const radius = 0.042;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const tube = MeshBuilder.CreateCylinder(
+        `vmMinigunBarrel${i}`,
+        { height: 0.78, diameter: 0.03, tessellation: 7 },
+        this.scene
+      );
+      tube.rotation.x = Math.PI / 2;
+      tube.position.set(Math.cos(a) * radius, Math.sin(a) * radius, 0.4);
+      attach(tube, gunMat, hub);
+    }
+
+    const shroud = MeshBuilder.CreateCylinder(
+      "vmMinigunShroud",
+      { height: 0.2, diameter: 0.14, tessellation: 10 },
+      this.scene
+    );
+    shroud.rotation.x = Math.PI / 2;
+    shroud.position.z = 0.18;
+    attach(shroud, metalMat, hub);
+
+    return { root, hub };
+  }
+
+  private isCenteredMinigun(): boolean {
+    return this.currentWeaponId === "minigun";
   }
 
   private loadWeaponModel(id: string, url: string): void {
@@ -408,6 +501,14 @@ export class ViewModel {
   }
 
   private updateVisibleWeapon(): void {
+    const showMinigun = this.isCenteredMinigun();
+    this.minigunRoot.setEnabled(showMinigun);
+    if (showMinigun) {
+      this.fallbackRoot.setEnabled(false);
+      for (const node of this.weaponNodes.values()) node.setEnabled(false);
+      return;
+    }
+
     const activeNode = this.weaponNodes.get(this.currentWeaponId);
     if (activeNode) {
       this.fallbackRoot.setEnabled(false);
@@ -449,7 +550,11 @@ export class ViewModel {
     }
 
     this.updateVisibleWeapon();
-    this.startDraw(weapon.drawTime);
+    if (this.isCenteredMinigun()) {
+      this.drawProgress = 1;
+    } else {
+      this.startDraw(weapon.drawTime);
+    }
     this.applyStoredSkin(weapon.id);
   }
 
@@ -531,7 +636,7 @@ export class ViewModel {
     this.muzzleFlash.setLocalPosition(cfg.muzzle);
     const id = this.currentWeaponId;
     const heavy = id === "shotgun" || id === "magnum" || id === "awp";
-    this.muzzleFlash.trigger(heavy ? 1.45 : 1);
+    this.muzzleFlash.trigger(id === "minigun" ? 2.4 : heavy ? 1.45 : 1);
   }
 
   setReloading(on: boolean): void {
@@ -562,6 +667,14 @@ export class ViewModel {
     const holster = 1 - easeOutCubic(this.drawProgress);
 
     const cfg = WEAPON_CONFIGS[this.currentWeaponId] ?? DEFAULT_CONFIG;
+
+    if (this.isCenteredMinigun()) {
+      this.root.position.set(0, -0.12 - this.kick * 0.03, 0.48 - this.kick * 0.06);
+      this.root.rotation.set(-this.kick * 0.045, 0, 0);
+      this.minigunSpin += dt * (this.kick > 0.05 ? 48 : 10);
+      this.minigunHub.rotation.z = this.minigunSpin;
+      return;
+    }
 
     this.root.position.set(
       this.basePos.x + holster * 0.08 + cfg.sprintPosOffset.x * run,

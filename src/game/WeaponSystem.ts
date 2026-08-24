@@ -534,7 +534,7 @@ export class WeaponSystem {
             .add(this.camera.getDirection(Vector3.Right()).scale(0.25))
             .add(new Vector3(0, -0.2, 0))
             .add(dir.scale(0.6));
-      travelMs = this.effects.spawnTracer(muzzle, end);
+      travelMs = this.effects.spawnTracer(muzzle, end, this.weapon.id === "minigun");
     }
 
     if (!pick?.hit || !pick.pickedMesh || !pick.pickedPoint) {
