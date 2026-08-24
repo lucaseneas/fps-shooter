@@ -72,6 +72,8 @@ export class WeaponSystem {
   private infiniteAmmo = false;
   /** Kill streak No Recoil: zera recoil e spread em todas as armas. */
   private noRecoilActive = false;
+  /** Arma forçada por kill streak (Predator minigun). */
+  private streakWeaponId: WeaponId | null = null;
   private crouching = false;
   private airborne = false;
   private moving = false;
@@ -129,6 +131,7 @@ export class WeaponSystem {
   }
 
   get weapon(): WeaponDef {
+    if (this.streakWeaponId) return getWeapon(this.streakWeaponId)!;
     return getWeapon(this.slotIds[this.currentSlot])!;
   }
 
@@ -156,6 +159,9 @@ export class WeaponSystem {
   private randomSpread(sprayShot: number): number {
     const bloom = sprayBloom(this.weapon, sprayShot);
     const sniperHipfire = this.weapon.id === "awp" && !this.aiming;
+    if (this.weapon.id === "minigun") {
+      return this.weapon.baseSpread + bloom;
+    }
     if (!this.moving && !this.running && !this.airborne && !sniperHipfire) return bloom;
     return this.weapon.baseSpread * this.spreadMultiplier() + bloom;
   }
@@ -277,6 +283,25 @@ export class WeaponSystem {
     this.noRecoilActive = on;
   }
 
+  /** Equipa (ou solta) uma arma de kill streak, ignorando o loadout. */
+  setStreakWeapon(id: WeaponId | null): void {
+    if (this.streakWeaponId === id) return;
+    this.streakWeaponId = id;
+    this.reloadRemaining = 0;
+    this.semiAutoLock = false;
+    this.sprayShots.clear();
+    this.sprayLastShotAt.clear();
+    if (id) {
+      this.ammo.set(id, { mag: getWeapon(id)?.magSize ?? 999, reserve: 0 });
+      this.cooldown = Math.min(this.cooldown, 0.25);
+    }
+    this.onStateChanged?.();
+  }
+
+  get isStreakWeaponActive(): boolean {
+    return this.streakWeaponId !== null;
+  }
+
   setTrigger(held: boolean): void {
     this.triggerHeld = held;
     if (!held) {
@@ -329,6 +354,7 @@ export class WeaponSystem {
 
   /** Troca para o slot 0–2 (teclas 1 / 2 / 3). */
   switchWeapon(slot: number): void {
+    if (this.streakWeaponId) return;
     if (slot < 0 || slot >= SLOT_COUNT || slot === this.currentSlot) {
       return;
     }
@@ -347,6 +373,7 @@ export class WeaponSystem {
   }
 
   startReload(): void {
+    if (this.streakWeaponId) return;
     if (isMeleeWeapon(this.weapon)) return;
     const state = this.ammo.get(this.weapon.id)!;
     if (
@@ -402,7 +429,7 @@ export class WeaponSystem {
         this.semiAutoLock = true;
         return;
       }
-      if (!this.infiniteAmmo) state.mag--;
+      if (!this.infiniteAmmo && !this.streakWeaponId) state.mag--;
     }
 
     this.cooldown = this.weapon.fireInterval;

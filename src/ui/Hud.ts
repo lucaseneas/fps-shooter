@@ -55,6 +55,7 @@ function escapeHtml(text: string): string {
 
 /** Camada DOM do HUD: vida, munição, kill feed, placar, morte, vitória. */
 export class Hud {
+  private readonly healthPanel = el<HTMLDivElement>("healthPanel");
   private readonly healthFill = el<HTMLDivElement>("healthFill");
   private readonly healthText = el<HTMLSpanElement>("healthText");
   private readonly ammoMag = el<HTMLSpanElement>("ammoMag");
@@ -99,6 +100,7 @@ export class Hud {
   private readonly damageVignette = el<HTMLDivElement>("damageVignette");
   private readonly damageDirection = el<HTMLDivElement>("damageDirection");
   private readonly wallhackVignette = el<HTMLDivElement>("wallhackVignette");
+  private readonly predatorVignette = el<HTMLDivElement>("predatorVignette");
   private readonly invincibleVignette = el<HTMLDivElement>("invincibleVignette");
   private readonly streakActivePanel = el<HTMLDivElement>("streakActivePanel");
   private readonly streakActiveBar = el<HTMLDivElement>("streakActiveBar");
@@ -125,6 +127,7 @@ export class Hud {
   /** Streaks liberados aguardando ativação (ids vindos do servidor). */
   private availableStreakIds: string[] = [];
   private activeStreakId = "";
+  private predatorHud = false;
 
   private static readonly KILL_STREAK_WINDOW_MS = 5000;
   private static readonly KILL_BADGE_VISIBLE_MS = 2200;
@@ -164,13 +167,36 @@ export class Hud {
     });
   }
 
-  setHealth(current: number): void {
-    const pct = Math.max(0, Math.min(1, current / CONFIG.playerMaxHealth));
+  setHealth(current: number, max: number = CONFIG.playerMaxHealth): void {
+    const cap = Math.max(1, max);
+    const pct = Math.max(0, Math.min(1, current / cap));
     this.healthFill.style.width = `${pct * 100}%`;
     this.healthFill.style.background =
-      pct > 0.5 ? "#6fd66f" : pct > 0.25 ? "#e8c14a" : "#e05545";
+      max > CONFIG.playerMaxHealth
+        ? pct > 0.5
+          ? "#e8a23a"
+          : pct > 0.25
+            ? "#e07832"
+            : "#e05545"
+        : pct > 0.5
+          ? "#6fd66f"
+          : pct > 0.25
+            ? "#e8c14a"
+            : "#e05545";
     this.healthText.textContent = String(Math.ceil(current));
-    this.updateLowHealthVignette(pct);
+    this.healthPanel.classList.toggle("heli", max > CONFIG.playerMaxHealth);
+    this.updateLowHealthVignette(max > CONFIG.playerMaxHealth ? 1 : pct);
+  }
+
+  setPredatorHud(on: boolean): void {
+    this.predatorHud = on;
+    this.healthPanel.classList.toggle("heli", on);
+    if (on) {
+      this.weaponName.textContent = "Minigun";
+      this.ammoMag.textContent = "∞";
+      this.ammoReserve.textContent = "heli";
+      this.ammoMag.classList.remove("low");
+    }
   }
 
   /** Escurece/avermelha a tela conforme a vida cai (efeito de sangue). */
@@ -197,6 +223,13 @@ export class Hud {
   }
 
   setAmmo(mag: number, reserve: number, reloading: boolean): void {
+    if (this.predatorHud) {
+      this.weaponName.textContent = "Minigun";
+      this.ammoMag.textContent = "∞";
+      this.ammoReserve.textContent = "heli";
+      this.ammoMag.classList.remove("low");
+      return;
+    }
     const weapon = this.loadoutWeapons[this.activeWeaponIndex];
     if (weapon && isMeleeWeapon(weapon)) {
       this.ammoMag.textContent = "—";
@@ -674,10 +707,11 @@ export class Hud {
       this.streakActiveTitle.textContent = streakName.replace("_", " ").toUpperCase();
       this.streakTimeText.textContent = `${Math.ceil(timeLeft)}s`;
       
-      const pct = Math.max(0, Math.min(100, (timeLeft / 15) * 100));
+      const reward = KILL_STREAK_REWARDS.find((r) => r.id === streakName);
+      const duration = reward?.duration ?? 15;
+      const pct = Math.max(0, Math.min(100, (timeLeft / duration) * 100));
       this.streakActiveBar.style.width = `${pct}%`;
 
-      const reward = KILL_STREAK_REWARDS.find((r) => r.id === streakName);
       this.streakActiveIcon.textContent = reward?.icon ?? "⚡";
 
       if (streakName === "wall_hacker") {
@@ -685,9 +719,11 @@ export class Hud {
       } else {
         this.wallhackVignette.classList.add("hidden");
       }
+      this.predatorVignette.classList.toggle("hidden", streakName !== "predator");
     } else {
       this.streakActivePanel.classList.add("hidden");
       this.wallhackVignette.classList.add("hidden");
+      this.predatorVignette.classList.add("hidden");
     }
   }
 

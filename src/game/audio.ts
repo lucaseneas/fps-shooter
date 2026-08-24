@@ -21,6 +21,11 @@ export class AudioManager {
   private noiseBuffer: AudioBuffer | null = null;
   private volume = 0.5;
   private listener: SpatialListener | null = null;
+  private heliRotor: {
+    osc: OscillatorNode;
+    noise: AudioBufferSourceNode;
+    gain: GainNode;
+  } | null = null;
 
   /** Deve ser chamado num gesto do usuário (clique) para liberar o áudio. */
   resume(): void {
@@ -372,6 +377,26 @@ export class AudioManager {
           spatial
         );
         break;
+      case "minigun":
+        this.gunshot(
+          {
+            attackGain: 0.62,
+            bodyGain: 0.4,
+            attackMs: 7,
+            bodyMs: 70,
+            attackFreq: 2400,
+            bodyFreq: 900,
+            bodyEndFreq: 280,
+            subFreq: 55,
+            subGain: 0.28,
+            subMs: 85,
+            mechFreq: 1480,
+            mechGain: 0.08,
+          },
+          gainScale * 0.85,
+          spatial
+        );
+        break;
       case "vector":
         this.gunshot(
           {
@@ -543,6 +568,67 @@ export class AudioManager {
 
   death(): void {
     this.tone(300, 0.5, 0.28, "sawtooth", 70);
+  }
+
+  explosion(): void {
+    this.noise(0.55, 0.7, "lowpass", 420);
+    this.tone(90, 0.7, 0.45, "sawtooth", 28);
+    this.tone(180, 0.35, 0.22, "square", 50, 0.04);
+  }
+
+  startHeliRotor(): void {
+    this.resume();
+    this.stopHeliRotor();
+    if (!this.ctx || !this.master || !this.noiseBuffer) return;
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(this.master);
+
+    const osc = this.ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.value = 48;
+    const oscGain = this.ctx.createGain();
+    oscGain.gain.value = 0.22;
+    osc.connect(oscGain).connect(gain);
+
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer;
+    noise.loop = true;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 280;
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.value = 0.35;
+    noise.connect(filter).connect(noiseGain).connect(gain);
+
+    const t0 = this.ctx.currentTime;
+    gain.gain.exponentialRampToValueAtTime(0.55, t0 + 0.45);
+    osc.start();
+    noise.start();
+    this.heliRotor = { osc, noise, gain };
+  }
+
+  stopHeliRotor(): void {
+    if (!this.heliRotor || !this.ctx) return;
+    const { osc, noise, gain } = this.heliRotor;
+    const t0 = this.ctx.currentTime;
+    try {
+      gain.gain.cancelScheduledValues(t0);
+      gain.gain.setValueAtTime(gain.gain.value, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.35);
+    } catch {
+      /* ignore */
+    }
+    window.setTimeout(() => {
+      try {
+        osc.stop();
+        noise.stop();
+      } catch {
+        /* already stopped */
+      }
+      gain.disconnect();
+    }, 400);
+    this.heliRotor = null;
   }
 
   respawn(): void {

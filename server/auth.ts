@@ -5,7 +5,7 @@ import { disconnectAllForUser } from "./sessionRegistry";
 
 /** Código de erro HTTP/API quando o token foi invalidado por login noutro sítio. */
 export const AUTH_SESSION_REPLACED = "session_replaced";
-import { getWeapon, weaponCategory, resolveWeaponId, DEFAULT_LOADOUT, type LoadoutSlots, type WeaponId } from "../shared/weapons";
+import { getWeapon, weaponCategory, resolveWeaponId, DEFAULT_LOADOUT, isStreakWeapon, type LoadoutSlots, type WeaponId } from "../shared/weapons";
 import { isValidSkin, DEFAULT_SKIN } from "../shared/skins";
 import {
   mergeInventories,
@@ -78,7 +78,7 @@ function parseLoadout(raw: unknown): LoadoutSlots {
       const v = o[slot];
       if (typeof v === "string") {
         const resolved = resolveWeaponId(v);
-        if (resolved && weaponCategory(resolved) === slot) return resolved;
+        if (resolved && !isStreakWeapon(resolved) && weaponCategory(resolved) === slot) return resolved;
       }
       return fallback;
     };
@@ -412,7 +412,7 @@ export async function saveAccountPrefs(
   for (const slot of slots) {
     const v = lo[slot];
     const resolved = typeof v === "string" ? resolveWeaponId(v) : undefined;
-    if (!resolved || weaponCategory(resolved) !== slot) {
+    if (!resolved || isStreakWeapon(resolved) || weaponCategory(resolved) !== slot) {
       return `Arma inválida no slot ${slot}.`;
     }
     loadout[slot] = resolved;

@@ -2,6 +2,7 @@ import { PlayerState } from "./schema";
 import { segmentBlocked, distance3 } from "./physics";
 import { randomSpawn, SpawnPoint } from "../shared/spawnPoints";
 import { getWeapon, damageFalloff } from "../shared/weapons";
+import { isPredatorStreak, PREDATOR } from "../shared/killStreaks";
 import type { MapCollision } from "../shared/mapRuntime";
 import {
   BodyState,
@@ -109,6 +110,12 @@ export class BotAi {
     this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
     this.repathTimer -= dt;
     this.crouchHold = Math.max(0, this.crouchHold - dt);
+
+    if (isPredatorStreak(this.state.activeStreak)) {
+      this.updatePredator(dt);
+      return;
+    }
+
     this.acquireTarget(dt);
 
     const target = this.targetId
@@ -142,7 +149,57 @@ export class BotAi {
     this.lastZ = this.state.z;
   }
 
+  /** Alinha o corpo interno após teleporte (Predator / respawn). */
+  snapBody(x: number, y: number, z: number): void {
+    this.body.x = x;
+    this.body.y = y;
+    this.body.z = z;
+    this.body.vy = 0;
+    this.body.grounded = true;
+    this.state.x = x;
+    this.state.y = y;
+    this.state.z = z;
+    this.state.vy = 0;
+    this.state.grounded = true;
+    this.state.crouch = false;
+    this.lastX = x;
+    this.lastZ = z;
+    this.path = [];
+    this.physAcc = 0;
+  }
+
+  private updatePredator(dt: number): void {
+    this.body.x = this.state.x;
+    this.body.y = this.state.y;
+    this.body.z = this.state.z;
+    this.body.vy = 0;
+    this.body.grounded = true;
+    this.state.crouch = false;
+    this.state.vy = 0;
+
+    this.acquireTarget(dt);
+    const target = this.targetId
+      ? this.world.getPlayers().get(this.targetId)
+      : undefined;
+    if (!target || !target.alive) return;
+
+    const dx = target.x - this.state.x;
+    const dz = target.z - this.state.z;
+    const lookYaw = Math.atan2(dx, dz);
+    this.state.yaw = turnToward(this.state.yaw, lookYaw, TURN_SPEED * dt);
+
+    if (this.reactionRemaining > 0) {
+      this.reactionRemaining -= dt;
+      return;
+    }
+    if (this.fireCooldown > 0 || !this.canSee(target)) return;
+    if (!this.facing(lookYaw, 0.45)) return;
+    this.shoot(target);
+    this.fireCooldown = 0.08 * (0.85 + Math.random() * 0.3);
+  }
+
   private eyeY(p: PlayerState = this.state): number {
+    if (isPredatorStreak(p.activeStreak)) return p.y + PREDATOR.eyeY;
     return p.y + (p.crouch ? CROUCH_EYE_HEIGHT : EYE_HEIGHT);
   }
 
@@ -168,7 +225,9 @@ export class BotAi {
     for (const [id, p] of players) {
       if (id === this.id || !p.alive) continue;
       if (this.state.team && p.team && p.team === this.state.team) continue;
-      const d = Math.hypot(p.x - this.state.x, p.z - this.state.z);
+      const d = isPredatorStreak(p.activeStreak)
+        ? Math.hypot(p.x - this.state.x, p.y - this.state.y, p.z - this.state.z)
+        : Math.hypot(p.x - this.state.x, p.z - this.state.z);
       if (d >= bestDist) continue;
       if (d > HEAR_DISTANCE && !this.canSee(p)) continue;
       bestId = id;
@@ -182,13 +241,18 @@ export class BotAi {
     }
   }
 
+  private aimY(p: PlayerState): number {
+    if (isPredatorStreak(p.activeStreak)) return p.y;
+    return this.eyeY(p);
+  }
+
   private canSee(p: PlayerState): boolean {
     return !segmentBlocked(
       this.state.x,
       this.eyeY(),
       this.state.z,
       p.x,
-      this.eyeY(p),
+      this.aimY(p),
       p.z,
       this.world.getMap()
     );
@@ -438,18 +502,22 @@ export class BotAi {
       this.eyeY(),
       this.state.z,
       target.x,
-      this.eyeY(target),
+      this.aimY(target),
       target.z
     );
 
+    const aerial = isPredatorStreak(this.state.activeStreak);
+    const weapon = aerial ? getWeapon("minigun")! : getWeapon("m4a1")!;
     // ~58% perto, ~35% a 20 m, ~22% longe — ameaça sem laser.
     const t = Math.min(1, Math.max(0, (dist - 6) / 34));
-    const hitChance = 0.58 * (1 - t) + 0.22 * t;
+    const hitChance = (aerial ? 0.42 : 0.58) * (1 - t) + (aerial ? 0.18 : 0.22) * t;
     const hit = Math.random() < hitChance;
 
-    const headY = this.eyeY(target);
+    const aimY = this.aimY(target);
     const missOffset = () => (Math.random() - 0.5) * (1.2 + dist * 0.04);
-    const part = hit && Math.random() < HEADSHOT_CHANCE ? "head" : "body";
+    const part = hit && !isPredatorStreak(target.activeStreak) && Math.random() < HEADSHOT_CHANCE
+      ? "head"
+      : "body";
 
     this.world.broadcastShot({
       shooterId: this.id,
@@ -457,16 +525,15 @@ export class BotAi {
       hit,
       headshot: hit && part === "head",
       endX: target.x + (hit ? 0 : missOffset()),
-      endY: hit ? (part === "head" ? headY : headY - 0.3) : headY + missOffset() * 0.5,
+      endY: hit ? (part === "head" ? aimY : aimY - 0.3) : aimY + missOffset() * 0.5,
       endZ: target.z + (hit ? 0 : missOffset()),
     });
 
     if (!hit) return;
 
-    const rifle = getWeapon("m4a1")!;
-    const base = part === "head" ? rifle.damageHead : rifle.damageBody;
-    const damage = base * damageFalloff(dist, rifle) * BOT_DAMAGE_SCALE;
-    this.world.applyDamage(this.targetId!, damage, this.id, rifle.name);
+    const base = part === "head" ? weapon.damageHead : weapon.damageBody;
+    const damage = base * damageFalloff(dist, weapon) * BOT_DAMAGE_SCALE;
+    this.world.applyDamage(this.targetId!, damage, this.id, weapon.name);
   }
 }
 

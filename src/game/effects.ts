@@ -369,6 +369,20 @@ export class EffectsManager {
     this.emitImpact(at, onFlesh, dir, normal ?? null, headshot);
   }
 
+  /** Explosão do helicóptero Predator. */
+  spawnExplosion(at: Vector3): void {
+    const up = new Vector3(0, 1, 0);
+    this.spawnFlash(at);
+    for (let i = 0; i < 18; i++) this.spawnSpark(at, up);
+    for (let i = 0; i < 10; i++) this.spawnPuff(at, up, false, 2.4);
+    for (let i = 0; i < 6; i++) {
+      const offset = at.add(
+        new Vector3((Math.random() - 0.5) * 2.2, Math.random() * 1.6, (Math.random() - 0.5) * 2.2)
+      );
+      this.spawnFlash(offset);
+    }
+  }
+
   private emitImpact(
     at: Vector3,
     onFlesh: boolean,

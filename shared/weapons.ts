@@ -8,7 +8,8 @@ export type WeaponId =
   | "vector"
   | "shotgun"
   | "awp"
-  | "knife";
+  | "knife"
+  | "minigun";
 
 /** Ids antigos → ids atuais (loadouts/inventários persistidos). */
 const LEGACY_WEAPON_IDS: Record<string, WeaponId> = {
@@ -89,9 +90,16 @@ export function weaponCategory(id: WeaponId): WeaponCategory {
   return "primary";
 }
 
+/** Armas de kill streak — não entram no loadout. */
+export function isStreakWeapon(id: string): boolean {
+  return id === "minigun";
+}
+
 /** Armas disponíveis para um slot do loadout (dropdowns da seleção). */
 export function weaponsForCategory(category: WeaponCategory): WeaponDef[] {
-  return WEAPONS.filter((w) => weaponCategory(w.id) === category);
+  return WEAPONS.filter(
+    (w) => weaponCategory(w.id) === category && !isStreakWeapon(w.id)
+  );
 }
 
 /** Catálogo de armas (defs). O inventário do jogador vem do loadout. */
@@ -334,6 +342,34 @@ export const WEAPONS: WeaponDef[] = [
     drawTime: 0.7,
     meleeRange: 2.2,
     moveSpeedMult: MAX_MOVE_SPEED_MULT,
+  },
+  {
+    id: "minigun",
+    name: "Minigun",
+    desc: "Canhão giratório do Predator: cadência alta, dano pesado e spread baixo.",
+    auto: true,
+    fireInterval: 0.07,
+    damageBody: 52,
+    damageHead: 68,
+    pellets: 1,
+    pelletPattern: [[0, 0]],
+    magSize: 999,
+    reserveAmmo: 0,
+    reloadTime: 0,
+    recoilPattern: [
+      [0.12, 0.22],
+      [-0.1, 0.24],
+      [0.14, 0.26],
+      [-0.12, 0.28],
+    ],
+    falloffStart: 48,
+    falloffEnd: 95,
+    falloffMin: 0.72,
+    viewColor: [0.22, 0.24, 0.2],
+    baseSpread: 1.05,
+    sprayBloomMax: 1.35,
+    sprayBloomRamp: 10,
+    drawTime: 0.25,
   },
 ];
 

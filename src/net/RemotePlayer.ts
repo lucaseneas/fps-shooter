@@ -8,7 +8,9 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 
 import { CONFIG } from "../../shared/config";
 import { HITBOX } from "../../shared/hitboxes";
+import { PREDATOR } from "../../shared/killStreaks";
 import { PlayerVisual } from "../player/PlayerVisual";
+import { HelicopterVisual } from "../game/HelicopterVisual";
 
 const STAND_HEIGHT = 1.8;
 const ROOT_HALF = STAND_HEIGHT / 2;
@@ -86,7 +88,9 @@ export class RemotePlayer {
   private invincible = false;
   private wallhack = false;
   public readonly visual: PlayerVisual;
+  private readonly heli: HelicopterVisual;
   private aliveVisible = true;
+  private predator = false;
 
   private velocityX = 0;
   private velocityY = 0;
@@ -173,6 +177,8 @@ export class RemotePlayer {
 
     // Componente visual do jogador 3D (Minecraft rig com todas animações)
     this.visual = new PlayerVisual(scene, `${id}_visual`, this.root);
+    this.heli = new HelicopterVisual(scene, id);
+    this.heli.setEnabled(false);
 
     // AABB idêntico ao hitscan do servidor (sem yaw — o server usa AABB).
     const debugMat = new StandardMaterial(`${id}_debugHitboxMat`, scene);
@@ -314,6 +320,16 @@ export class RemotePlayer {
 
   setWeaponSkin(skinId: string): void {
     this.visual.setWeaponSkin(skinId || "");
+  }
+
+  setPredator(on: boolean): void {
+    if (this.predator === on) return;
+    this.predator = on;
+    this.refreshPredatorVisual();
+  }
+
+  get isPredator(): boolean {
+    return this.predator;
   }
 
   private applyCrouchPose(): void {
@@ -477,6 +493,9 @@ export class RemotePlayer {
 
     this.root.position.set(this.visX, this.visY + ROOT_HALF, this.visZ);
     this.root.rotation.y = this.visYaw;
+    if (this.predator) {
+      this.heli.setPose(this.visX, this.visY, this.visZ, this.visYaw);
+    }
 
     // Atualiza pose e animações completas no PlayerVisual
     let realSpeed = 0;
@@ -518,6 +537,18 @@ export class RemotePlayer {
     this.debugBodyHitbox.scaling.y = bodyHalfY / HITBOX.bodyHalf.y;
     this.debugBodyHitbox.position.set(this.visX, this.visY + bodyCy, this.visZ);
     this.debugHeadHitbox.position.set(headX, this.visY + headCy, headZ);
+    if (this.predator) {
+      this.debugBodyHitbox.scaling.set(
+        PREDATOR.hitHalf.x / HITBOX.bodyHalf.x,
+        PREDATOR.hitHalf.y / HITBOX.bodyHalf.y,
+        PREDATOR.hitHalf.z / HITBOX.bodyHalf.z
+      );
+      this.debugBodyHitbox.position.set(this.visX, this.visY, this.visZ);
+      this.debugHeadHitbox.setEnabled(false);
+    } else {
+      this.debugBodyHitbox.scaling.x = 1;
+      this.debugBodyHitbox.scaling.z = 1;
+    }
   }
 
   applyState(
@@ -635,7 +666,7 @@ export class RemotePlayer {
   }
 
   private refreshSkeletonVisibility(): void {
-    const show = this.wallhack && this.aliveVisible;
+    const show = this.wallhack && this.aliveVisible && !this.predator;
     this.skeletonBody.setEnabled(show);
     this.skeletonHead.setEnabled(show);
   }
@@ -668,13 +699,14 @@ export class RemotePlayer {
 
   setDebugHitboxes(on: boolean): void {
     this.debugBodyHitbox.setEnabled(on);
-    this.debugHeadHitbox.setEnabled(on);
+    this.debugHeadHitbox.setEnabled(on && !this.predator);
   }
 
   /** `rttMs` = RTT autoritativo do servidor (mesmo do rewind). */
   update(dt: number, rttMs = 0): void {
     if (!this.hasPatch) return;
     this.visual.update(dt);
+    this.heli.update(dt);
     this.applyHitscanPose(this.sampleHitscanFeet(rttMs), dt);
   }
 
@@ -688,6 +720,9 @@ export class RemotePlayer {
   }
 
   getHead(): Vector3 {
+    if (this.predator) {
+      return new Vector3(this.visX, this.visY + PREDATOR.eyeY, this.visZ);
+    }
     const y = this.crouching ? HITBOX.crouchHeadCenterY : HITBOX.headCenterY;
     const fwd = this.crouching ? HITBOX.crouchHeadForward : 0;
     return new Vector3(
@@ -703,7 +738,7 @@ export class RemotePlayer {
 
   /** Retorna true quando um passo remoto deve tocar (som espacial no cliente). */
   tickFootstep(dt: number): boolean {
-    if (!this.movingOnGround) {
+    if (this.predator || !this.movingOnGround) {
       this.footstepAcc = 0;
       return false;
     }
@@ -716,22 +751,39 @@ export class RemotePlayer {
     return false;
   }
 
+  private refreshPredatorVisual(): void {
+    const showHeli = this.predator && this.aliveVisible;
+    const showDummy = !this.predator && this.aliveVisible;
+    this.heli.setEnabled(showHeli);
+    this.visual.setEnabled(showDummy);
+    this.bodyMesh.setEnabled(showDummy);
+    this.headMesh.setEnabled(showDummy);
+    this.gun.setEnabled(showDummy);
+    this.aimPick.setEnabled(this.aliveVisible);
+    this.nameplate.position.y = this.predator
+      ? 1.8
+      : STAND_HEIGHT / 2 + 0.45;
+    this.refreshSkeletonVisibility();
+  }
+
   private setVisible(on: boolean): void {
     this.aliveVisible = on;
-    this.bodyMesh.setEnabled(on);
-    this.headMesh.setEnabled(on);
+    this.bodyMesh.setEnabled(on && !this.predator);
+    this.headMesh.setEnabled(on && !this.predator);
     this.nameplate.setEnabled(on && this.nameplateWanted);
     this.aimPick.setEnabled(on);
-    this.gun.setEnabled(on);
-    this.visual.setEnabled(on);
+    this.gun.setEnabled(on && !this.predator);
+    this.visual.setEnabled(on && !this.predator);
+    this.heli.setEnabled(on && this.predator);
     this.root.checkCollisions = on;
     this.debugBodyHitbox.isVisible = on;
-    this.debugHeadHitbox.isVisible = on;
+    this.debugHeadHitbox.isVisible = on && !this.predator;
     this.refreshSkeletonVisibility();
   }
 
   dispose(): void {
     this.visual.dispose();
+    this.heli.dispose();
     this.debugBodyHitbox.dispose();
     this.debugHeadHitbox.dispose();
     this.root.dispose(false, true);

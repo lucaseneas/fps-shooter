@@ -35,6 +35,8 @@ export class PlayerState extends Schema {
   @type(["string"]) availableStreaks = new ArraySchema<string>();
   /** Segundos restantes de invencibilidade (spawn ou streak). */
   @type("number") invincibleTimeLeft = 0;
+  /** Vida do helicóptero Predator (0 = inativo). */
+  @type("number") heliHp = 0;
 
   // Pré-lobby:
   /** Jogador marcou "Pronto" no pré-lobby. */

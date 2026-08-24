@@ -15,6 +15,8 @@ import {
   CROUCH_EYE_HEIGHT,
   FIXED_DT,
 } from "../../shared/movement";
+import { stepPredator } from "../../shared/killStreaks";
+import { getActiveMap } from "../../shared/mapRuntime";
 
 const BASE_SENSITIVITY = 0.0022;
 
@@ -82,6 +84,7 @@ const LOCKED_KEYS = [
   "KeyV",
   "KeyX",
   "KeyZ",
+  "KeyB",
   "KeyY",
   "Digit1",
   "Digit2",
@@ -153,6 +156,8 @@ export class FpsController {
 
   /** Callback para enviar cada input ao servidor. */
   onInput: ((input: PlayerInput) => void) | null = null;
+  /** Kill streaks (Z/X/C/B) — dispara na fase de captura, com o pointer lock. */
+  onStreakKey: ((code: string, key: string) => void) | null = null;
 
   // Estado de input
   private readonly keys = new Set<string>();
@@ -193,6 +198,9 @@ export class FpsController {
   private eyeY = EYE_HEIGHT;
   /** fps = jogando · overview = topo pré-spawn · freefly = espectador livre. */
   private cameraMode: "fps" | "overview" | "freefly" = "fps";
+  /** Kill streak Predator: câmera no ar, sem física de chão. */
+  private predatorMode = false;
+  private predatorEyeY = 0;
   /** Segurar V — visão frontal do personagem (só câmera; mira permanece em FP). */
   private thirdPersonPeekAllowed = false;
   private thirdPersonPeeking = false;
@@ -223,6 +231,7 @@ export class FpsController {
       scene
     );
     this.camera.minZ = 0.1;
+    this.camera.maxZ = 400;
     this.camera.fov = 1.15; // ~66°
     this.camera.inertia = 0;
     this.camera.inputs.clear(); // input próprio
@@ -388,6 +397,35 @@ export class FpsController {
     return this.thirdPersonPeeking;
   }
 
+  get isPredatorMode(): boolean {
+    return this.predatorMode;
+  }
+
+  /**
+   * Helicóptero Predator: voo lento no plano XZ com WASD, mira livre.
+   * `eyeY` é o offset da câmera relativo ao centro da fuselagem.
+   */
+  setPredatorMode(on: boolean, eyeY = 0): void {
+    this.predatorMode = on;
+    this.predatorEyeY = eyeY;
+    if (on) {
+      this.thirdPersonPeeking = false;
+      this.sim.vy = 0;
+      this.sim.grounded = true;
+      copyBody(this.sim, this.prevSim);
+      this.smoothX = 0;
+      this.smoothY = 0;
+      this.smoothZ = 0;
+      this.eyeY = eyeY;
+    }
+  }
+
+  /** Define o pitch da mira (ex.: olhar para o chão ao entrar no Predator). */
+  setPitch(pitch: number): void {
+    this.basePitch = Scalar.Clamp(pitch, -this.maxPitch, this.maxPitch);
+    this.recoilOffset = 0;
+  }
+
   /** Habilita segurar V durante a partida (desligado em menus/morte). */
   setThirdPersonPeekAllowed(on: boolean): void {
     this.thirdPersonPeekAllowed = on;
@@ -527,7 +565,13 @@ export class FpsController {
       grounded: server.grounded,
     };
     for (const input of this.pendingInputs) {
-      stepPlayer(replayed, input);
+      if (this.predatorMode) {
+        stepPredator(replayed, input, getActiveMap());
+        replayed.vy = 0;
+        replayed.grounded = true;
+      } else {
+        stepPlayer(replayed, input);
+      }
     }
 
     const dx = replayed.x - this.sim.x;
@@ -567,6 +611,7 @@ export class FpsController {
 
   /** True quando andando no chão (usado para o som de passos). */
   get isMovingOnGround(): boolean {
+    if (this.predatorMode) return false;
     return (
       this.movementEnabled &&
       this.sim.grounded &&
@@ -579,6 +624,7 @@ export class FpsController {
 
   /** Teclas de movimento pressionadas, mesmo no ar (sprint não para no pulo). */
   get isMoving(): boolean {
+    if (this.predatorMode) return false;
     return (
       this.movementEnabled &&
       (this.keys.has("KeyW") ||
@@ -596,6 +642,7 @@ export class FpsController {
   }
 
   get isCrouching(): boolean {
+    if (this.predatorMode) return false;
     return (
       this.movementEnabled &&
       (this.keys.has("ControlLeft") || this.keys.has("ControlRight"))
@@ -666,6 +713,18 @@ export class FpsController {
         (e.key === "r" && (e.ctrlKey || e.metaKey)) ||
         (e.key === "R" && (e.ctrlKey || e.metaKey));
       if (browserChord) e.preventDefault();
+
+      if (!e.repeat) {
+        if (
+          e.code === "KeyZ" ||
+          e.code === "KeyX" ||
+          e.code === "KeyC" ||
+          e.code === "KeyB"
+        ) {
+          e.preventDefault();
+        }
+        this.onStreakKey?.(e.code, e.key);
+      }
     }
 
     if (!this.movementEnabled && this.cameraMode !== "freefly") return;
@@ -792,6 +851,25 @@ export class FpsController {
       return;
     }
 
+    if (this.predatorMode) {
+      if (this.movementEnabled) {
+        this.accumulator += dt;
+        while (this.accumulator >= FIXED_DT) {
+          this.accumulator -= FIXED_DT;
+          copyBody(this.sim, this.prevSim);
+          this.stepPredatorOnce();
+        }
+      }
+      const smoothDecay = Math.min(1, dt * RECONCILE_SMOOTH_SPEED);
+      this.smoothX = Scalar.Lerp(this.smoothX, 0, smoothDecay);
+      this.smoothY = Scalar.Lerp(this.smoothY, 0, smoothDecay);
+      this.smoothZ = Scalar.Lerp(this.smoothZ, 0, smoothDecay);
+      this.eyeY = this.predatorEyeY;
+      this.thirdPersonPeeking = false;
+      this.syncVisual(this.movementEnabled ? this.accumulator / FIXED_DT : 1);
+      return;
+    }
+
     if (this.movementEnabled) {
       this.accumulator += dt;
       while (this.accumulator >= FIXED_DT) {
@@ -894,6 +972,33 @@ export class FpsController {
     };
 
     stepPlayer(this.sim, input);
+    this.pendingInputs.push(input);
+    if (this.pendingInputs.length > 120) this.pendingInputs.shift();
+    this.onInput?.(input);
+  }
+
+  /** Predator: voo lento no plano XZ com WASD, relativo ao yaw. */
+  private stepPredatorOnce(): void {
+    let forward = 0;
+    let strafe = 0;
+    if (this.keys.has("KeyW")) forward += 1;
+    if (this.keys.has("KeyS")) forward -= 1;
+    if (this.keys.has("KeyD")) strafe += 1;
+    if (this.keys.has("KeyA")) strafe -= 1;
+
+    this.sim.vy = 0;
+    this.sim.grounded = true;
+    const input: PlayerInput = {
+      seq: ++this.inputSeq,
+      forward,
+      strafe,
+      yaw: this.yaw,
+      jump: false,
+      run: false,
+      crouch: false,
+      speedMult: 1,
+    };
+    stepPredator(this.sim, input, getActiveMap());
     this.pendingInputs.push(input);
     if (this.pendingInputs.length > 120) this.pendingInputs.shift();
     this.onInput?.(input);

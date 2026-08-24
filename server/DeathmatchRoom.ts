@@ -3,7 +3,7 @@ import { Room, Client } from "colyseus";
 import { MatchState, PlayerState } from "./schema";
 import { BotAi, BotWorld, ShotEvent } from "./BotAi";
 import { CONFIG, GAME_MODES, MAPS, isTeamId, isTdmMode, TEAMS, type TeamId } from "../shared/config";
-import { KILL_STREAK_REWARDS } from "../shared/killStreaks";
+import { KILL_STREAK_REWARDS, PREDATOR, isPredatorStreak, stepPredator } from "../shared/killStreaks";
 import { pickBotNames } from "../shared/names";
 import { pickSpawnFarFrom, randomSpawn, spawnsForTeam } from "../shared/spawnPoints";
 import {
@@ -157,6 +157,8 @@ export class DeathmatchRoom extends Room<MatchState> {
   private respawnAt = new Map<string, number>();
   /** Última posição de morte, para renascer longe dela. */
   private deathPos = new Map<string, { x: number; z: number }>();
+  /** Piso onde o Predator desce quando o tempo acaba. */
+  private predatorGround = new Map<string, { x: number; z: number }>();
   private matchResetAt = 0;
   private roomMap: MapCollision = geometryToCollision(defaultPracaGeometry(), "Praça");
 
@@ -216,12 +218,12 @@ export class DeathmatchRoom extends Room<MatchState> {
       const p = this.state.players.get(client.sessionId);
       if (!p || !p.alive || !p.inMatch) return;
       const id = typeof msg?.id === "string" ? msg.id : "";
-      if (!id || !p.availableStreaks.includes(id)) return;
+      if (!id || p.availableStreaks.indexOf(id) < 0) return;
       if (p.activeStreak) {
         client.send("streakDenied", { activeStreak: p.activeStreak });
         return;
       }
-      this.tryActivateStreak(p, id);
+      this.tryActivateStreak(client.sessionId, p, id);
     });
 
     this.onMessage("spong", (client, msg: { t: number }) => {
@@ -497,6 +499,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       if (p.streakTimeLeft > 0) {
         p.streakTimeLeft = Math.max(0, p.streakTimeLeft - dt);
         if (p.streakTimeLeft === 0) {
+          if (isPredatorStreak(p.activeStreak)) this.landFromPredator(id, p);
           p.activeStreak = "";
         }
       }
@@ -511,7 +514,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         !p.activeStreak &&
         firstAvailable !== undefined
       ) {
-        this.tryActivateStreak(p, firstAvailable);
+        this.tryActivateStreak(id, p, firstAvailable);
       }
     }
   }
@@ -525,7 +528,7 @@ export class DeathmatchRoom extends Room<MatchState> {
    * Ativa um streak liberado. Só vale se o jogador possuir o streak na
    * pilha de disponíveis e não houver nenhum outro ativo no momento.
    */
-  private tryActivateStreak(p: PlayerState, id: string): boolean {
+  private tryActivateStreak(playerId: string, p: PlayerState, id: string): boolean {
     if (p.activeStreak) return false;
     const index = p.availableStreaks.indexOf(id);
     if (index < 0) return false;
@@ -537,11 +540,84 @@ export class DeathmatchRoom extends Room<MatchState> {
     if (reward.id === "invincibility") {
       this.grantInvincibility(p, reward.duration);
     }
+    if (reward.id === "predator") {
+      this.mountPredator(playerId, p);
+    }
     this.broadcast("killstreakActivated", {
       playerName: p.name,
       streakName: reward.name,
     });
     return true;
+  }
+
+  private predatorAltitude(): number {
+    let maxTop = 6;
+    for (const b of this.roomMap.boxes) {
+      maxTop = Math.max(maxTop, b.y + b.h / 2);
+    }
+    return Math.max(PREDATOR.altitudeMin, maxTop + PREDATOR.altitudeClearance);
+  }
+
+  private predatorHoverPos(p: PlayerState): { x: number; y: number; z: number } {
+    const cx = (this.roomMap.playMinX + this.roomMap.playMaxX) * 0.5;
+    const cz = (this.roomMap.playMinZ + this.roomMap.playMaxZ) * 0.5;
+    const x = p.x * 0.4 + cx * 0.6;
+    const z = p.z * 0.4 + cz * 0.6;
+    return { x, y: this.predatorAltitude(), z };
+  }
+
+  /** Sobe o jogador ao helicóptero e trava a física no chão. */
+  private mountPredator(id: string, p: PlayerState): void {
+    if (!id) return;
+    this.predatorGround.set(id, { x: p.x, z: p.z });
+    const hover = this.predatorHoverPos(p);
+    p.x = hover.x;
+    p.y = hover.y;
+    p.z = hover.z;
+    p.vy = 0;
+    p.grounded = true;
+    p.crouch = false;
+    p.heliHp = PREDATOR.hp;
+    p.weaponId = "minigun";
+    const body = this.bodies.get(id);
+    if (body) {
+      body.x = hover.x;
+      body.y = hover.y;
+      body.z = hover.z;
+      body.vy = 0;
+      body.grounded = true;
+    }
+    this.bots.get(id)?.snapBody(hover.x, hover.y, hover.z);
+  }
+
+  /** Desce o piloto ao chão quando o tempo do Predator acaba. */
+  private landFromPredator(id: string, p: PlayerState): void {
+    const ground = this.predatorGround.get(id);
+    this.predatorGround.delete(id);
+    p.heliHp = 0;
+    const x = ground?.x ?? p.x;
+    const z = ground?.z ?? p.z;
+    p.x = x;
+    p.y = 0;
+    p.z = z;
+    p.vy = 0;
+    p.grounded = true;
+    p.crouch = false;
+    const body = this.bodies.get(id);
+    if (body) {
+      body.x = x;
+      body.y = 0;
+      body.z = z;
+      body.vy = 0;
+      body.grounded = true;
+    }
+    this.bots.get(id)?.snapBody(x, 0, z);
+    this.grantInvincibility(p, PREDATOR.landInvuln);
+  }
+
+  private clearPredator(id: string, p: PlayerState): void {
+    this.predatorGround.delete(id);
+    p.heliHp = 0;
   }
 
   /** Aplica os inputs enfileirados de cada humano com a física compartilhada. */
@@ -557,6 +633,24 @@ export class DeathmatchRoom extends Room<MatchState> {
       }
 
       const count = Math.min(queue.length, MAX_INPUTS_PER_TICK);
+      if (isPredatorStreak(p.activeStreak)) {
+        for (let i = 0; i < count; i++) {
+          const input = queue[i];
+          stepPredator(body, input, this.roomMap);
+          p.lastSeq = input.seq;
+          p.yaw = input.yaw;
+        }
+        queue.splice(0, count);
+        p.x = body.x;
+        p.y = body.y;
+        p.z = body.z;
+        p.vy = 0;
+        p.grounded = true;
+        p.crouch = false;
+        body.vy = 0;
+        body.grounded = true;
+        continue;
+      }
       for (let i = 0; i < count; i++) {
         const input = queue[i];
         stepPlayer(body, input, this.roomMap);
@@ -644,6 +738,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     const now = Date.now();
     for (const [id, player] of this.state.players) {
       if (!player.alive || player.health >= CONFIG.playerMaxHealth) continue;
+      if (isPredatorStreak(player.activeStreak)) continue;
       const lastDamage = this.lastDamagedAt.get(id) ?? now;
       if (now - lastDamage < CONFIG.healthRegenDelay * 1000) continue;
       player.health = Math.min(
@@ -667,6 +762,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     p.vy = 0;
     p.grounded = true;
     p.health = CONFIG.playerMaxHealth;
+    p.heliHp = 0;
+    this.predatorGround.delete(id);
     this.lastDamagedAt.delete(id);
     p.alive = true;
     this.grantInvincibility(p, CONFIG.spawnInvincibilityDuration);
@@ -698,6 +795,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.matchResetAt = 0;
     this.respawnAt.clear();
     this.deathPos.clear();
+    this.predatorGround.clear();
     this.matchMultis.clear();
     this.matchXpEarned.clear();
     this.matchGoldEarned.clear();
@@ -709,6 +807,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.activeStreak = "";
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
+      p.heliHp = 0;
       p.availableStreaks.clear();
       p.matchXp = 0;
       p.doubleKills = 0;
@@ -759,6 +858,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.matchResetAt = 0;
     this.respawnAt.clear();
     this.deathPos.clear();
+    this.predatorGround.clear();
     this.matchMultis.clear();
     this.matchXpEarned.clear();
     this.matchGoldEarned.clear();
@@ -770,6 +870,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.activeStreak = "";
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
+      p.heliHp = 0;
       p.availableStreaks.clear();
       p.matchXp = 0;
       p.doubleKills = 0;
@@ -892,6 +993,9 @@ export class DeathmatchRoom extends Room<MatchState> {
     const shooter = this.state.players.get(shooterId);
     const weapon = getWeapon(msg?.weaponId);
     if (!shooter || !shooter.alive || !weapon) return;
+    const aerial = isPredatorStreak(shooter.activeStreak);
+    if (aerial && weapon.id !== "minigun") return;
+    if (!aerial && weapon.id === "minigun") return;
     shooter.weaponId = weapon.id;
     if (!Array.isArray(msg.dirs) || msg.dirs.length === 0) return;
     if (msg.dirs.length > weapon.pellets) return;
@@ -903,7 +1007,11 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.lastFireAt.set(shooterId, now);
 
     // Origem precisa estar perto do olho do jogador no servidor.
-    const eyeH = shooter.crouch ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
+    const eyeH = aerial
+      ? PREDATOR.eyeY
+      : shooter.crouch
+        ? CROUCH_EYE_HEIGHT
+        : EYE_HEIGHT;
     const eye: Vec3 = {
       x: shooter.x,
       y: shooter.y + eyeH,
@@ -912,7 +1020,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     const originDist = Math.sqrt(
       (msg.ox - eye.x) ** 2 + (msg.oy - eye.y) ** 2 + (msg.oz - eye.z) ** 2
     );
-    if (originDist > 2) return;
+    if (originDist > (aerial ? 3.5 : 2)) return;
     // Após validar o pedido, o traço parte sempre do olho calculado pelo
     // servidor — nunca da posição declarada pelo cliente.
     const origin: Vec3 = eye;
@@ -953,6 +1061,25 @@ export class DeathmatchRoom extends Room<MatchState> {
 
       for (const target of targets) {
         const targetPlayer = this.state.players.get(target.id);
+        if (isPredatorStreak(targetPlayer?.activeStreak)) {
+          const tHeli = rayAabb(
+            origin,
+            dir,
+            target.pos.x,
+            target.pos.y,
+            target.pos.z,
+            PREDATOR.hitHalf.x,
+            PREDATOR.hitHalf.y,
+            PREDATOR.hitHalf.z,
+            tBest
+          );
+          if (tHeli !== null && tHeli < tBest) {
+            tBest = tHeli;
+            hitId = target.id;
+            hitPart = "body";
+          }
+          continue;
+        }
         const crouched = Boolean(targetPlayer?.crouch);
         const yaw = targetPlayer?.yaw ?? 0;
         const headY = crouched ? CROUCH_HEAD_CENTER_Y : HEAD_CENTER_Y;
@@ -1039,19 +1166,41 @@ export class DeathmatchRoom extends Room<MatchState> {
       target.health = CONFIG.playerMaxHealth;
       return false;
     }
-    target.health = Math.max(0, target.health - Math.round(amount));
-    this.lastDamagedAt.set(targetId, Date.now());
 
-    const victimClient = this.clients.find((c) => c.sessionId === targetId);
-    if (attacker) {
-      victimClient?.send("damaged", {
-        x: attacker.x,
-        y: attacker.y,
-        z: attacker.z,
+    if (isPredatorStreak(target.activeStreak)) {
+      target.heliHp = Math.max(0, target.heliHp - Math.round(amount));
+      this.lastDamagedAt.set(targetId, Date.now());
+      const victimClient = this.clients.find((c) => c.sessionId === targetId);
+      if (attacker) {
+        victimClient?.send("damaged", {
+          x: attacker.x,
+          y: attacker.y,
+          z: attacker.z,
+        });
+      }
+      if (target.heliHp > 0) return true;
+      this.broadcast("heliExploded", {
+        x: target.x,
+        y: target.y,
+        z: target.z,
+        victimId: targetId,
       });
-    }
+      target.health = 0;
+    } else {
+      target.health = Math.max(0, target.health - Math.round(amount));
+      this.lastDamagedAt.set(targetId, Date.now());
 
-    if (target.health > 0) return true;
+      const victimClient = this.clients.find((c) => c.sessionId === targetId);
+      if (attacker) {
+        victimClient?.send("damaged", {
+          x: attacker.x,
+          y: attacker.y,
+          z: attacker.z,
+        });
+      }
+
+      if (target.health > 0) return true;
+    }
 
     target.alive = false;
     target.deaths++;
@@ -1060,6 +1209,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     target.streakTimeLeft = 0;
     target.invincibleTimeLeft = 0;
     target.availableStreaks.clear();
+    this.clearPredator(targetId, target);
 
     if (attacker && attackerId !== targetId) {
       attacker.kills++;
@@ -1086,6 +1236,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       weaponName,
     });
 
+    const victimClient = this.clients.find((c) => c.sessionId === targetId);
     victimClient?.send("died", { killerName, weaponName, killerHealth });
 
     this.deathPos.set(targetId, { x: target.x, z: target.z });

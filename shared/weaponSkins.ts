@@ -170,6 +170,9 @@ const DEFAULT_WEAPON_PARTS: Record<WeaponId, Record<string, Rgb>> = {
     "Cube.058_primitive2": BLADE,
     "Cube.058_primitive3": EDGE,
   },
+  minigun: {
+    "*": GUNMETAL,
+  },
 };
 
 /** Cores padrão da arma (polímero / aço / madeira). Sempre aplicadas por baixo da skin custom. */

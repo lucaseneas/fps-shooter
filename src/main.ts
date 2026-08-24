@@ -9,6 +9,7 @@ import { ViewModel } from "./player/ViewModel";
 import { PlayerVisual } from "./player/PlayerVisual";
 import { WeaponSystem } from "./game/WeaponSystem";
 import { EffectsManager } from "./game/effects";
+import { HelicopterVisual } from "./game/HelicopterVisual";
 import { Hud, ScoreRow } from "./ui/Hud";
 import { AudioManager } from "./game/audio";
 import { RemotePlayer } from "./net/RemotePlayer";
@@ -57,6 +58,7 @@ import {
   WeaponId,
   getWeapon,
   isMeleeWeapon,
+  isStreakWeapon,
   resolveWeaponId,
   weaponMoveSpeedMult,
   weaponsForCategory,
@@ -92,8 +94,9 @@ import {
 } from "../shared/ranks";
 import { GOLD_RULES, MAX_GOLD } from "../shared/gold";
 import {
-  KILL_STREAK_KEY_CODES,
-  KILL_STREAK_REWARDS,
+  PREDATOR,
+  isPredatorStreak,
+  killStreakRewardForKey,
 } from "../shared/killStreaks";
 import { SKINS } from "../shared/skins";
 import {
@@ -264,6 +267,7 @@ const minimap = new Minimap(minimapCanvas);
 const player = new FpsController(scene, canvas, {
   spawnPosition: new Vector3(0, 0, -18),
 });
+player.onStreakKey = (code, key) => trySendActivateStreak(code, key);
 scene.activeCamera = player.camera;
 
 const viewModel = new ViewModel(scene, player.camera);
@@ -590,6 +594,8 @@ let localVisualRoot: TransformNode | null = null;
 let localVisualWeaponId = "";
 let localVisualWeaponSkinId = "";
 let localVisualSkinId = "";
+let localHeli: HelicopterVisual | null = null;
+let localPredator = false;
 let homePreview: SkinPreview | null = null;
 let lobbyPreview: SkinPreview | null = null;
 let inventoryPreview: SkinPreview | null = null;
@@ -1793,7 +1799,10 @@ function applyEquippedSkinToViewModel(weaponId: WeaponId): void {
 }
 
 function syncAllViewModelSkins(): void {
-  for (const w of WEAPONS) applyEquippedSkinToViewModel(w.id);
+  for (const w of WEAPONS) {
+    if (isStreakWeapon(w.id)) continue;
+    applyEquippedSkinToViewModel(w.id);
+  }
 }
 
 /** Evita reenviar prefs ao servidor enquanto aplicamos as prefs vindas da conta. */
@@ -2431,6 +2440,7 @@ function openSkinStudio(): void {
   // Popula o seletor de armas uma vez.
   if (skinStudioWeapon.options.length === 0) {
     for (const w of WEAPONS) {
+      if (isStreakWeapon(w.id)) continue;
       const opt = document.createElement("option");
       opt.value = w.id;
       opt.textContent = w.name;
@@ -2602,6 +2612,9 @@ function enterLobby(r: Room): void {
   player.onInput = (input) => {
     if (ownInitialized && !awaitingSpawn) room?.send("input", input);
   };
+  player.onStreakKey = (code, key) => {
+    trySendActivateStreak(code, key);
+  };
 
   setupRoom(r);
   applyDebugMode(debugMode);
@@ -2710,6 +2723,9 @@ function cleanupMatchLocal(): void {
   hudRoot.classList.remove("prespawn", "freefly");
   spectateBanner.classList.add("hidden");
   player.exitSpectatorOverview();
+  setLocalPredator(false);
+  localHeli?.dispose();
+  localHeli = null;
   viewModel.setVisible(true);
   viewModel.setInvincible(false);
   disposeLocalPlayerVisual();
@@ -3408,6 +3424,7 @@ function setupRoom(r: Room): void {
     hud.updateDeathTimer(deathCountdown);
     hud.resetKillStreak();
     audio.death();
+    setLocalPredator(false);
   });
 
   r.onMessage("respawn", (e: { x: number; z: number }) => {
@@ -3476,6 +3493,12 @@ function setupRoom(r: Room): void {
     audio.remoteShot(from);
     const rp = remotePlayers.get(e.shooterId);
     rp?.visual.triggerShoot();
+  });
+
+  r.onMessage("heliExploded", (e: { x: number; y: number; z: number }) => {
+    if (!inGame) return;
+    effects.spawnExplosion(new Vector3(e.x, e.y, e.z));
+    audio.explosion();
   });
 
   r.onMessage("debugShot", (e: {
@@ -3641,6 +3664,7 @@ function reconcile(r: Room): void {
     rp.setSkin(p.skinId || "skin_default");
     rp.setWeapon(p.weaponId || "m4a1");
     rp.setWeaponSkin(p.weaponSkinId || "");
+    rp.setPredator(isPredatorStreak(p.activeStreak));
     rp.setWallhack(ownHasWallhack);
     rp.setInvincible((p.invincibleTimeLeft ?? 0) > 0);
   });
@@ -3744,6 +3768,39 @@ function reconcile(r: Room): void {
   }
 }
 
+function setLocalPredator(on: boolean, p?: PlayerSnapshot): void {
+  if (localPredator === on) return;
+  localPredator = on;
+  hud.setPredatorHud(on);
+  weapons.setStreakWeapon(on ? "minigun" : null);
+  player.setPredatorMode(on, PREDATOR.eyeY);
+  player.setThirdPersonPeekAllowed(!on);
+  exitAdsImmediate();
+  if (on) {
+    if (p) player.teleport(new Vector3(p.x, p.y, p.z));
+    player.setPitch(0.62);
+    lastKnownHealth = typeof p?.heliHp === "number" ? p.heliHp : PREDATOR.hp;
+    hud.setHealth(lastKnownHealth, PREDATOR.hp);
+    viewModel.setVisible(false);
+    if (!localHeli) localHeli = new HelicopterVisual(scene, "local");
+    localHeli.setEnabled(true);
+    audio.startHeliRotor();
+  } else {
+    player.setPitch(0);
+    if (p) player.teleport(new Vector3(p.x, p.y, p.z));
+    viewModel.setWeapon(weapons.weapon);
+    applyEquippedSkinToViewModel(weapons.weapon.id);
+    viewModel.setVisible(!playerDead && !awaitingSpawn);
+    localHeli?.setEnabled(false);
+    audio.stopHeliRotor();
+    hud.setPredatorHud(false);
+    if (!playerDead) {
+      hud.setHealth(p?.health ?? lastKnownHealth);
+      lastKnownHealth = p?.health ?? lastKnownHealth;
+    }
+  }
+}
+
 function handleOwnState(p: PlayerSnapshot): void {
   if (awaitingSpawn) {
     return;
@@ -3765,7 +3822,7 @@ function handleOwnState(p: PlayerSnapshot): void {
     });
   }
 
-  if (p.health !== lastKnownHealth) {
+  if (!isPredatorStreak(p.activeStreak) && p.health !== lastKnownHealth) {
     if (p.health < lastKnownHealth) {
       hud.flashDamage();
       audio.damaged();
@@ -3781,6 +3838,26 @@ function handleOwnState(p: PlayerSnapshot): void {
   );
   hud.updateActiveStreak(p.activeStreak, p.streakTimeLeft);
   weapons.setNoRecoil(p.activeStreak === "no_recoil");
+  const wantPredator = isPredatorStreak(p.activeStreak);
+  if (wantPredator !== localPredator) {
+    setLocalPredator(wantPredator, p);
+  } else if (wantPredator && !playerDead) {
+    const feet = player.getFeet();
+    if (Math.hypot(feet.x - p.x, feet.y - p.y, feet.z - p.z) > 4) {
+      player.teleport(new Vector3(p.x, p.y, p.z));
+    }
+  }
+  if (wantPredator) {
+    const heliHp = typeof p.heliHp === "number" ? p.heliHp : PREDATOR.hp;
+    if (heliHp !== lastKnownHealth) {
+      if (heliHp < lastKnownHealth) {
+        hud.flashDamage();
+        audio.damaged();
+      }
+      hud.setHealth(heliHp, PREDATOR.hp);
+      lastKnownHealth = heliHp;
+    }
+  }
   const invincible = (p.invincibleTimeLeft ?? 0) > 0;
   viewModel.setInvincible(invincible);
   localPlayerVisual?.setInvincible(invincible);
@@ -3861,6 +3938,7 @@ function canAds(): boolean {
     player.isPointerLocked &&
     weapons.weapon.id === "awp" &&
     !playerDead &&
+    !localPredator &&
     // Correndo (mesmo no ar) o scope fica bloqueado — arma está levantada.
     !(player.isRunning && player.isMoving)
   );
@@ -3947,7 +4025,7 @@ function exitAdsImmediate(): void {
 }
 
 function updateAds(dt: number): void {
-  if (awaitingSpawn) {
+  if (awaitingSpawn || localPredator) {
     viewModel.setVisible(false);
     return;
   }
@@ -4008,7 +4086,7 @@ canvas.addEventListener("contextmenu", (e) => {
   if (player.isPointerLocked) e.preventDefault();
 });
 window.addEventListener("wheel", (e) => {
-  if (!player.isPointerLocked) return;
+  if (!player.isPointerLocked || localPredator) return;
   const from = weapons.weaponIndex;
   weapons.cycleWeapon(e.deltaY > 0 ? 1 : -1);
   rememberWeaponSwitch(from);
@@ -4034,7 +4112,7 @@ window.addEventListener("keydown", (e) => {
       if (freeSpectating && !loadoutPicking) openLoadoutModal(false);
       return;
     }
-    if (!playerDead && !endScreenShown) openLoadoutModal(true);
+    if (!playerDead && !endScreenShown && !localPredator) openLoadoutModal(true);
     return;
   }
   if (e.code === "KeyR") weapons.startReload();
@@ -4042,17 +4120,7 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     switchTo(lastWeaponIndex);
   }
-  // Ativação manual de kill streaks: Z/X/C conforme a ordem da timeline.
-  const streakSlot = KILL_STREAK_KEY_CODES.indexOf(
-    e.code as (typeof KILL_STREAK_KEY_CODES)[number]
-  );
-  if (streakSlot >= 0) {
-    e.preventDefault();
-    const reward = KILL_STREAK_REWARDS[streakSlot];
-    if (reward && room && inGame && !playerDead && !awaitingSpawn) {
-      room.send("activateStreak", { id: reward.id });
-    }
-  }
+  if (trySendActivateStreak(e.code, e.key)) e.preventDefault();
   if (e.code === "Digit1") switchTo(0);
   if (e.code === "Digit2") switchTo(1);
   if (e.code === "Digit3") switchTo(2);
@@ -4071,6 +4139,15 @@ window.addEventListener("blur", () => {
   closeMatchScoreboard(!awaitingSpawn);
 });
 
+function trySendActivateStreak(code: string, key = ""): boolean {
+  const reward = killStreakRewardForKey(code, key);
+  if (!reward) return false;
+  if (room && inGame && !playerDead && !awaitingSpawn && !endScreenShown) {
+    room.send("activateStreak", { id: reward.id });
+  }
+  return true;
+}
+
 function rememberWeaponSwitch(fromIndex: number): void {
   if (weapons.weaponIndex === fromIndex) return;
   lastWeaponIndex = fromIndex;
@@ -4082,6 +4159,7 @@ function rememberWeaponSwitch(fromIndex: number): void {
 }
 
 function switchTo(index: number): void {
+  if (localPredator) return;
   const from = weapons.weaponIndex;
   weapons.switchWeapon(index);
   rememberWeaponSwitch(from);
@@ -4259,7 +4337,8 @@ engine.runRenderLoop(() => {
     !scoreboardOpen &&
     !chatTyping &&
     !player.isSpectating &&
-    !freeSpectating;
+    !freeSpectating &&
+    !localPredator;
   player.setThirdPersonPeekAllowed(canThirdPersonPeek);
 
   player.update(dt);
@@ -4286,6 +4365,11 @@ engine.runRenderLoop(() => {
   weapons.update(dt);
   updateAds(dt);
   viewModel.update(dt);
+  if (localHeli && localPredator) {
+    const feet = player.getFeet();
+    localHeli.setPose(feet.x, feet.y, feet.z, player.getYaw());
+    localHeli.update(dt);
+  }
 
   const diameter = spreadDiameterPx();
   if (debugMode) {
