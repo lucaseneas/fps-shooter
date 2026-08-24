@@ -268,10 +268,10 @@ export const WEAPONS: WeaponDef[] = [
     desc: "Devastadora de perto — 9 projéteis por disparo.",
     auto: false,
     fireInterval: 0.9,
-    damageBody: 16, // por pellet (9 pellets = até 144 de perto)
-    damageHead: 16, // sem multiplicador de headshot (GDD)
+    damageBody: 24, // por pellet (9 pellets = até 216 de perto)
+    damageHead: 24, // sem multiplicador de headshot (GDD)
     pellets: 9,
-    pelletPattern: [[0, 0], [2.6, 0], [-2.6, 0], [0, 2.6], [0, -2.6], [1.9, 1.9], [-1.9, 1.9], [1.9, -1.9], [-1.9, -1.9]],
+    pelletPattern: [[0, 0], [2.21, 0], [-2.21, 0], [0, 2.21], [0, -2.21], [1.62, 1.62], [-1.62, 1.62], [1.62, -1.62], [-1.62, -1.62]],
     magSize: 6,
     reserveAmmo: 24,
     reloadTime: 2.6,
@@ -280,8 +280,8 @@ export const WEAPONS: WeaponDef[] = [
     falloffEnd: 22,
     falloffMin: 0.2,
     viewColor: [0.5, 0.32, 0.18],
-    baseSpread: 1.2,
-    sprayBloomMax: 0.8,
+    baseSpread: 1.02,
+    sprayBloomMax: 0.68,
     sprayBloomRamp: 2,
     drawTime: 0.7,
     moveSpeedMult: 1.1,

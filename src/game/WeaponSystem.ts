@@ -193,12 +193,13 @@ export class WeaponSystem {
       if (isSniper) return 9.0;
       if (isRifle) return 18.0;
       // Escopeta: mesmo spread de correndo (não punir o pulo)
-      if (id === "shotgun") return 2.8;
+      if (id === "shotgun") return 2.38;
       return 7.0;
     }
     if (this.running) {
       if (isSniper) return 4.5;
       if (isMagnum) return 4.0;
+      if (id === "shotgun") return 2.38;
       return isRifle ? 12.0 : 2.8;
     }
     // Agachado andando = mesmo spread de andando em pé.
@@ -206,17 +207,19 @@ export class WeaponSystem {
       if (isSniper) return 3.5;
       // Magnum: revólver pesado, instável andando
       if (isMagnum) return 3.0;
+      if (id === "shotgun") return 0.94;
       return isRifle ? 7.0 : 1.8;
     }
     // Escopeta: agachado = parado (sem bônus de precisão)
     if (this.crouching) {
       if (isSniper) return 1.8;
-      return id === "shotgun" ? 1.0 : 0.5;
+      return id === "shotgun" ? 0.85 : 0.5;
     }
     // Magnum parado: mais preciso que as demais armas
     if (isMagnum) return 0.6;
     // AWP hipfire parado: cone largo — só a mira telescópica é precisa
     if (isSniper) return 2.4;
+    if (id === "shotgun") return 0.85;
     return 1.0;
   }
 
