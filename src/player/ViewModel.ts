@@ -8,7 +8,8 @@ import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 
-import { WeaponDef } from "../../shared/weapons";
+import { resolveWeaponId, WeaponDef } from "../../shared/weapons";
+import { defaultWeaponSkinParts } from "../../shared/weaponSkins";
 import { MuzzleFlash } from "../game/effects";
 
 function easeOutCubic(t: number): number {
@@ -192,13 +193,25 @@ export function applyWeaponTint(
   applyWeaponSkinParts(scene, model, { "*": rgb });
 }
 
+function resolvePartColor(
+  meshName: string,
+  parts: Record<string, [number, number, number]>
+): [number, number, number] | undefined {
+  const direct = parts[meshName];
+  if (direct) return direct;
+  const stripped = meshName.replace(/^Clone of /i, "");
+  if (stripped !== meshName && parts[stripped]) return parts[stripped];
+  const prefixed = parts[`Clone of ${stripped}`];
+  if (prefixed) return prefixed;
+  return parts["*"];
+}
+
 /** Aplica cores por nome de mesh. Chave `"*"` pinta todas as partes. */
 export function applyWeaponSkinParts(
   scene: Scene,
   model: Mesh,
   parts: Record<string, [number, number, number]>
 ): void {
-  let fallbackMat: StandardMaterial | null = null;
   const tintMesh = (m: AbstractMesh, rgb: [number, number, number]) => {
     const color = new Color3(rgb[0], rgb[1], rgb[2]);
     const mat = m.material as unknown as {
@@ -210,18 +223,32 @@ export function applyWeaponSkinParts(
     } else if (mat && mat.diffuseColor !== undefined) {
       mat.diffuseColor = color;
     } else {
-      fallbackMat ??= new StandardMaterial(`vmTint_${model.name}`, scene);
-      fallbackMat.diffuseColor = color;
-      fallbackMat.specularColor = new Color3(0.05, 0.05, 0.05);
-      m.material = fallbackMat;
+      const fallback = new StandardMaterial(`vmTint_${model.name}_${m.name}`, scene);
+      fallback.diffuseColor = color;
+      fallback.specularColor = new Color3(0.05, 0.05, 0.05);
+      m.material = fallback;
     }
   };
 
-  const wildcard = parts["*"];
   for (const m of model.getChildMeshes()) {
-    const rgb = parts[m.name] ?? wildcard;
+    const rgb = resolvePartColor(m.name, parts);
     if (rgb) tintMesh(m, rgb);
   }
+}
+
+/**
+ * Aparência da arma: sempre a skin padrão (cores reais), depois a skin
+ * custom por cima se houver. Sem isto os GLBs ficam cinza sem material.
+ */
+export function applyWeaponAppearance(
+  scene: Scene,
+  model: Mesh,
+  weaponId: string,
+  overlay: Record<string, [number, number, number]> | null | undefined
+): void {
+  const id = resolveWeaponId(weaponId);
+  if (id) applyWeaponSkinParts(scene, model, defaultWeaponSkinParts(id));
+  if (overlay) applyWeaponSkinParts(scene, model, overlay);
 }
 
 export const WEAPON_ASSETS: Record<string, string> = {
@@ -442,10 +469,7 @@ export class ViewModel {
     const model = this.weaponModels.get(weaponId);
     if (!model) return;
     this.restoreOriginalColors(weaponId);
-    const cfg = WEAPON_CONFIGS[weaponId] ?? DEFAULT_CONFIG;
-    if (cfg.tint) applyWeaponTint(this.scene, model, cfg.tint);
-    const parts = this.equippedParts.get(weaponId);
-    if (parts) applyWeaponSkinParts(this.scene, model, parts);
+    applyWeaponAppearance(this.scene, model, weaponId, this.equippedParts.get(weaponId));
   }
 
   private readMeshColor(m: AbstractMesh): Color3 {

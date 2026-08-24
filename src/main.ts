@@ -2183,7 +2183,7 @@ function renderWeaponSkinPickerList(weaponId: WeaponId): void {
   const preview = ensureInventoryWeaponPreview();
   addCard(
     "Padrão",
-    "Cores originais do modelo.",
+    "Cores reais da arma (polímero, aço, madeira).",
     !equipped,
     () => {
       setEquippedWeaponSkin(weaponId, null);

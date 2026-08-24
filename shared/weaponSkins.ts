@@ -14,10 +14,169 @@ export interface WeaponSkinDef {
   name: string;
   /** Preço em Gold na loja (0 = não vendida / apenas inventário). */
   price: number;
-  /** meshName → cor RGB 0–1. Meshes não listados ficam na cor original. */
+  /** meshName → cor RGB 0–1. Meshes não listados ficam na skin padrão. */
   parts: Record<string, [number, number, number]>;
   /** Criada pela ferramenta in-game (persistida no servidor), não em código. */
   custom?: boolean;
+}
+
+type Rgb = [number, number, number];
+
+/** Paleta de arma real: polímero, aço, madeira, latão. */
+const POLYMER: Rgb = [0.12, 0.12, 0.13];
+const POLYMER_OD: Rgb = [0.2, 0.22, 0.18];
+const GUNMETAL: Rgb = [0.22, 0.23, 0.25];
+const STEEL: Rgb = [0.34, 0.35, 0.37];
+const BLUED: Rgb = [0.16, 0.17, 0.19];
+const MAG: Rgb = [0.09, 0.09, 0.1];
+const RAIL: Rgb = [0.14, 0.14, 0.15];
+const WOOD: Rgb = [0.42, 0.26, 0.12];
+const WOOD_DARK: Rgb = [0.3, 0.17, 0.08];
+const FDE: Rgb = [0.45, 0.38, 0.28];
+const FDE_DARK: Rgb = [0.36, 0.3, 0.22];
+const BRASS: Rgb = [0.72, 0.55, 0.22];
+const COPPER: Rgb = [0.7, 0.4, 0.16];
+const SCOPE: Rgb = [0.1, 0.1, 0.11];
+const SLIDE: Rgb = [0.46, 0.47, 0.5];
+const BLADE: Rgb = [0.78, 0.8, 0.83];
+const EDGE: Rgb = [0.9, 0.92, 0.94];
+const GUARD: Rgb = [0.18, 0.18, 0.2];
+
+function magnumDefaultParts(): Record<string, Rgb> {
+  const parts: Record<string, Rgb> = {
+    "*": GUNMETAL,
+    Grip: WOOD_DARK,
+    magnum_grip: WOOD_DARK,
+    Trigger: POLYMER,
+    magnum_trigger: POLYMER,
+    Mag357_Trigger: POLYMER,
+    mag357_trigger: POLYMER,
+    Hammer: POLYMER,
+    magnum_hammer: POLYMER,
+    Mag357_Hammer: POLYMER,
+    mag357_hammer: POLYMER,
+    mag_bullet: COPPER,
+    magnum_bullet: COPPER,
+    Mag357_Bullet: COPPER,
+    mag_cartridge: BRASS,
+    mag_case: BRASS,
+    magnum_bulletcase: BRASS,
+    Mag357_Cartridge: BRASS,
+    Mag357_BulletCase: BRASS,
+  };
+  for (let i = 1; i <= 8; i++) {
+    parts[`mag357_bullet_${i}`] = COPPER;
+    parts[`Mag357_Bullet_${i}`] = COPPER;
+    parts[`mag357_bulletcase_${i}`] = BRASS;
+    parts[`Mag357_BulletCase_${i}`] = BRASS;
+  }
+  return parts;
+}
+
+/**
+ * Skin padrão (cores de arma real) aplicada quando nenhuma skin custom
+ * está equipada. Os GLBs novos quase não têm material — sem isto ficam cinza.
+ * Chaves usam o nome do nó no GLB; `applyWeaponSkinParts` também casa
+ * o prefixo "Clone of " do instantiateModelsToScene.
+ */
+const DEFAULT_WEAPON_PARTS: Record<WeaponId, Record<string, Rgb>> = {
+  m4a1: {
+    "*": POLYMER_OD,
+    Cube: POLYMER_OD,
+    "Cube.001": RAIL,
+    "Cube.003": RAIL,
+    "Cube.006": MAG,
+    "Cube.008": RAIL,
+    "Cube.009": RAIL,
+    Cylinder: STEEL,
+    "Cylinder.002": POLYMER,
+  },
+  ak47: {
+    "*": GUNMETAL,
+    Cube: WOOD_DARK,
+    "Cube.001": RAIL,
+    "Cube.002": WOOD,
+    "Cube.003": MAG,
+    "Cube.004": MAG,
+    Cylinder: STEEL,
+  },
+  scarh: {
+    "*": FDE,
+    Cube: FDE,
+    "Cube.001": RAIL,
+    "Cube.002": MAG,
+    "Cube.003": FDE_DARK,
+    "Cube.004": FDE,
+    Cylinder: POLYMER,
+    "Cylinder.001": STEEL,
+  },
+  mp5: {
+    "*": POLYMER,
+    Cube: POLYMER,
+    "Cube.001": RAIL,
+    "Cube.002": GUNMETAL,
+    "Cube.003": MAG,
+    "Cube.004": POLYMER,
+    "Cube.005": STEEL,
+    "Cube.006": STEEL,
+    Cylinder: GUNMETAL,
+    "Cylinder.001": STEEL,
+  },
+  vector: {
+    "*": POLYMER,
+    Cube: POLYMER,
+    "Cube.001": RAIL,
+    "Cube.002": GUNMETAL,
+    "Cube.003": POLYMER,
+    "Cube.004": MAG,
+    Cylinder: STEEL,
+    "Cylinder.001": STEEL,
+  },
+  usp: {
+    "*": POLYMER,
+    Cube: SLIDE,
+    "Cube.001": POLYMER,
+    "Cube.002": STEEL,
+    "Cube.003": MAG,
+  },
+  magnum: magnumDefaultParts(),
+  shotgun: {
+    "*": WOOD,
+    Cube: WOOD,
+    "Cube.001": RAIL,
+    Cylinder: BLUED,
+  },
+  awp: {
+    "*": POLYMER,
+    Cube: POLYMER,
+    "Cube.001": POLYMER,
+    "Cube.002": RAIL,
+    "Cube.003": GUNMETAL,
+    "Cube.004": MAG,
+    "Cube.005": POLYMER,
+    "Cube.006": GUNMETAL,
+    Cylinder: STEEL,
+    "Cylinder.001": SCOPE,
+    "Cylinder.002": SCOPE,
+    "Cylinder.003": SCOPE,
+  },
+  knife: {
+    knife_primitive0: POLYMER,
+    knife_primitive1: GUARD,
+    knife_primitive2: BLADE,
+    knife_primitive3: EDGE,
+    "Cube.058": POLYMER,
+    "Cube.058_primitive1": GUARD,
+    "Cube.058_primitive2": BLADE,
+    "Cube.058_primitive3": EDGE,
+  },
+};
+
+/** Cores padrão da arma (polímero / aço / madeira). Sempre aplicadas por baixo da skin custom. */
+export function defaultWeaponSkinParts(
+  weaponId: WeaponId
+): Record<string, [number, number, number]> {
+  return DEFAULT_WEAPON_PARTS[weaponId] ?? { "*": GUNMETAL };
 }
 
 /** Skins "oficiais" definidas em código. */

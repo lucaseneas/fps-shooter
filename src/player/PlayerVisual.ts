@@ -9,7 +9,7 @@ import { Material } from "@babylonjs/core/Materials/material";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 
-import { WEAPON_ASSETS, weaponModelTransform, applyWeaponSkinParts, weaponTint, applyWeaponTint } from "./ViewModel";
+import { WEAPON_ASSETS, weaponModelTransform, applyWeaponAppearance } from "./ViewModel";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { getWeaponSkin } from "../../shared/weaponSkins";
 import { MuzzleFlash } from "../game/effects";
@@ -233,15 +233,10 @@ export class PlayerVisual {
 
     this.restoreOriginalColors(weaponId);
     const skinId = this.pendingWeaponSkinId;
-    if (skinId) {
-      const skin = getWeaponSkin(skinId);
-      if (skin && skin.weaponId === weaponId) {
-        applyWeaponSkinParts(this.root.getScene(), model, skin.parts);
-        return;
-      }
-    }
-    const tint = weaponTint(weaponId);
-    if (tint) applyWeaponTint(this.root.getScene(), model, tint);
+    const skin = skinId ? getWeaponSkin(skinId) : undefined;
+    const overlay =
+      skin && skin.weaponId === weaponId ? skin.parts : null;
+    applyWeaponAppearance(this.root.getScene(), model, weaponId, overlay);
   }
 
   triggerShoot(): void {

@@ -18,8 +18,7 @@ import "@babylonjs/loaders/glTF";
 import {
   WEAPON_ASSETS,
   weaponModelTransform,
-  weaponTint,
-  applyWeaponTint,
+  applyWeaponAppearance,
 } from "../player/ViewModel";
 import {
   THIRD_PERSON_WEAPON_SCALE,
@@ -226,9 +225,14 @@ export class SkinPreview {
       if (url) this.loadWeaponModel(weaponId, url);
     }
     this.updateVisible();
+    if (!weaponId) return;
+    const model = this.weaponModels.get(weaponId);
+    if (!model) return;
+    this.restoreOriginalColors(weaponId);
+    applyWeaponAppearance(this.scene, model, weaponId, null);
   }
 
-  /** Aplica uma skin de arma no modelo atual (null = cores originais). */
+  /** Aplica uma skin de arma no modelo atual (null = skin padrão). */
   public setWeaponSkin(skin: WeaponSkinDef | null) {
     this.pendingSkin = skin;
     const id = this.currentWeaponId;
@@ -236,12 +240,8 @@ export class SkinPreview {
     const model = this.weaponModels.get(id);
     if (!model) return;
     this.restoreOriginalColors(id);
-    if (skin && skin.weaponId === id) {
-      this.tintModelParts(model, skin.parts);
-    } else {
-      const tint = weaponTint(id);
-      if (tint) applyWeaponTint(this.scene, model, tint);
-    }
+    const overlay = skin && skin.weaponId === id ? skin.parts : null;
+    applyWeaponAppearance(this.scene, model, id, overlay);
   }
 
   private loadWeaponModel(id: string, url: string) {
@@ -274,15 +274,16 @@ export class SkinPreview {
           originals.set(m.name, this.readMeshColor(m).clone());
         }
 
-        const tint = weaponTint(id);
-        if (tint) applyWeaponTint(this.scene, model, tint);
-
         this.originalColors.set(id, originals);
         this.weaponNodes.set(id, gunOffset);
         this.weaponModels.set(id, model);
         this.loadingWeapons.delete(id);
         this.updateVisible();
-        if (this.pendingSkin) this.setWeaponSkin(this.pendingSkin);
+        const overlay =
+          this.pendingSkin && this.pendingSkin.weaponId === id
+            ? this.pendingSkin.parts
+            : null;
+        applyWeaponAppearance(this.scene, model, id, overlay);
       })
       .catch((err) => {
         console.warn(`[SkinPreview] Falha ao carregar arma ${id}:`, err);
@@ -311,20 +312,6 @@ export class SkinPreview {
       } | null;
       if (mat?.albedoColor !== undefined) mat.albedoColor = c.clone();
       else if (mat?.diffuseColor !== undefined) mat.diffuseColor = c.clone();
-    }
-  }
-
-  private tintModelParts(model: Mesh, parts: Record<string, [number, number, number]>): void {
-    for (const m of model.getChildMeshes()) {
-      const rgb = parts[m.name];
-      if (!rgb) continue;
-      const color = new Color3(rgb[0], rgb[1], rgb[2]);
-      const mat = m.material as unknown as {
-        albedoColor?: Color3;
-        diffuseColor?: Color3;
-      } | null;
-      if (mat?.albedoColor !== undefined) mat.albedoColor = color;
-      else if (mat?.diffuseColor !== undefined) mat.diffuseColor = color;
     }
   }
 

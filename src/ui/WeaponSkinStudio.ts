@@ -12,7 +12,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import "@babylonjs/loaders/glTF";
 
-import { WEAPON_ASSETS, weaponModelTransform } from "../player/ViewModel";
+import { WEAPON_ASSETS, weaponModelTransform, applyWeaponAppearance } from "../player/ViewModel";
 import type { WeaponId } from "../../shared/weapons";
 
 export type RgbColor = [number, number, number];
@@ -125,6 +125,10 @@ export class WeaponSkinStudio {
         m.isPickable = true;
         this.preparePartMesh(m);
       }
+      applyWeaponAppearance(this.scene, model, id, null);
+      for (const m of model.getChildMeshes()) {
+        this.originalColors.set(m.name, this.readMeshColor(m));
+      }
       this.modelRoot = gunOffset;
     } catch (err) {
       console.warn(`[SkinStudio] Falha ao carregar ${id}:`, err);
@@ -154,6 +158,15 @@ export class WeaponSkinStudio {
 
     this.partMeshes.set(m.name, m);
     this.originalColors.set(m.name, color);
+  }
+
+  private readMeshColor(m: AbstractMesh): RgbColor {
+    const mat = m.material as unknown as {
+      albedoColor?: Color3;
+      diffuseColor?: Color3;
+    } | null;
+    const c = mat?.albedoColor ?? mat?.diffuseColor;
+    return c ? [c.r, c.g, c.b] : [0.55, 0.55, 0.58];
   }
 
   selectPart(name: string | null): void {
