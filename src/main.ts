@@ -10,6 +10,7 @@ import { PlayerVisual } from "./player/PlayerVisual";
 import { WeaponSystem } from "./game/WeaponSystem";
 import { EffectsManager } from "./game/effects";
 import { HelicopterVisual } from "./game/HelicopterVisual";
+import { ParachuteVisual } from "./game/ParachuteVisual";
 import { Hud, ScoreRow } from "./ui/Hud";
 import { AudioManager } from "./game/audio";
 import { RemotePlayer } from "./net/RemotePlayer";
@@ -94,6 +95,7 @@ import {
 } from "../shared/ranks";
 import { GOLD_RULES, MAX_GOLD } from "../shared/gold";
 import {
+  KILL_STREAK_REWARDS,
   PREDATOR,
   isPredatorStreak,
   killStreakRewardForKey,
@@ -168,7 +170,12 @@ const reticleCenterToggle = document.getElementById(
 ) as HTMLInputElement;
 const reticleModes = document.getElementById("reticleModes") as HTMLDivElement;
 const reticleModeHint = document.getElementById("reticleModeHint") as HTMLParagraphElement;
-const debugModeToggle = document.getElementById("debugModeToggle") as HTMLInputElement;
+const devInfiniteToggle = document.getElementById("devInfiniteToggle") as HTMLInputElement;
+const devHitboxToggle = document.getElementById("devHitboxToggle") as HTMLInputElement;
+const devTracersToggle = document.getElementById("devTracersToggle") as HTMLInputElement;
+const devUnlockStreaksToggle = document.getElementById(
+  "devUnlockStreaksToggle"
+) as HTMLInputElement;
 const roomListEl = document.getElementById("roomList") as HTMLDivElement;
 const refreshRoomsButton = document.getElementById("refreshRoomsButton") as HTMLButtonElement;
 const createRoomButton = document.getElementById("createRoomButton") as HTMLButtonElement;
@@ -550,21 +557,83 @@ function updateDynamicReticle(): void {
   crosshairEl.style.setProperty("--ch-gap", `${gap}px`);
 }
 
-const DEBUG_STORAGE_KEY = "fps.debugMode";
-let debugMode = localStorage.getItem(DEBUG_STORAGE_KEY) === "true";
-debugModeToggle.checked = debugMode;
+const LEGACY_DEBUG_KEY = "fps.debugMode";
 
-function applyDebugMode(on: boolean): void {
-  debugMode = on;
-  debugModeToggle.checked = on;
-  weapons.setInfiniteAmmo(on);
-  for (const remote of remotePlayers.values()) remote.setDebugHitboxes(on);
-  room?.send("setDebug", { enabled: on });
+function loadDevSetting(key: string, legacyDefault = false): boolean {
+  const stored = localStorage.getItem(key);
+  if (stored !== null) return stored === "true";
+  return legacyDefault;
 }
 
-debugModeToggle.addEventListener("change", () => {
-  applyDebugMode(debugModeToggle.checked);
-  localStorage.setItem(DEBUG_STORAGE_KEY, String(debugModeToggle.checked));
+const legacyDebug = localStorage.getItem(LEGACY_DEBUG_KEY) === "true";
+let devInfinite = loadDevSetting("fps.dev.infinite", legacyDebug);
+let devHitbox = loadDevSetting("fps.dev.hitbox", legacyDebug);
+let devTracers = loadDevSetting("fps.dev.tracers", legacyDebug);
+let devUnlockStreaks = loadDevSetting("fps.dev.unlockStreaks", false);
+
+devInfiniteToggle.checked = devInfinite;
+devHitboxToggle.checked = devHitbox;
+devTracersToggle.checked = devTracers;
+devUnlockStreaksToggle.checked = devUnlockStreaks;
+
+function syncDevOptionsToServer(): void {
+  room?.send("setDevOptions", {
+    infinite: devInfinite,
+    tracers: devTracers,
+    unlockStreaks: devUnlockStreaks,
+  });
+}
+
+function applyDevHitboxes(on: boolean): void {
+  devHitbox = on;
+  devHitboxToggle.checked = on;
+  for (const remote of remotePlayers.values()) remote.setDebugHitboxes(on);
+}
+
+function applyDevOptions(): void {
+  weapons.setInfiniteAmmo(devInfinite);
+  applyDevHitboxes(devHitbox);
+  hud.setDevUnlockStreaks(devUnlockStreaks);
+  syncDevOptionsToServer();
+  if (room && inGame) {
+    const own = getOwnSnapshot(room);
+    if (own) {
+      hud.updateAvailableStreaks(
+        streakIdsForHud(own.availableStreaks ? Array.from(own.availableStreaks) : [], own.activeStreak),
+        own.activeStreak
+      );
+    }
+  }
+}
+
+function streakIdsForHud(fromServer: string[], activeId: string): string[] {
+  if (!devUnlockStreaks || activeId) return fromServer;
+  return KILL_STREAK_REWARDS.map((r) => r.id);
+}
+
+function bindDevToggle(
+  toggle: HTMLInputElement,
+  key: string,
+  apply: (on: boolean) => void
+): void {
+  toggle.addEventListener("change", () => {
+    apply(toggle.checked);
+    localStorage.setItem(key, String(toggle.checked));
+    applyDevOptions();
+  });
+}
+
+bindDevToggle(devInfiniteToggle, "fps.dev.infinite", (on) => {
+  devInfinite = on;
+});
+bindDevToggle(devHitboxToggle, "fps.dev.hitbox", (on) => {
+  devHitbox = on;
+});
+bindDevToggle(devTracersToggle, "fps.dev.tracers", (on) => {
+  devTracers = on;
+});
+bindDevToggle(devUnlockStreaksToggle, "fps.dev.unlockStreaks", (on) => {
+  devUnlockStreaks = on;
 });
 
 let room: Room | null = null;
@@ -595,7 +664,10 @@ let localVisualWeaponId = "";
 let localVisualWeaponSkinId = "";
 let localVisualSkinId = "";
 let localHeli: HelicopterVisual | null = null;
+let localChute: ParachuteVisual | null = null;
 let localPredator = false;
+let localParachute = false;
+let localHeliLinger = 0;
 let homePreview: SkinPreview | null = null;
 let lobbyPreview: SkinPreview | null = null;
 let inventoryPreview: SkinPreview | null = null;
@@ -2617,7 +2689,7 @@ function enterLobby(r: Room): void {
   };
 
   setupRoom(r);
-  applyDebugMode(debugMode);
+  applyDevOptions();
 
   // Convidado: informa o XP e o gold locais para aparecerem na sala.
   xpSyncSent = false;
@@ -2724,8 +2796,11 @@ function cleanupMatchLocal(): void {
   spectateBanner.classList.add("hidden");
   player.exitSpectatorOverview();
   setLocalPredator(false);
+  setLocalParachute(false);
   localHeli?.dispose();
   localHeli = null;
+  localChute?.dispose();
+  localChute = null;
   viewModel.setVisible(true);
   viewModel.setInvincible(false);
   disposeLocalPlayerVisual();
@@ -3425,6 +3500,7 @@ function setupRoom(r: Room): void {
     hud.resetKillStreak();
     audio.death();
     setLocalPredator(false);
+    setLocalParachute(false);
   });
 
   r.onMessage("respawn", (e: { x: number; z: number }) => {
@@ -3505,7 +3581,7 @@ function setupRoom(r: Room): void {
     origin: { x: number; y: number; z: number };
     ends: Array<{ x: number; y: number; z: number }>;
   }) => {
-    if (!inGame || !debugMode) return;
+    if (!inGame || !devTracers) return;
     const origin = new Vector3(e.origin.x, e.origin.y, e.origin.z);
     for (const end of e.ends) {
       effects.spawnDebugTracer(origin, new Vector3(end.x, end.y, end.z));
@@ -3562,7 +3638,7 @@ function setupRoom(r: Room): void {
     syncRoomSettingsUi();
   });
 
-  r.send("setDebug", { enabled: debugMode });
+  syncDevOptionsToServer();
 
   r.onMessage("matchReset", () => {
     endScreenShown = false;
@@ -3655,7 +3731,7 @@ function reconcile(r: Room): void {
     if (!rp) {
       rp = new RemotePlayer(scene, id, p.name);
       remotePlayers.set(id, rp);
-      rp.setDebugHitboxes(debugMode);
+      rp.setDebugHitboxes(devHitbox);
       rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
       rp.snapToTarget();
     } else {
@@ -3665,6 +3741,7 @@ function reconcile(r: Room): void {
     rp.setWeapon(p.weaponId || "m4a1");
     rp.setWeaponSkin(p.weaponSkinId || "");
     rp.setPredator(isPredatorStreak(p.activeStreak));
+    rp.setParachuting(p.parachuting === true);
     rp.setWallhack(ownHasWallhack);
     rp.setInvincible((p.invincibleTimeLeft ?? 0) > 0);
   });
@@ -3777,6 +3854,10 @@ function setLocalPredator(on: boolean, p?: PlayerSnapshot): void {
   player.setThirdPersonPeekAllowed(!on);
   exitAdsImmediate();
   if (on) {
+    localHeliLinger = 0;
+    localParachute = false;
+    player.setParachuteMode(false);
+    localChute?.setEnabled(false);
     if (p) player.teleport(new Vector3(p.x, p.y, p.z));
     player.setPitch(0.62);
     lastKnownHealth = typeof p?.heliHp === "number" ? p.heliHp : PREDATOR.hp;
@@ -3787,18 +3868,43 @@ function setLocalPredator(on: boolean, p?: PlayerSnapshot): void {
     localHeli.setEnabled(true);
     audio.startHeliRotor();
   } else {
+    const lingerPos = player.getFeet();
+    const lingerYaw = player.getYaw();
     player.setPitch(0);
-    if (p) player.teleport(new Vector3(p.x, p.y, p.z));
+    const survived = Boolean(p?.alive) && !playerDead;
+    if (p && survived) player.teleport(new Vector3(p.x, p.y, p.z));
     viewModel.setWeapon(weapons.weapon);
     applyEquippedSkinToViewModel(weapons.weapon.id);
     viewModel.setVisible(!playerDead && !awaitingSpawn);
-    localHeli?.setEnabled(false);
     audio.stopHeliRotor();
     hud.setPredatorHud(false);
+    if (survived) {
+      localHeliLinger = PREDATOR.heliLinger;
+      if (!localHeli) localHeli = new HelicopterVisual(scene, "local");
+      localHeli.setPose(lingerPos.x, lingerPos.y, lingerPos.z, lingerYaw);
+      localHeli.setEnabled(true);
+    } else {
+      localHeliLinger = 0;
+      localHeli?.setEnabled(false);
+    }
     if (!playerDead) {
       hud.setHealth(p?.health ?? lastKnownHealth);
       lastKnownHealth = p?.health ?? lastKnownHealth;
     }
+  }
+}
+
+function setLocalParachute(on: boolean, p?: PlayerSnapshot): void {
+  if (localParachute === on) return;
+  localParachute = on;
+  if (on) {
+    if (p) player.teleport(new Vector3(p.x, p.y, p.z));
+    player.setParachuteMode(true);
+    if (!localChute) localChute = new ParachuteVisual(scene, "local");
+    localChute.setEnabled(true);
+  } else {
+    player.setParachuteMode(false);
+    localChute?.setEnabled(false);
   }
 }
 
@@ -3834,7 +3940,10 @@ function handleOwnState(p: PlayerSnapshot): void {
   hud.setKills(p.kills);
   hud.setKillStreak(p.killStreak);
   hud.updateAvailableStreaks(
-    p.availableStreaks ? Array.from(p.availableStreaks) : [],
+    streakIdsForHud(
+      p.availableStreaks ? Array.from(p.availableStreaks) : [],
+      p.activeStreak
+    ),
     p.activeStreak
   );
   hud.updateActiveStreak(p.activeStreak, p.streakTimeLeft);
@@ -3847,6 +3956,10 @@ function handleOwnState(p: PlayerSnapshot): void {
     if (Math.hypot(feet.x - p.x, feet.y - p.y, feet.z - p.z) > 4) {
       player.teleport(new Vector3(p.x, p.y, p.z));
     }
+  }
+  const wantParachute = p.parachuting === true;
+  if (wantParachute !== localParachute) {
+    setLocalParachute(wantParachute, p);
   }
   if (wantPredator) {
     const heliHp = typeof p.heliHp === "number" ? p.heliHp : PREDATOR.hp;
@@ -4376,14 +4489,24 @@ engine.runRenderLoop(() => {
   weapons.update(dt);
   updateAds(dt);
   viewModel.update(dt);
-  if (localHeli && localPredator) {
-    const feet = player.getFeet();
-    localHeli.setPose(feet.x, feet.y, feet.z, player.getYaw());
+  if (localHeli && (localPredator || localHeliLinger > 0)) {
+    if (localPredator) {
+      const feet = player.getFeet();
+      localHeli.setPose(feet.x, feet.y, feet.z, player.getYaw());
+    } else {
+      localHeliLinger = Math.max(0, localHeliLinger - dt);
+      if (localHeliLinger === 0) localHeli.setEnabled(false);
+    }
     localHeli.update(dt);
+  }
+  if (localChute && localParachute) {
+    const feet = player.getFeet();
+    localChute.setPose(feet.x, feet.y, feet.z, player.getYaw());
+    localChute.update(dt);
   }
 
   const diameter = spreadDiameterPx();
-  if (debugMode) {
+  if (devInfinite) {
     debugSpreadCircle.style.width = `${diameter}px`;
     debugSpreadCircle.style.height = `${diameter}px`;
     debugSpreadCircle.style.display = "block";

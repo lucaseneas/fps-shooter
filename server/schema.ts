@@ -37,6 +37,8 @@ export class PlayerState extends Schema {
   @type("number") invincibleTimeLeft = 0;
   /** Vida do helicóptero Predator (0 = inativo). */
   @type("number") heliHp = 0;
+  /** Caindo de paraquedas após o Predator acabar sem explosão. */
+  @type("boolean") parachuting = false;
 
   // Pré-lobby:
   /** Jogador marcou "Pronto" no pré-lobby. */

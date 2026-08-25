@@ -15,7 +15,7 @@ import {
   CROUCH_EYE_HEIGHT,
   FIXED_DT,
 } from "../../shared/movement";
-import { stepPredator } from "../../shared/killStreaks";
+import { stepPredator, stepParachute, PREDATOR } from "../../shared/killStreaks";
 import { getActiveMap } from "../../shared/mapRuntime";
 
 const BASE_SENSITIVITY = 0.0022;
@@ -201,6 +201,8 @@ export class FpsController {
   /** Kill streak Predator: câmera no ar, sem física de chão. */
   private predatorMode = false;
   private predatorEyeY = 0;
+  /** Queda de paraquedas após o Predator. */
+  private parachuteMode = false;
   /** Segurar V — visão frontal do personagem (só câmera; mira permanece em FP). */
   private thirdPersonPeekAllowed = false;
   private thirdPersonPeeking = false;
@@ -409,6 +411,7 @@ export class FpsController {
     this.predatorMode = on;
     this.predatorEyeY = eyeY;
     if (on) {
+      this.parachuteMode = false;
       this.thirdPersonPeeking = false;
       this.sim.vy = 0;
       this.sim.grounded = true;
@@ -417,6 +420,29 @@ export class FpsController {
       this.smoothY = 0;
       this.smoothZ = 0;
       this.eyeY = eyeY;
+    } else {
+      this.eyeY = EYE_HEIGHT;
+    }
+  }
+
+  get isParachuteMode(): boolean {
+    return this.parachuteMode;
+  }
+
+  /** Queda lenta com WASD após saltar do helicóptero Predator. */
+  setParachuteMode(on: boolean): void {
+    this.parachuteMode = on;
+    if (on) {
+      this.predatorMode = false;
+      this.sim.grounded = false;
+      this.sim.vy = -PREDATOR.fallSpeed;
+      this.eyeY = EYE_HEIGHT;
+      copyBody(this.sim, this.prevSim);
+      this.smoothX = 0;
+      this.smoothY = 0;
+      this.smoothZ = 0;
+    } else {
+      this.levelCamera();
     }
   }
 
@@ -569,6 +595,8 @@ export class FpsController {
         stepPredator(replayed, input, getActiveMap());
         replayed.vy = 0;
         replayed.grounded = true;
+      } else if (this.parachuteMode) {
+        stepParachute(replayed, input, getActiveMap());
       } else {
         stepPlayer(replayed, input);
       }
@@ -611,7 +639,7 @@ export class FpsController {
 
   /** True quando andando no chão (usado para o som de passos). */
   get isMovingOnGround(): boolean {
-    if (this.predatorMode) return false;
+    if (this.predatorMode || this.parachuteMode) return false;
     return (
       this.movementEnabled &&
       this.sim.grounded &&
@@ -635,6 +663,7 @@ export class FpsController {
   }
 
   get isRunning(): boolean {
+    if (this.predatorMode || this.parachuteMode) return false;
     return (
       !this.isCrouching &&
       (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"))
@@ -642,7 +671,7 @@ export class FpsController {
   }
 
   get isCrouching(): boolean {
-    if (this.predatorMode) return false;
+    if (this.predatorMode || this.parachuteMode) return false;
     return (
       this.movementEnabled &&
       (this.keys.has("ControlLeft") || this.keys.has("ControlRight"))
@@ -870,7 +899,7 @@ export class FpsController {
       return;
     }
 
-    if (this.movementEnabled) {
+    if (this.movementEnabled || this.parachuteMode) {
       this.accumulator += dt;
       while (this.accumulator >= FIXED_DT) {
         this.accumulator -= FIXED_DT;
@@ -957,21 +986,27 @@ export class FpsController {
     if (this.keys.has("KeyA")) strafe -= 1;
 
     const crouch =
-      this.keys.has("ControlLeft") || this.keys.has("ControlRight");
+      !this.parachuteMode &&
+      (this.keys.has("ControlLeft") || this.keys.has("ControlRight"));
     const input: PlayerInput = {
       seq: ++this.inputSeq,
       forward,
       strafe,
       yaw: this.yaw,
-      jump: this.keys.has("Space"),
+      jump: !this.parachuteMode && this.keys.has("Space"),
       run:
+        !this.parachuteMode &&
         !crouch &&
         (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight")),
       crouch,
       speedMult: this.speedMult,
     };
 
-    stepPlayer(this.sim, input);
+    if (this.parachuteMode) {
+      stepParachute(this.sim, input, getActiveMap());
+    } else {
+      stepPlayer(this.sim, input);
+    }
     this.pendingInputs.push(input);
     if (this.pendingInputs.length > 120) this.pendingInputs.shift();
     this.onInput?.(input);
@@ -1044,7 +1079,28 @@ export class FpsController {
 
     this.body.rotation.y = 0;
     this.camera.position.set(x, y + this.eyeY, z);
-    this.camera.rotation.set(pitch, yaw, 0);
+    const sway = this.parachuteMode
+      ? Math.sin(performance.now() * 0.0014) * 0.035
+      : 0;
+    this.applyCameraAim(pitch, yaw, sway);
+  }
+
+  /**
+   * UniversalCamera passa a usar quaternion quando há roll (paraquedas).
+   * Sem zerar isso, o horizonte fica torto depois do pouso.
+   */
+  private applyCameraAim(pitch: number, yaw: number, roll = 0): void {
+    this.camera.rotation.set(pitch, yaw, roll);
+    this.camera.rotationQuaternion = null;
+    if (roll === 0) {
+      this.camera.upVector.set(0, 1, 0);
+    }
+  }
+
+  private levelCamera(): void {
+    this.camera.rotation.z = 0;
+    this.camera.rotationQuaternion = null;
+    this.camera.upVector.set(0, 1, 0);
   }
 
   /** Info de debug para o HUD. */

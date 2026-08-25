@@ -1,3 +1,6 @@
+import { PLAYER_HEIGHT, PLAYER_RADIUS, type BodyState } from "./movement";
+import type { MapCollision } from "./mapRuntime";
+
 /** Recompensas de kill streak (kills sem morrer). */
 export interface KillStreakReward {
   /** Kills sem morrer necessários para ativar. */
@@ -53,7 +56,13 @@ export const PREDATOR = {
   hitHalf: { x: 1.7, y: 1.2, z: 3.6 },
   /** Velocidade horizontal com WASD (m/s) — mais lenta que andar no chão. */
   moveSpeed: 4.2,
-  /** Invencibilidade ao descer quando o tempo acaba. */
+  /** Queda de paraquedas (m/s) após o tempo acabar sem explosão. */
+  fallSpeed: 6.8,
+  /** Direção horizontal com WASD durante o paraquedas. */
+  parachuteMoveSpeed: 5.0,
+  /** Helicóptero vazio permanece no ar após o salto (s). */
+  heliLinger: 4.5,
+  /** Invencibilidade ao tocar o chão. */
   landInvuln: 1.5,
 } as const;
 
@@ -146,4 +155,80 @@ export function stepPredator(
     bounds.playMinZ + pad,
     bounds.playMaxZ - pad
   );
+}
+
+const CHUTE_EPS = 1e-4;
+
+/**
+ * Queda de paraquedas: WASD no plano XZ, descida constante, pouso em tetos.
+ */
+export function stepParachute(
+  s: BodyState,
+  input: { forward: number; strafe: number; yaw: number },
+  map: PredatorBounds & Pick<MapCollision, "boxes">,
+  dt = 1 / 60
+): void {
+  const prevFeet = s.y;
+  const f = Math.sign(input.forward);
+  const st = Math.sign(input.strafe);
+  const sin = Math.sin(input.yaw);
+  const cos = Math.cos(input.yaw);
+  let wx = sin * f + cos * st;
+  let wz = cos * f - sin * st;
+  const len = Math.hypot(wx, wz);
+  if (len > 1) {
+    wx /= len;
+    wz /= len;
+  }
+  if (len > 1e-8) {
+    s.x += wx * PREDATOR.parachuteMoveSpeed * dt;
+    s.z += wz * PREDATOR.parachuteMoveSpeed * dt;
+  }
+
+  for (const b of map.boxes) {
+    const top = b.y + b.h / 2;
+    const bottom = b.y - b.h / 2;
+    if (top <= prevFeet + CHUTE_EPS) continue;
+    if (bottom >= prevFeet + PLAYER_HEIGHT) continue;
+    const ex = b.w / 2 + PLAYER_RADIUS;
+    const ez = b.d / 2 + PLAYER_RADIUS;
+    const rx = s.x - b.x;
+    const rz = s.z - b.z;
+    if (Math.abs(rx) >= ex || Math.abs(rz) >= ez) continue;
+    const penX = ex - Math.abs(rx);
+    const penZ = ez - Math.abs(rz);
+    if (penX < penZ) {
+      s.x = b.x + Math.sign(rx || 1) * ex;
+    } else {
+      s.z = b.z + Math.sign(rz || 1) * ez;
+    }
+  }
+
+  s.x = clampHeli(s.x, map.playMinX, map.playMaxX);
+  s.z = clampHeli(s.z, map.playMinZ, map.playMaxZ);
+
+  if (s.grounded) {
+    s.vy = 0;
+    return;
+  }
+
+  s.vy = -PREDATOR.fallSpeed;
+  s.y += s.vy * dt;
+
+  let landing = s.y <= 0 ? 0 : -Infinity;
+  for (const b of map.boxes) {
+    const top = b.y + b.h / 2;
+    const ex = b.w / 2 + PLAYER_RADIUS;
+    const ez = b.d / 2 + PLAYER_RADIUS;
+    if (Math.abs(s.x - b.x) >= ex || Math.abs(s.z - b.z) >= ez) continue;
+    if (top <= prevFeet + CHUTE_EPS && s.y <= top && top > landing) {
+      landing = top;
+    }
+  }
+
+  if (landing > -Infinity) {
+    s.y = landing;
+    s.vy = 0;
+    s.grounded = true;
+  }
 }

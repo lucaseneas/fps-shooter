@@ -2,7 +2,7 @@ import { PlayerState } from "./schema";
 import { segmentBlocked, distance3 } from "./physics";
 import { randomSpawn, SpawnPoint } from "../shared/spawnPoints";
 import { getWeapon, damageFalloff } from "../shared/weapons";
-import { isPredatorStreak, PREDATOR } from "../shared/killStreaks";
+import { isPredatorStreak, PREDATOR, stepParachute } from "../shared/killStreaks";
 import type { MapCollision } from "../shared/mapRuntime";
 import {
   BodyState,
@@ -116,6 +116,11 @@ export class BotAi {
       return;
     }
 
+    if (this.state.parachuting) {
+      this.updateParachute(dt);
+      return;
+    }
+
     this.acquireTarget(dt);
 
     const target = this.targetId
@@ -149,18 +154,18 @@ export class BotAi {
     this.lastZ = this.state.z;
   }
 
-  /** Alinha o corpo interno após teleporte (Predator / respawn). */
-  snapBody(x: number, y: number, z: number): void {
+  /** Alinha o corpo interno após teleporte (Predator / respawn / paraquedas). */
+  snapBody(x: number, y: number, z: number, grounded = true, vy = 0): void {
     this.body.x = x;
     this.body.y = y;
     this.body.z = z;
-    this.body.vy = 0;
-    this.body.grounded = true;
+    this.body.vy = vy;
+    this.body.grounded = grounded;
     this.state.x = x;
     this.state.y = y;
     this.state.z = z;
-    this.state.vy = 0;
-    this.state.grounded = true;
+    this.state.vy = vy;
+    this.state.grounded = grounded;
     this.state.crouch = false;
     this.lastX = x;
     this.lastZ = z;
@@ -196,6 +201,50 @@ export class BotAi {
     if (!this.facing(lookYaw, 0.45)) return;
     this.shoot(target);
     this.fireCooldown = 0.08 * (0.85 + Math.random() * 0.3);
+  }
+
+  private updateParachute(dt: number): void {
+    this.body.x = this.state.x;
+    this.body.y = this.state.y;
+    this.body.z = this.state.z;
+    this.body.vy = this.state.vy;
+    this.body.grounded = this.state.grounded;
+    this.state.crouch = false;
+
+    this.acquireTarget(dt);
+    const target = this.targetId
+      ? this.world.getPlayers().get(this.targetId)
+      : undefined;
+    let forward = 0;
+    if (target && target.alive) {
+      const dx = target.x - this.state.x;
+      const dz = target.z - this.state.z;
+      const lookYaw = Math.atan2(dx, dz);
+      this.state.yaw = turnToward(this.state.yaw, lookYaw, TURN_SPEED * dt);
+      forward = 1;
+    }
+
+    const input: PlayerInput = {
+      seq: 0,
+      forward,
+      strafe: 0,
+      yaw: this.state.yaw,
+      jump: false,
+      run: false,
+      crouch: false,
+    };
+    this.physAcc += dt;
+    let steps = 0;
+    while (this.physAcc >= FIXED_DT && steps < 8) {
+      this.physAcc -= FIXED_DT;
+      steps++;
+      stepParachute(this.body, input, this.world.getMap());
+    }
+    this.state.x = this.body.x;
+    this.state.y = this.body.y;
+    this.state.z = this.body.z;
+    this.state.vy = this.body.vy;
+    this.state.grounded = this.body.grounded;
   }
 
   private eyeY(p: PlayerState = this.state): number {

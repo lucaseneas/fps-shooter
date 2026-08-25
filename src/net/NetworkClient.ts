@@ -28,6 +28,8 @@ export interface PlayerSnapshot {
   invincibleTimeLeft: number;
   /** Vida do helicóptero Predator (0 = inativo). */
   heliHp: number;
+  /** Caindo de paraquedas após o Predator. */
+  parachuting: boolean;
   /** Streaks liberados aguardando ativação (ArraySchema no runtime). */
   availableStreaks: string[];
   skinId: string;

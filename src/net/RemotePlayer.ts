@@ -11,6 +11,7 @@ import { HITBOX } from "../../shared/hitboxes";
 import { PREDATOR } from "../../shared/killStreaks";
 import { PlayerVisual } from "../player/PlayerVisual";
 import { HelicopterVisual } from "../game/HelicopterVisual";
+import { ParachuteVisual } from "../game/ParachuteVisual";
 
 const STAND_HEIGHT = 1.8;
 const ROOT_HALF = STAND_HEIGHT / 2;
@@ -89,8 +90,11 @@ export class RemotePlayer {
   private wallhack = false;
   public readonly visual: PlayerVisual;
   private readonly heli: HelicopterVisual;
+  private readonly chute: ParachuteVisual;
   private aliveVisible = true;
   private predator = false;
+  private parachuting = false;
+  private heliLinger = 0;
 
   private velocityX = 0;
   private velocityY = 0;
@@ -179,6 +183,8 @@ export class RemotePlayer {
     this.visual = new PlayerVisual(scene, `${id}_visual`, this.root);
     this.heli = new HelicopterVisual(scene, id);
     this.heli.setEnabled(false);
+    this.chute = new ParachuteVisual(scene, id);
+    this.chute.setEnabled(false);
 
     // AABB idêntico ao hitscan do servidor (sem yaw — o server usa AABB).
     const debugMat = new StandardMaterial(`${id}_debugHitboxMat`, scene);
@@ -324,12 +330,24 @@ export class RemotePlayer {
 
   setPredator(on: boolean): void {
     if (this.predator === on) return;
+    const wasPredator = this.predator;
     this.predator = on;
+    if (wasPredator && !on && this.aliveVisible) {
+      this.heliLinger = PREDATOR.heliLinger;
+    } else if (on) {
+      this.heliLinger = 0;
+    }
     this.refreshPredatorVisual();
   }
 
   get isPredator(): boolean {
     return this.predator;
+  }
+
+  setParachuting(on: boolean): void {
+    if (this.parachuting === on) return;
+    this.parachuting = on;
+    this.chute.setEnabled(on && this.aliveVisible);
   }
 
   private applyCrouchPose(): void {
@@ -495,6 +513,9 @@ export class RemotePlayer {
     this.root.rotation.y = this.visYaw;
     if (this.predator) {
       this.heli.setPose(this.visX, this.visY, this.visZ, this.visYaw);
+    }
+    if (this.parachuting) {
+      this.chute.setPose(this.visX, this.visY, this.visZ, this.visYaw);
     }
 
     // Atualiza pose e animações completas no PlayerVisual
@@ -707,6 +728,11 @@ export class RemotePlayer {
     if (!this.hasPatch) return;
     this.visual.update(dt);
     this.heli.update(dt);
+    this.chute.update(dt);
+    if (this.heliLinger > 0 && !this.predator) {
+      this.heliLinger = Math.max(0, this.heliLinger - dt);
+      if (this.heliLinger === 0) this.heli.setEnabled(false);
+    }
     this.applyHitscanPose(this.sampleHitscanFeet(rttMs), dt);
   }
 
@@ -738,7 +764,7 @@ export class RemotePlayer {
 
   /** Retorna true quando um passo remoto deve tocar (som espacial no cliente). */
   tickFootstep(dt: number): boolean {
-    if (this.predator || !this.movingOnGround) {
+    if (this.predator || this.parachuting || !this.movingOnGround) {
       this.footstepAcc = 0;
       return false;
     }
@@ -752,7 +778,8 @@ export class RemotePlayer {
   }
 
   private refreshPredatorVisual(): void {
-    const showHeli = this.predator && this.aliveVisible;
+    const lingerHeli = this.heliLinger > 0 && this.aliveVisible;
+    const showHeli = (this.predator && this.aliveVisible) || lingerHeli;
     const showDummy = !this.predator && this.aliveVisible;
     this.heli.setEnabled(showHeli);
     this.visual.setEnabled(showDummy);
@@ -760,6 +787,7 @@ export class RemotePlayer {
     this.headMesh.setEnabled(showDummy);
     this.gun.setEnabled(showDummy);
     this.aimPick.setEnabled(this.aliveVisible);
+    this.chute.setEnabled(this.parachuting && showDummy);
     this.nameplate.position.y = this.predator
       ? 1.8
       : STAND_HEIGHT / 2 + 0.45;
@@ -768,13 +796,15 @@ export class RemotePlayer {
 
   private setVisible(on: boolean): void {
     this.aliveVisible = on;
+    if (!on) this.heliLinger = 0;
     this.bodyMesh.setEnabled(on && !this.predator);
     this.headMesh.setEnabled(on && !this.predator);
     this.nameplate.setEnabled(on && this.nameplateWanted);
     this.aimPick.setEnabled(on);
     this.gun.setEnabled(on && !this.predator);
     this.visual.setEnabled(on && !this.predator);
-    this.heli.setEnabled(on && this.predator);
+    this.heli.setEnabled(on && (this.predator || this.heliLinger > 0));
+    this.chute.setEnabled(on && this.parachuting && !this.predator);
     this.root.checkCollisions = on;
     this.debugBodyHitbox.isVisible = on;
     this.debugHeadHitbox.isVisible = on && !this.predator;
@@ -784,6 +814,7 @@ export class RemotePlayer {
   dispose(): void {
     this.visual.dispose();
     this.heli.dispose();
+    this.chute.dispose();
     this.debugBodyHitbox.dispose();
     this.debugHeadHitbox.dispose();
     this.root.dispose(false, true);

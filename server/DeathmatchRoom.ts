@@ -3,7 +3,7 @@ import { Room, Client } from "colyseus";
 import { MatchState, PlayerState } from "./schema";
 import { BotAi, BotWorld, ShotEvent } from "./BotAi";
 import { CONFIG, GAME_MODES, MAPS, isTeamId, isTdmMode, TEAMS, type TeamId } from "../shared/config";
-import { KILL_STREAK_REWARDS, PREDATOR, isPredatorStreak, stepPredator } from "../shared/killStreaks";
+import { KILL_STREAK_REWARDS, PREDATOR, isPredatorStreak, stepPredator, stepParachute } from "../shared/killStreaks";
 import { pickBotNames } from "../shared/names";
 import { pickSpawnFarFrom, randomSpawn, spawnsForTeam } from "../shared/spawnPoints";
 import {
@@ -132,7 +132,9 @@ export class DeathmatchRoom extends Room<MatchState> {
   /** Rate limit de disparo por humano. */
   private lastFireAt = new Map<string, number>();
   /** Clientes que ativaram o modo de depuração para a sessão atual. */
-  private debugClients = new Set<string>();
+  private devInfiniteClients = new Set<string>();
+  private devTracerClients = new Set<string>();
+  private devUnlockStreaksClients = new Set<string>();
   /** Último instante em que cada combatente recebeu dano. */
   private lastDamagedAt = new Map<string, number>();
   private lastChatAt = new Map<string, number>();
@@ -157,8 +159,8 @@ export class DeathmatchRoom extends Room<MatchState> {
   private respawnAt = new Map<string, number>();
   /** Última posição de morte, para renascer longe dela. */
   private deathPos = new Map<string, { x: number; z: number }>();
-  /** Piso onde o Predator desce quando o tempo acaba. */
-  private predatorGround = new Map<string, { x: number; z: number }>();
+  /** Arma que o Predator substituiu (restaurada no salto). */
+  private predatorWeapons = new Map<string, string>();
   private matchResetAt = 0;
   private roomMap: MapCollision = geometryToCollision(defaultPracaGeometry(), "Praça");
 
@@ -218,12 +220,13 @@ export class DeathmatchRoom extends Room<MatchState> {
       const p = this.state.players.get(client.sessionId);
       if (!p || !p.alive || !p.inMatch) return;
       const id = typeof msg?.id === "string" ? msg.id : "";
-      if (!id || p.availableStreaks.indexOf(id) < 0) return;
+      const devUnlock = this.devUnlockStreaksClients.has(client.sessionId);
+      if (!id || (!devUnlock && p.availableStreaks.indexOf(id) < 0)) return;
       if (p.activeStreak) {
         client.send("streakDenied", { activeStreak: p.activeStreak });
         return;
       }
-      this.tryActivateStreak(client.sessionId, p, id);
+      this.tryActivateStreak(client.sessionId, p, id, devUnlock);
     });
 
     this.onMessage("spong", (client, msg: { t: number }) => {
@@ -300,10 +303,31 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.handleSetTeam(client, msg?.team);
     });
 
-    this.onMessage("setDebug", (client, msg: { enabled: boolean }) => {
-      if (msg?.enabled === true) this.debugClients.add(client.sessionId);
-      else this.debugClients.delete(client.sessionId);
-    });
+    this.onMessage(
+      "setDevOptions",
+      (
+        client,
+        msg: {
+          infinite?: boolean;
+          tracers?: boolean;
+          unlockStreaks?: boolean;
+        }
+      ) => {
+        const id = client.sessionId;
+        if (typeof msg?.infinite === "boolean") {
+          if (msg.infinite) this.devInfiniteClients.add(id);
+          else this.devInfiniteClients.delete(id);
+        }
+        if (typeof msg?.tracers === "boolean") {
+          if (msg.tracers) this.devTracerClients.add(id);
+          else this.devTracerClients.delete(id);
+        }
+        if (typeof msg?.unlockStreaks === "boolean") {
+          if (msg.unlockStreaks) this.devUnlockStreaksClients.add(id);
+          else this.devUnlockStreaksClients.delete(id);
+        }
+      }
+    );
 
     this.onMessage("change_skin", (client, skinId: string) => {
       if (typeof skinId !== "string") return;
@@ -455,7 +479,9 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.rtt.delete(id);
     this.lastPingAt.delete(id);
     this.lastFireAt.delete(id);
-    this.debugClients.delete(id);
+    this.devInfiniteClients.delete(id);
+    this.devTracerClients.delete(id);
+    this.devUnlockStreaksClients.delete(id);
     this.lastDamagedAt.delete(id);
     this.lastChatAt.delete(id);
     this.respawnAt.delete(id);
@@ -492,6 +518,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.processHealthRegen(dt);
     this.processMatchReset();
     this.processKillStreaks(dt);
+    this.processParachuteLandings();
   }
 
   private processKillStreaks(dt: number): void {
@@ -499,7 +526,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       if (p.streakTimeLeft > 0) {
         p.streakTimeLeft = Math.max(0, p.streakTimeLeft - dt);
         if (p.streakTimeLeft === 0) {
-          if (isPredatorStreak(p.activeStreak)) this.landFromPredator(id, p);
+          if (isPredatorStreak(p.activeStreak)) this.jumpFromPredator(id, p);
           p.activeStreak = "";
         }
       }
@@ -512,6 +539,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         this.bots.has(id) &&
         p.alive &&
         !p.activeStreak &&
+        !p.parachuting &&
         firstAvailable !== undefined
       ) {
         this.tryActivateStreak(id, p, firstAvailable);
@@ -528,13 +556,18 @@ export class DeathmatchRoom extends Room<MatchState> {
    * Ativa um streak liberado. Só vale se o jogador possuir o streak na
    * pilha de disponíveis e não houver nenhum outro ativo no momento.
    */
-  private tryActivateStreak(playerId: string, p: PlayerState, id: string): boolean {
-    if (p.activeStreak) return false;
+  private tryActivateStreak(
+    playerId: string,
+    p: PlayerState,
+    id: string,
+    devUnlock = false
+  ): boolean {
+    if (p.activeStreak || p.parachuting) return false;
     const index = p.availableStreaks.indexOf(id);
-    if (index < 0) return false;
+    if (index < 0 && !devUnlock) return false;
     const reward = KILL_STREAK_REWARDS.find((r) => r.id === id);
     if (!reward) return false;
-    p.availableStreaks.splice(index, 1);
+    if (index >= 0) p.availableStreaks.splice(index, 1);
     p.activeStreak = reward.id;
     p.streakTimeLeft = reward.duration;
     if (reward.id === "invincibility") {
@@ -569,7 +602,9 @@ export class DeathmatchRoom extends Room<MatchState> {
   /** Sobe o jogador ao helicóptero e trava a física no chão. */
   private mountPredator(id: string, p: PlayerState): void {
     if (!id) return;
-    this.predatorGround.set(id, { x: p.x, z: p.z });
+    const prevWeapon = p.weaponId && p.weaponId !== "minigun" ? p.weaponId : "m4a1";
+    this.predatorWeapons.set(id, prevWeapon);
+    p.parachuting = false;
     const hover = this.predatorHoverPos(p);
     p.x = hover.x;
     p.y = hover.y;
@@ -590,34 +625,52 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.bots.get(id)?.snapBody(hover.x, hover.y, hover.z);
   }
 
-  /** Desce o piloto ao chão quando o tempo do Predator acaba. */
-  private landFromPredator(id: string, p: PlayerState): void {
-    const ground = this.predatorGround.get(id);
-    this.predatorGround.delete(id);
+  /**
+   * Salto de paraquedas quando o tempo do Predator acaba sem explosão.
+   * Os pés ficam alinhados com a câmera da minigun para a transição não pular.
+   */
+  private jumpFromPredator(id: string, p: PlayerState): void {
     p.heliHp = 0;
-    const x = ground?.x ?? p.x;
-    const z = ground?.z ?? p.z;
-    p.x = x;
-    p.y = 0;
-    p.z = z;
-    p.vy = 0;
-    p.grounded = true;
+    p.parachuting = true;
     p.crouch = false;
+    const feetY = p.y + PREDATOR.eyeY - EYE_HEIGHT;
+    p.y = feetY;
+    p.vy = -PREDATOR.fallSpeed;
+    p.grounded = false;
+    const restored = this.predatorWeapons.get(id) ?? "m4a1";
+    this.predatorWeapons.delete(id);
+    p.weaponId = restored;
     const body = this.bodies.get(id);
     if (body) {
-      body.x = x;
-      body.y = 0;
-      body.z = z;
-      body.vy = 0;
-      body.grounded = true;
+      body.x = p.x;
+      body.y = feetY;
+      body.z = p.z;
+      body.vy = -PREDATOR.fallSpeed;
+      body.grounded = false;
     }
-    this.bots.get(id)?.snapBody(x, 0, z);
-    this.grantInvincibility(p, PREDATOR.landInvuln);
+    this.pendingInputs.get(id)?.splice(0);
+    this.bots.get(id)?.snapBody(p.x, feetY, p.z, false, -PREDATOR.fallSpeed);
   }
 
   private clearPredator(id: string, p: PlayerState): void {
-    this.predatorGround.delete(id);
+    this.predatorWeapons.delete(id);
     p.heliHp = 0;
+    p.parachuting = false;
+  }
+
+  /** Termina o paraquedas ao tocar o chão (ou um teto). */
+  private processParachuteLandings(): void {
+    for (const p of this.state.players.values()) {
+      if (!p.parachuting) continue;
+      if (!p.alive) {
+        p.parachuting = false;
+        continue;
+      }
+      if (p.grounded) {
+        p.parachuting = false;
+        this.grantInvincibility(p, PREDATOR.landInvuln);
+      }
+    }
   }
 
   /** Aplica os inputs enfileirados de cada humano com a física compartilhada. */
@@ -649,6 +702,36 @@ export class DeathmatchRoom extends Room<MatchState> {
         p.crouch = false;
         body.vy = 0;
         body.grounded = true;
+        continue;
+      }
+      if (p.parachuting) {
+        if (count === 0) {
+          const idle = {
+            seq: p.lastSeq,
+            forward: 0,
+            strafe: 0,
+            yaw: p.yaw,
+            jump: false,
+            run: false,
+            crouch: false,
+          };
+          stepParachute(body, idle, this.roomMap);
+          stepParachute(body, idle, this.roomMap);
+        } else {
+          for (let i = 0; i < count; i++) {
+            const input = queue[i];
+            stepParachute(body, input, this.roomMap);
+            p.lastSeq = input.seq;
+            p.yaw = input.yaw;
+          }
+          queue.splice(0, count);
+        }
+        p.x = body.x;
+        p.y = body.y;
+        p.z = body.z;
+        p.vy = body.vy;
+        p.grounded = body.grounded;
+        p.crouch = false;
         continue;
       }
       for (let i = 0; i < count; i++) {
@@ -763,7 +846,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     p.grounded = true;
     p.health = CONFIG.playerMaxHealth;
     p.heliHp = 0;
-    this.predatorGround.delete(id);
+    p.parachuting = false;
+    this.predatorWeapons.delete(id);
     this.lastDamagedAt.delete(id);
     p.alive = true;
     this.grantInvincibility(p, CONFIG.spawnInvincibilityDuration);
@@ -795,7 +879,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.matchResetAt = 0;
     this.respawnAt.clear();
     this.deathPos.clear();
-    this.predatorGround.clear();
+    this.predatorWeapons.clear();
     this.matchMultis.clear();
     this.matchXpEarned.clear();
     this.matchGoldEarned.clear();
@@ -808,6 +892,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
       p.heliHp = 0;
+      p.parachuting = false;
       p.availableStreaks.clear();
       p.matchXp = 0;
       p.doubleKills = 0;
@@ -858,7 +943,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.matchResetAt = 0;
     this.respawnAt.clear();
     this.deathPos.clear();
-    this.predatorGround.clear();
+    this.predatorWeapons.clear();
     this.matchMultis.clear();
     this.matchXpEarned.clear();
     this.matchGoldEarned.clear();
@@ -871,6 +956,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.streakTimeLeft = 0;
       p.invincibleTimeLeft = 0;
       p.heliHp = 0;
+      p.parachuting = false;
       p.availableStreaks.clear();
       p.matchXp = 0;
       p.doubleKills = 0;
@@ -1141,7 +1227,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     );
 
     // Só o jogador em debug recebe o traço que o servidor realmente usou.
-    if (this.debugClients.has(shooterId)) {
+    if (this.devTracerClients.has(shooterId)) {
       client.send("debugShot", { origin, ends });
     }
   }
@@ -1162,7 +1248,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     if (target.invincibleTimeLeft > 0) return false;
 
     // Vida infinita precisa ser aplicada aqui, no lado autoritativo.
-    if (this.debugClients.has(targetId)) {
+    if (this.devInfiniteClients.has(targetId)) {
       target.health = CONFIG.playerMaxHealth;
       return false;
     }

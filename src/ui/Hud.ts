@@ -128,6 +128,7 @@ export class Hud {
   /** Streaks liberados aguardando ativação (ids vindos do servidor). */
   private availableStreakIds: string[] = [];
   private activeStreakId = "";
+  private devUnlockStreaks = false;
   private predatorHud = false;
 
   private static readonly KILL_STREAK_WINDOW_MS = 5000;
@@ -297,6 +298,12 @@ export class Hud {
     this.renderStreakTimeline(streak);
   }
 
+  setDevUnlockStreaks(on: boolean): void {
+    if (on === this.devUnlockStreaks) return;
+    this.devUnlockStreaks = on;
+    this.renderStreakTimeline(this.currentKillStreak);
+  }
+
   /**
    * Sincroniza os streaks liberados (aguardando tecla) e o streak ativo.
    * Re-renderiza a timeline apenas quando algo muda.
@@ -324,8 +331,10 @@ export class Hud {
 
     this.streakTlNodes.innerHTML = rewards
       .map((reward) => {
-        const unlocked = streak >= reward.kills;
-        const available = this.availableStreakIds.includes(reward.id);
+        const unlocked = this.devUnlockStreaks || streak >= reward.kills;
+        const available = this.devUnlockStreaks
+          ? !this.activeStreakId
+          : this.availableStreakIds.includes(reward.id);
         const active = this.activeStreakId === reward.id;
         const isNext = next?.id === reward.id;
         const remain = Math.max(0, reward.kills - streak);
@@ -362,7 +371,12 @@ export class Hud {
       })
       .join("");
 
-    if (this.availableStreakIds.length > 0) {
+    if (this.devUnlockStreaks && !this.activeStreakId) {
+      const hints = KILL_STREAK_REWARDS.map((r) => {
+        return `[${killStreakKeyLabel(r.id)}] ${r.name}`;
+      });
+      this.streakTlHint.textContent = `Dev — Ativar: ${hints.join(" · ")}`;
+    } else if (this.availableStreakIds.length > 0) {
       const hints = this.availableStreakIds.map((id) => {
         const name =
           KILL_STREAK_REWARDS.find((r) => r.id === id)?.name ?? id;
