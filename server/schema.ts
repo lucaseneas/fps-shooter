@@ -65,6 +65,8 @@ export class PlayerState extends Schema {
   @type("number") gold = 0;
   /** Gold ganho na partida atual (exibido na tela de fim de partida). */
   @type("number") matchGold = 0;
+  /** JSON das cores da skin de arma (independente do catálogo do cliente). */
+  @type("string") weaponSkinParts = "";
 }
 
 export class MatchState extends Schema {

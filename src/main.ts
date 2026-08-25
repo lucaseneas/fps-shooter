@@ -67,9 +67,11 @@ import {
 import {
   WeaponSkinDef,
   allWeaponSkins,
+  encodeWeaponSkinParts,
   getWeaponSkin,
   registerCustomWeaponSkins,
   sanitizeWeaponSkin,
+  sanitizeWeaponSkinParts,
   unregisterCustomWeaponSkin,
   weaponSkinsFor,
 } from "../shared/weaponSkins";
@@ -1845,13 +1847,27 @@ function getEquippedWeaponSkinId(weaponId: WeaponId): string | null {
   return def && def.weaponId === weaponId ? id : null;
 }
 
+/** Skin visível para os outros jogadores (id + cores), sem exigir inventário no observador. */
+function getVisualWeaponSkin(weaponId: WeaponId): {
+  id: string;
+  parts: Record<string, [number, number, number]> | null;
+} {
+  const id =
+    getEquippedWeaponSkinId(weaponId) ?? loadEquippedWeaponSkins()[weaponId] ?? "";
+  const def = id ? getWeaponSkin(id) : undefined;
+  if (!def || def.weaponId !== weaponId) return { id: "", parts: null };
+  return { id: def.id, parts: def.parts };
+}
+
 /** Informa arma + skin equipada para os outros jogadores verem. */
 function syncVisualToServer(): void {
   if (!room) return;
   const weaponId = weapons.weapon.id;
+  const skin = getVisualWeaponSkin(weaponId);
   room.send("sync_visual", {
     weaponId,
-    weaponSkinId: getEquippedWeaponSkinId(weaponId) ?? "",
+    weaponSkinId: skin.id,
+    weaponSkinParts: encodeWeaponSkinParts(skin.parts),
   });
 }
 
@@ -3738,8 +3754,14 @@ function reconcile(r: Room): void {
       rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
     }
     rp.setSkin(p.skinId || "skin_default");
-    rp.setWeapon(p.weaponId || "m4a1");
-    rp.setWeaponSkin(p.weaponSkinId || "");
+    const remoteWeapon = p.weaponId || "m4a1";
+    const fromState = sanitizeWeaponSkinParts(p.weaponSkinParts);
+    const catalog = !fromState && p.weaponSkinId ? getWeaponSkin(p.weaponSkinId) : undefined;
+    rp.setWeaponAppearance(
+      remoteWeapon,
+      p.weaponSkinId || "",
+      fromState ?? (catalog && catalog.weaponId === remoteWeapon ? catalog.parts : null)
+    );
     rp.setPredator(isPredatorStreak(p.activeStreak));
     rp.setParachuting(p.parachuting === true);
     rp.setWallhack(ownHasWallhack);
@@ -4009,8 +4031,12 @@ function scoreboardRows(r: Room): ScoreRow[] {
 
 weapons.onFire = (data) => {
   if (!room) return;
+  const weaponId = weapons.weapon.id;
+  const skin = getVisualWeaponSkin(weaponId);
   room.send("fire", {
-    weaponId: weapons.weapon.id,
+    weaponId,
+    weaponSkinId: skin.id,
+    weaponSkinParts: encodeWeaponSkinParts(skin.parts),
     ox: data.origin.x,
     oy: data.origin.y,
     oz: data.origin.z,

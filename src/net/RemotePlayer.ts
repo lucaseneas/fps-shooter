@@ -95,6 +95,7 @@ export class RemotePlayer {
   private predator = false;
   private parachuting = false;
   private heliLinger = 0;
+  private lastWeaponVisualKey = "";
 
   private velocityX = 0;
   private velocityY = 0;
@@ -324,8 +325,25 @@ export class RemotePlayer {
     this.visual.setWeapon(weaponId);
   }
 
-  setWeaponSkin(skinId: string): void {
-    this.visual.setWeaponSkin(skinId || "");
+  setWeaponSkin(
+    skinId: string,
+    parts?: Record<string, [number, number, number]> | null
+  ): void {
+    this.visual.setWeaponSkin(skinId || "", parts);
+  }
+
+  setWeaponAppearance(
+    weaponId: string,
+    skinId: string,
+    parts: Record<string, [number, number, number]> | null
+  ): void {
+    const id = weaponId || "m4a1";
+    const skin = skinId || "";
+    const key = `${id}\0${skin}\0${parts ? JSON.stringify(parts) : ""}`;
+    if (key === this.lastWeaponVisualKey) return;
+    this.lastWeaponVisualKey = key;
+    this.visual.setWeapon(id);
+    this.visual.setWeaponSkin(skin, parts);
   }
 
   setPredator(on: boolean): void {

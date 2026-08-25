@@ -63,6 +63,8 @@ export class PlayerVisual {
   private loadedWeaponId = "";
   private currentWeaponSkinId = "";
   private pendingWeaponSkinId = "";
+  private pendingWeaponSkinParts: Record<string, [number, number, number]> | null = null;
+  private loadingWeaponId = "";
   private originalColors = new Map<string, Map<string, Color3>>();
 
   private muzzleFlash: MuzzleFlash;
@@ -150,14 +152,25 @@ export class PlayerVisual {
   }
 
   setWeapon(weaponId: string): void {
-    if (!weaponId || weaponId === this.loadedWeaponId) return;
+    if (!weaponId) return;
+    const weaponChanged = weaponId !== this.currentWeaponId;
     this.currentWeaponId = weaponId;
-    this.pendingWeaponSkinId = this.currentWeaponSkinId;
+    if (weaponChanged) this.pendingWeaponSkinId = this.currentWeaponSkinId;
+    if (weaponId === this.loadedWeaponId) {
+      this.applyStoredWeaponSkin();
+      return;
+    }
+    if (this.loadingWeaponId === weaponId) return;
+
+    this.loadingWeaponId = weaponId;
     const assetUrl = WEAPON_ASSETS[weaponId] || WEAPON_ASSETS.m4a1;
     const scene = this.root.getScene();
 
     SceneLoader.LoadAssetContainerAsync("", assetUrl, scene).then((container) => {
-      if (weaponId !== this.currentWeaponId) return;
+      if (weaponId !== this.currentWeaponId) {
+        if (this.loadingWeaponId === weaponId) this.loadingWeaponId = "";
+        return;
+      }
 
       if (this.currentWeaponModel) {
         this.currentWeaponModel.dispose(false, true);
@@ -181,6 +194,11 @@ export class PlayerVisual {
         m.isPickable = false;
         if (m.material) {
           m.material = m.material.clone(`pvMat_${weaponId}_${m.name}`);
+        } else {
+          const mat = new StandardMaterial(`pvMat_${weaponId}_${m.name}`, scene);
+          mat.diffuseColor = new Color3(0.55, 0.55, 0.58);
+          mat.specularColor = new Color3(0.05, 0.05, 0.05);
+          m.material = mat;
         }
         originals.set(m.name, this.readMeshColor(m).clone());
       });
@@ -189,16 +207,31 @@ export class PlayerVisual {
       const length = weaponId === "knife" ? 0.2 : weaponId === "awp" ? 0.9 : 0.65;
       this.muzzleFlash.setLocalPosition(new Vector3(0, 0.02, length));
       this.loadedWeaponId = weaponId;
+      this.loadingWeaponId = "";
       this.applyStoredWeaponSkin();
-    }).catch(console.error);
+    }).catch((err) => {
+      if (this.loadingWeaponId === weaponId) this.loadingWeaponId = "";
+      console.error(err);
+    });
   }
 
-  /** Id da skin equipada na arma atual (vazio = padrão). */
-  setWeaponSkin(skinId: string): void {
+  /**
+   * Id da skin (vazio = padrão). `parts` vem da rede para não depender
+   * do catálogo local do observador.
+   */
+  setWeaponSkin(
+    skinId: string,
+    parts?: Record<string, [number, number, number]> | null
+  ): void {
     const next = skinId || "";
-    if (next === this.currentWeaponSkinId) return;
+    const nextParts = parts === undefined ? this.pendingWeaponSkinParts : parts;
+    if (next === this.currentWeaponSkinId && nextParts === this.pendingWeaponSkinParts) {
+      this.applyStoredWeaponSkin();
+      return;
+    }
     this.currentWeaponSkinId = next;
     this.pendingWeaponSkinId = next;
+    this.pendingWeaponSkinParts = nextParts;
     this.applyStoredWeaponSkin();
   }
 
@@ -229,13 +262,15 @@ export class PlayerVisual {
   private applyStoredWeaponSkin(): void {
     const weaponId = this.currentWeaponId;
     const model = this.currentWeaponModel;
-    if (!model || weaponId !== this.currentWeaponId) return;
+    if (!model || this.loadedWeaponId !== weaponId) return;
 
     this.restoreOriginalColors(weaponId);
     const skinId = this.pendingWeaponSkinId;
-    const skin = skinId ? getWeaponSkin(skinId) : undefined;
+    const fromNet = this.pendingWeaponSkinParts;
+    const skin = !fromNet && skinId ? getWeaponSkin(skinId) : undefined;
     const overlay =
-      skin && skin.weaponId === weaponId ? skin.parts : null;
+      fromNet ??
+      (skin && skin.weaponId === weaponId ? skin.parts : null);
     applyWeaponAppearance(this.root.getScene(), model, weaponId, overlay);
   }
 

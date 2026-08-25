@@ -35,6 +35,8 @@ export interface PlayerSnapshot {
   skinId: string;
   weaponId: string;
   weaponSkinId: string;
+  /** JSON das cores da skin de arma (vazio = padrão). */
+  weaponSkinParts: string;
 
   // Pré-lobby
   ready: boolean;

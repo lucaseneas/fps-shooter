@@ -200,6 +200,43 @@ function isValidColor(c: unknown): c is [number, number, number] {
   );
 }
 
+const WEAPON_SKIN_PARTS_JSON_MAX = 8192;
+
+/** Valida o mapa mesh → RGB vindo da rede (objeto ou JSON). */
+export function sanitizeWeaponSkinParts(
+  raw: unknown
+): Record<string, [number, number, number]> | null {
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    if (!raw || raw.length > WEAPON_SKIN_PARTS_JSON_MAX) return null;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  const parts: Record<string, [number, number, number]> = {};
+  for (const [mesh, color] of Object.entries(value as Record<string, unknown>)) {
+    if (Object.keys(parts).length >= MAX_PARTS) break;
+    if (!mesh || mesh.length > 64 || !isValidColor(color)) continue;
+    parts[mesh] = [color[0], color[1], color[2]];
+  }
+  return Object.keys(parts).length > 0 ? parts : null;
+}
+
+export function encodeWeaponSkinParts(
+  parts: Record<string, [number, number, number]> | null | undefined
+): string {
+  if (!parts || Object.keys(parts).length === 0) return "";
+  try {
+    const json = JSON.stringify(parts);
+    return json.length > WEAPON_SKIN_PARTS_JSON_MAX ? "" : json;
+  } catch {
+    return "";
+  }
+}
+
 /** Valida um payload vindo da rede antes de registrar/persistir. */
 export function sanitizeWeaponSkin(raw: unknown): WeaponSkinDef | null {
   if (!raw || typeof raw !== "object") return null;
@@ -215,15 +252,8 @@ export function sanitizeWeaponSkin(raw: unknown): WeaponSkinDef | null {
   if (!id || !name || price < 0) return null;
   if (!weaponId) return null;
 
-  const parts: Record<string, [number, number, number]> = {};
-  if (o.parts && typeof o.parts === "object") {
-    for (const [mesh, color] of Object.entries(o.parts as Record<string, unknown>)) {
-      if (Object.keys(parts).length >= MAX_PARTS) break;
-      if (!mesh || mesh.length > 64 || !isValidColor(color)) continue;
-      parts[mesh] = [color[0], color[1], color[2]];
-    }
-  }
-  if (Object.keys(parts).length === 0) return null;
+  const parts = sanitizeWeaponSkinParts(o.parts);
+  if (!parts) return null;
 
   return { id, weaponId, name, price, parts, custom: true };
 }

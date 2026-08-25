@@ -20,6 +20,11 @@ import {
   resolveWeaponId,
 } from "../shared/weapons";
 import {
+  encodeWeaponSkinParts,
+  getWeaponSkin,
+  sanitizeWeaponSkinParts,
+} from "../shared/weaponSkins";
+import {
   BodyState,
   PlayerInput,
   createBody,
@@ -51,6 +56,8 @@ const CROUCH_BODY_HALF_Y = HITBOX.crouchBodyHalfY;
 
 interface FireMessage {
   weaponId: string;
+  weaponSkinId?: unknown;
+  weaponSkinParts?: unknown;
   ox: number;
   oy: number;
   oz: number;
@@ -340,18 +347,10 @@ export class DeathmatchRoom extends Room<MatchState> {
     /** Arma + skin de arma visíveis para os outros jogadores. */
     this.onMessage(
       "sync_visual",
-      (client, msg: { weaponId?: unknown; weaponSkinId?: unknown }) => {
+      (client, msg: { weaponId?: unknown; weaponSkinId?: unknown; weaponSkinParts?: unknown }) => {
         const p = this.state.players.get(client.sessionId);
         if (!p) return;
-        if (typeof msg?.weaponId === "string") {
-          const w = resolveWeaponId(msg.weaponId);
-          if (w) p.weaponId = w;
-        }
-        if (msg?.weaponSkinId === null || msg?.weaponSkinId === "") {
-          p.weaponSkinId = "";
-        } else if (typeof msg?.weaponSkinId === "string") {
-          p.weaponSkinId = msg.weaponSkinId.slice(0, 64);
-        }
+        this.applyWeaponVisual(p, msg?.weaponId, msg?.weaponSkinId, msg?.weaponSkinParts);
       }
     );
 
@@ -1070,6 +1069,50 @@ export class DeathmatchRoom extends Room<MatchState> {
     });
   }
 
+  /**
+   * Arma + skin visíveis para os outros clientes.
+   * Prefere o catálogo do servidor; se a skin ainda não estiver lá,
+   * usa as cores enviadas pelo dono (estúdio / catálogo atrasado).
+   */
+  private applyWeaponVisual(
+    p: PlayerState,
+    weaponIdRaw: unknown,
+    skinIdRaw: unknown,
+    partsRaw: unknown
+  ): void {
+    if (typeof weaponIdRaw === "string") {
+      const w = resolveWeaponId(weaponIdRaw);
+      if (w) p.weaponId = w;
+    }
+    if (p.weaponId === "minigun") return;
+    if (skinIdRaw === undefined && partsRaw === undefined) return;
+
+    const skinId =
+      typeof skinIdRaw === "string" ? skinIdRaw.slice(0, 64) : "";
+    if (!skinId) {
+      p.weaponSkinId = "";
+      p.weaponSkinParts = "";
+      return;
+    }
+
+    const catalog = getWeaponSkin(skinId);
+    if (catalog && catalog.weaponId === p.weaponId) {
+      p.weaponSkinId = catalog.id;
+      p.weaponSkinParts = encodeWeaponSkinParts(catalog.parts);
+      return;
+    }
+
+    const parts = sanitizeWeaponSkinParts(partsRaw);
+    if (parts) {
+      p.weaponSkinId = skinId;
+      p.weaponSkinParts = encodeWeaponSkinParts(parts);
+      return;
+    }
+
+    p.weaponSkinId = "";
+    p.weaponSkinParts = "";
+  }
+
   // --- Combate (hitscan server-side com lag compensation) ---
 
   private handleFire(client: Client, msg: FireMessage): void {
@@ -1082,7 +1125,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     const aerial = isPredatorStreak(shooter.activeStreak);
     if (aerial && weapon.id !== "minigun") return;
     if (!aerial && weapon.id === "minigun") return;
-    shooter.weaponId = weapon.id;
+    this.applyWeaponVisual(shooter, weapon.id, msg?.weaponSkinId, msg?.weaponSkinParts);
     if (!Array.isArray(msg.dirs) || msg.dirs.length === 0) return;
     if (msg.dirs.length > weapon.pellets) return;
 
