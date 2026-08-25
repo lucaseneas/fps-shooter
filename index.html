@@ -8,6 +8,12 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='2' fill='%23ff9d2f'/><rect x='7' y='0' width='2' height='16' fill='%23ff9d2f'/><rect x='0' y='7' width='16' height='2' fill='%23ff9d2f'/></svg>"
     />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/src/style.css" />
     <style>
       /* Evita flash do HUD antes do JS/CSS carregarem */
@@ -86,19 +92,22 @@
       </div>
 
       <!-- Minimapa (canto superior direito) -->
-      <canvas id="minimap" width="180" height="180"></canvas>
+      <div id="minimapFrame" class="hud-tac">
+        <span class="hud-tag">TACMAP</span>
+        <canvas id="minimap" width="180" height="180"></canvas>
+      </div>
 
       <!-- Kill feed (abaixo do minimapa) -->
       <div id="killFeed"></div>
 
       <div id="spectateBanner" class="hidden">
-        Espectador · WASD mover · Espaço/Ctrl subir/descer · Shift rápido · I para spawnar
+        ESPECTADOR · WASD mover · Espaço/Ctrl subir/descer · Shift rápido · I para spawnar
       </div>
 
       <!-- Timeline de Kill Streaks (lado direito) -->
-      <div id="streakTimeline">
+      <div id="streakTimeline" class="hud-tac">
         <div class="streak-tl-header">
-          <span class="streak-tl-label">STREAK</span>
+          <span class="streak-tl-label hud-tag">STREAK</span>
           <span id="streakTlCount">0</span>
         </div>
         <div class="streak-tl-body">
@@ -111,7 +120,7 @@
       </div>
 
       <!-- Painel de Kill Streak Ativo -->
-      <div id="streakActivePanel" class="hidden">
+      <div id="streakActivePanel" class="hud-tac hidden">
         <div class="streak-icon" id="streakActiveIcon">👁️</div>
         <div class="streak-details">
           <div class="streak-title" id="streakActiveTitle">WALL HACKER</div>
@@ -121,24 +130,29 @@
       </div>
 
       <!-- Kills (topo centro) -->
-      <div id="killsPanel">
-        <span id="killsPanelFfa">Kills: <span id="killCount">0 / 20</span></span>
+      <div id="killsPanel" class="hud-tac">
+        <span class="hud-tag">OBJ</span>
+        <span id="killsPanelFfa"><span id="killCount">0 / 20</span></span>
         <span id="killsPanelTdm" class="hidden">
           <span class="tdm-alpha">Alfa <span id="teamKillsAlpha">0</span></span>
-          <span class="tdm-sep">—</span>
+          <span class="tdm-sep">/</span>
           <span class="tdm-echo"><span id="teamKillsEcho">0</span> Echo</span>
-          <span class="tdm-target">/ <span id="teamKillsTarget">20</span></span>
+          <span class="tdm-target">META <span id="teamKillsTarget">20</span></span>
         </span>
       </div>
 
       <!-- Vida (canto inferior esquerdo) -->
-      <div id="healthPanel">
-        <span id="healthText">100</span>
-        <div id="healthBar"><div id="healthFill"></div></div>
+      <div id="healthPanel" class="hud-tac">
+        <span class="hud-tag">VIDA</span>
+        <div class="hud-vital-row">
+          <span id="healthText">100</span>
+          <div id="healthBar"><div id="healthFill"></div></div>
+        </div>
       </div>
 
       <!-- Arma + munição (canto inferior direito) -->
-      <div id="ammoPanel">
+      <div id="ammoPanel" class="hud-tac">
+        <span class="hud-tag">ARMA</span>
         <div id="weaponName">Pistola</div>
         <div id="ammoCounts">
           <span id="ammoMag">12</span><span class="ammo-sep">/</span
@@ -148,8 +162,8 @@
       </div>
 
       <!-- Scoreboard (Tab) -->
-      <div id="scoreboard" class="hidden">
-        <h2>Placar</h2>
+      <div id="scoreboard" class="hud-tac hidden">
+        <h2>Sitrep</h2>
         <table id="scoreboardFfaTable">
           <thead>
             <tr><th></th><th>Jogador</th><th>K</th><th>D</th></tr>
@@ -181,16 +195,16 @@
 
       <!-- Tela de morte -->
       <div id="deathScreen" class="hidden">
-        <div id="deathTitle">Você morreu</div>
+        <div id="deathTitle">KIA</div>
         <div id="deathInfo"></div>
         <div id="deathWeapon"></div>
         <div id="deathKillerHp">
-          <span id="deathKillerHpLabel">HP restante</span>
+          <span id="deathKillerHpLabel">HP inimigo</span>
           <div id="deathKillerHpBar"><div id="deathKillerHpFill"></div></div>
           <span id="deathKillerHpText"></span>
         </div>
         <div id="deathCount">3</div>
-        <div id="deathTimer">Renascendo…</div>
+        <div id="deathTimer">Reinserção…</div>
       </div>
 
       <!-- Fim de partida -->
@@ -205,9 +219,10 @@
     </div>
 
     <!-- Página /login -->
-    <div id="pageLogin" class="app-page hidden">
-      <div class="login-card">
+    <div id="pageLogin" class="app-page mil-menu hidden">
+      <div class="login-card hud-tac">
         <header class="menu-header">
+          <span class="hud-tag">Acesso</span>
           <h1>FPS Web 3D</h1>
           <p class="subtitle">Mata-mata · Conta para jogar</p>
         </header>
@@ -254,10 +269,11 @@
     </div>
 
     <!-- Página /home — perfil + lobbies -->
-    <div id="pageHome" class="app-page hidden">
+    <div id="pageHome" class="app-page mil-menu hidden">
       <div class="home-shell">
         <header class="home-top">
           <div>
+            <span class="hud-tag">Base</span>
             <h1>FPS Web 3D</h1>
             <p class="subtitle">Lobby</p>
           </div>
@@ -273,7 +289,7 @@
         </header>
 
         <div class="home-layout">
-          <aside class="home-profile">
+          <aside class="home-profile hud-tac">
             <h2>Jogador</h2>
             <p class="profile-name" data-pf="name">—</p>
             <p class="profile-meta" data-pf="meta"></p>
@@ -329,7 +345,7 @@
             </div>
           </aside>
 
-          <section class="home-lobbies">
+          <section class="home-lobbies hud-tac">
             <div class="lobbies-header">
               <h2>Lobbies disponíveis</h2>
               <div class="lobby-actions">
@@ -345,8 +361,8 @@
     </div>
 
     <!-- Modal criar sala -->
-    <div id="createRoomModal" class="hidden">
-      <div class="modal-card create-room-card">
+    <div id="createRoomModal" class="mil-menu hidden">
+      <div class="modal-card create-room-card hud-tac">
         <h2>Criar sala</h2>
         <form id="createRoomForm" class="create-room-form">
           <div class="setting-row">
@@ -537,10 +553,11 @@
     </div>
 
     <!-- Página /lobby — pré-lobby da sala -->
-    <div id="pageLobby" class="app-page hidden">
+    <div id="pageLobby" class="app-page mil-menu hidden">
       <div class="home-shell lobby-shell">
         <header class="home-top">
           <div>
+            <span class="hud-tag">Sala</span>
             <h1 id="lobbyRoomName">Sala</h1>
             <p class="subtitle" id="lobbyStatus">Aguardando jogadores</p>
           </div>
@@ -554,7 +571,7 @@
         </header>
 
         <div class="lobby-layout">
-          <aside class="home-profile">
+          <aside class="home-profile hud-tac">
             <h2>Jogador</h2>
             <p class="profile-name" data-pf="name">—</p>
             <p class="profile-meta" data-pf="meta"></p>
@@ -611,7 +628,7 @@
           </aside>
 
           <div class="lobby-main">
-            <section class="lobby-panel lobby-players">
+            <section class="lobby-panel lobby-players hud-tac">
               <h2>
                 Jogadores
                 <span id="lobbyPlayersCount" class="lobby-count"></span>
@@ -637,7 +654,7 @@
               <p class="lobby-hint" id="lobbyPlayersHint">Botão direito num jogador para adicionar como amigo.</p>
             </section>
 
-            <aside class="lobby-panel lobby-chat">
+            <aside class="lobby-panel lobby-chat hud-tac">
               <h2>Chat da sala</h2>
               <div id="lobbyChatLog" class="lobby-chat-log" aria-live="polite"></div>
               <form id="lobbyChatForm" class="lobby-chat-form">
@@ -652,7 +669,7 @@
             </aside>
           </div>
 
-          <aside class="lobby-panel lobby-settings">
+          <aside class="lobby-panel lobby-settings hud-tac">
             <h2>Configurações</h2>
             <div class="setting-row">
               <label for="lobbyMapSelect">Mapa</label>
@@ -713,8 +730,9 @@
     </div>
 
     <!-- Loadout personalizado (pré-spawn na sala / tecla I na partida) -->
-    <div id="loadoutModal" class="hidden">
-      <div class="modal-card loadout-card">
+    <div id="loadoutModal" class="mil-menu hidden">
+      <div class="modal-card loadout-card hud-tac">
+        <span class="hud-tag">Armamento</span>
         <h2>Monta o teu loadout</h2>
         <p class="loadout-hint" id="loadoutHint">
           Escolhe uma arma por slot — na partida, aperte <kbd>I</kbd> para trocar.
@@ -730,10 +748,11 @@
     </div>
 
     <!-- Modal da Loja — só mostra o que você ainda NÃO possui -->
-    <div id="shopModal" class="hidden">
-      <div class="modal-card skins-card shop-card">
+    <div id="shopModal" class="mil-menu hidden">
+      <div class="modal-card skins-card shop-card hud-tac">
         <header class="skins-header">
           <div>
+            <span class="hud-tag">Comércio</span>
             <h2>Loja</h2>
             <p class="skins-hint">Itens à venda — o que você já possui fica no Inventário.</p>
           </div>
@@ -765,10 +784,11 @@
     </div>
 
     <!-- Modal de Inventário (home/lobby) — suas armas e suas skins -->
-    <div id="inventoryModal" class="hidden">
-      <div class="modal-card skins-card inventory-card">
+    <div id="inventoryModal" class="mil-menu hidden">
+      <div class="modal-card skins-card inventory-card hud-tac">
         <header class="skins-header">
           <div>
+            <span class="hud-tag">Arsenal</span>
             <h2>Inventário</h2>
             <p class="skins-hint">Suas armas e skins — equipe o que vai para a partida.</p>
           </div>
@@ -874,9 +894,10 @@
     </div>
 
     <!-- Modal de configurações (menu) / pausa (in-game, via ESC) -->
-    <div id="settingsModal" class="hidden menu-mode">
-      <div class="modal-card">
-        <h2>⚙ Configurações</h2>
+    <div id="settingsModal" class="hidden menu-mode mil-menu">
+      <div class="modal-card hud-tac">
+        <span class="hud-tag">Sistema</span>
+        <h2>Configurações</h2>
         <div class="settings-tabs">
           <button type="button" class="settings-tab active" data-settingstab="gameplay">
             Jogabilidade
@@ -1056,8 +1077,9 @@
     </div>
 
     <!-- Painel Social (home e pré-lobby) -->
-    <div id="socialModal" class="hidden social-overlay">
-      <div class="modal-card social-card">
+    <div id="socialModal" class="hidden social-overlay mil-menu">
+      <div class="modal-card social-card hud-tac">
+        <span class="hud-tag">Comms</span>
         <h2>Social</h2>
         <p class="social-hint">
           Clique num amigo para ver informações · Botão direito para opções.
@@ -1087,8 +1109,9 @@
     </div>
 
     <!-- Modal: adicionar amigo pelo nome -->
-    <div id="addFriendModal" class="hidden social-overlay">
-      <div class="modal-card add-friend-card">
+    <div id="addFriendModal" class="hidden social-overlay mil-menu">
+      <div class="modal-card add-friend-card hud-tac">
+        <span class="hud-tag">Unidade</span>
         <h2>Adicionar amigo</h2>
         <form id="addFriendForm">
           <input
@@ -1109,8 +1132,9 @@
     </div>
 
     <!-- Modal: informações do amigo (igual ao perfil da home) -->
-    <div id="friendInfoModal" class="hidden social-overlay">
-      <div class="modal-card friend-info-card">
+    <div id="friendInfoModal" class="hidden social-overlay mil-menu">
+      <div class="modal-card friend-info-card hud-tac">
+        <span class="hud-tag">Dossiê</span>
         <h2>Informações</h2>
         <p class="profile-name" id="friendInfoName">—</p>
         <p class="profile-meta" id="friendInfoMeta"></p>
@@ -1172,8 +1196,8 @@
     <div id="socialNotifications"></div>
 
     <!-- Boot — visível até auth/rota inicial -->
-    <div id="appBoot" class="app-page app-boot">
-      <div class="boot-card">
+    <div id="appBoot" class="app-page app-boot mil-menu">
+      <div class="boot-card hud-tac">
         <h1>FPS Web 3D</h1>
         <p class="boot-status" id="bootStatus">A carregar…</p>
         <div class="boot-spinner" aria-hidden="true"></div>

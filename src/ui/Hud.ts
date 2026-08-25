@@ -173,18 +173,20 @@ export class Hud {
     const cap = Math.max(1, max);
     const pct = Math.max(0, Math.min(1, current / cap));
     this.healthFill.style.width = `${pct * 100}%`;
-    this.healthFill.style.background =
+    this.healthFill.style.setProperty(
+      "--hp-color",
       max > CONFIG.playerMaxHealth
         ? pct > 0.5
-          ? "#e8a23a"
+          ? "#d4a017"
           : pct > 0.25
-            ? "#e07832"
-            : "#e05545"
+            ? "#c07832"
+            : "#c44a3a"
         : pct > 0.5
-          ? "#6fd66f"
+          ? "#7aab45"
           : pct > 0.25
-            ? "#e8c14a"
-            : "#e05545";
+            ? "#c4a04a"
+            : "#c44a3a"
+    );
     this.healthText.textContent = String(Math.ceil(current));
     this.healthPanel.classList.toggle("heli", max > CONFIG.playerMaxHealth);
     this.updateLowHealthVignette(max > CONFIG.playerMaxHealth ? 1 : pct);
@@ -614,8 +616,10 @@ export class Hud {
     const hp = Math.max(0, Math.round(killerHealth));
     const pct = Math.max(0, Math.min(1, hp / CONFIG.playerMaxHealth));
     this.deathKillerHpFill.style.width = `${pct * 100}%`;
-    this.deathKillerHpFill.style.background =
-      pct > 0.5 ? "#6fd66f" : pct > 0.25 ? "#e8c14a" : "#e05545";
+    this.deathKillerHpFill.style.setProperty(
+      "--hp-color",
+      pct > 0.5 ? "#7aab45" : pct > 0.25 ? "#c4a04a" : "#c44a3a"
+    );
     this.deathKillerHpText.textContent = `${hp} HP`;
     this.deathKillerHp.classList.toggle("hidden", !killerName);
     this.lastDeathSecond = -1;
@@ -625,7 +629,7 @@ export class Hud {
   updateDeathTimer(seconds: number): void {
     const n = Math.max(0, Math.ceil(seconds));
     this.deathCount.textContent = String(n);
-    this.deathTimer.textContent = n > 0 ? "Renascendo…" : "";
+    this.deathTimer.textContent = n > 0 ? "Reinserção…" : "";
     if (n !== this.lastDeathSecond) {
       this.lastDeathSecond = n;
       this.deathCount.classList.remove("pop");
@@ -646,7 +650,7 @@ export class Hud {
     xp?: EndXpSummary
   ): void {
     this.endTitle.textContent = playerWon
-      ? "🏆 Você venceu!"
+      ? "Missão cumprida"
       : `${winnerName} venceu a partida`;
     if (xp && xp.earned > 0) {
       const gold = xp.gold;

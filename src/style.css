@@ -1,6 +1,14 @@
 :root {
   --accent: #ff9d2f;
-  --bg: #0b0e13;
+  --bg: #0e120c;
+  --hud-olive: #1a1e14;
+  --hud-olive-panel: rgba(16, 20, 12, 0.78);
+  --hud-khaki: #c9b36a;
+  --hud-khaki-dim: rgba(201, 179, 106, 0.38);
+  --hud-amber: #d4a017;
+  --hud-green: #7aab45;
+  --hud-stencil: "Rajdhani", "Segoe UI", system-ui, sans-serif;
+  --hud-mono: "Share Tech Mono", "Consolas", "Cascadia Code", monospace;
 }
 
 * {
@@ -34,6 +42,48 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 10;
+  font-family: var(--hud-stencil);
+  letter-spacing: 0.4px;
+}
+
+.hud-tag {
+  display: block;
+  font-family: var(--hud-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--hud-khaki);
+  line-height: 1;
+}
+
+.hud-tac {
+  background-color: var(--hud-olive-panel);
+  background-image:
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki));
+  background-size:
+    11px 2px, 2px 11px,
+    11px 2px, 2px 11px,
+    11px 2px, 2px 11px,
+    11px 2px, 2px 11px;
+  background-position:
+    top left, top left,
+    top right, top right,
+    bottom left, bottom left,
+    bottom right, bottom right;
+  background-repeat: no-repeat;
+  border: 1px solid var(--hud-khaki-dim);
+  border-radius: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 6px 18px rgba(0, 0, 0, 0.35);
 }
 
 #hud.hidden {
@@ -179,6 +229,7 @@ body {
 
 /* HUD informativo acima do scope (z-index 4) e do círculo de spread (5) */
 #debug,
+#minimapFrame,
 #minimap,
 #killFeed,
 #killsPanel,
@@ -215,8 +266,8 @@ body {
   left: 12px;
   font-size: 12px;
   line-height: 1.5;
-  font-family: "Cascadia Code", "Consolas", monospace;
-  color: rgba(255, 255, 255, 0.75);
+  font-family: var(--hud-mono);
+  color: rgba(201, 179, 106, 0.82);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   white-space: pre;
 }
@@ -225,7 +276,7 @@ body {
 #roomChat {
   position: absolute;
   left: 18px;
-  bottom: 122px;
+  bottom: 132px;
   width: min(360px, calc(100vw - 36px));
   font-size: 13px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
@@ -239,7 +290,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
-  scrollbar-color: rgba(255, 157, 47, 0.8) rgba(10, 14, 20, 0.5);
+  scrollbar-color: rgba(201, 179, 106, 0.75) rgba(16, 20, 12, 0.5);
 }
 
 .chat-entry {
@@ -248,14 +299,17 @@ body {
   max-width: 100%;
   padding: 4px 8px;
   overflow-wrap: anywhere;
-  border-radius: 5px;
-  background: rgba(10, 14, 20, 0.68);
-  color: #e8ecf1;
+  border-radius: 0;
+  background: rgba(16, 20, 12, 0.78);
+  border: 1px solid rgba(201, 179, 106, 0.18);
+  color: #e6ead8;
 }
 
 .chat-entry .chat-name {
-  color: var(--accent);
+  color: var(--hud-khaki);
   font-weight: 700;
+  font-family: var(--hud-mono);
+  letter-spacing: 0.6px;
 }
 
 #chatForm {
@@ -273,12 +327,14 @@ body {
 #chatInput {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
+  border: 1px solid var(--hud-khaki-dim);
+  border-radius: 0;
   outline: none;
-  background: rgba(10, 14, 20, 0.92);
-  color: #fff;
+  background: rgba(16, 20, 12, 0.92);
+  color: #e6ead8;
   font: inherit;
+  font-family: var(--hud-mono);
+  letter-spacing: 0.8px;
 }
 
 /* ---------- Hitmarker ---------- */
@@ -297,7 +353,7 @@ body {
 #hitmarker::after {
   content: "";
   position: absolute;
-  background: #fff;
+  background: var(--hud-khaki);
 }
 
 #hitmarker::before {
@@ -395,37 +451,36 @@ body {
 }
 
 #killBadgeMedal {
-  width: 92px;
-  height: 92px;
-  padding: 10px;
-  border-radius: 50%;
+  min-width: 118px;
+  height: auto;
+  padding: 8px 14px;
+  border-radius: 0;
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%);
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   background: linear-gradient(
-    160deg,
-    rgba(255, 196, 80, 0.95) 0%,
-    rgba(220, 120, 28, 0.92) 55%,
-    rgba(140, 55, 12, 0.95) 100%
+    180deg,
+    rgba(201, 179, 106, 0.95) 0%,
+    rgba(110, 90, 40, 0.92) 100%
   );
-  border: 2px solid rgba(255, 230, 160, 0.65);
+  border: 1px solid rgba(232, 214, 150, 0.7);
   box-shadow:
-    0 0 0 3px rgba(40, 20, 8, 0.4),
-    0 8px 22px rgba(0, 0, 0, 0.45),
-    inset 0 2px 0 rgba(255, 255, 255, 0.35),
-    inset 0 -3px 8px rgba(0, 0, 0, 0.2);
+    0 0 0 2px rgba(20, 18, 8, 0.55),
+    0 8px 18px rgba(0, 0, 0, 0.45);
 }
 
 #killBadgeLabel {
   display: block;
-  max-width: 72px;
+  max-width: 110px;
+  font-family: var(--hud-mono);
   font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
+  font-weight: 400;
+  letter-spacing: 1.6px;
   line-height: 1.15;
-  color: #1a0e05;
-  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.45);
+  color: #1a1608;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.35);
 }
 
 #killBadge[data-streak="1"] #killBadgeLabel {
@@ -642,53 +697,67 @@ body {
 }
 
 /* ---------- Minimapa ---------- */
-#minimap {
+#minimapFrame {
   position: absolute;
   top: 14px;
   right: 16px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 18px 5px 5px;
+}
+
+#minimapFrame .hud-tag {
+  position: absolute;
+  top: 5px;
+  left: 8px;
+}
+
+#minimap {
+  display: block;
+  border-radius: 0;
+  border: 1px solid rgba(201, 179, 106, 0.28);
 }
 
 /* ---------- Kill feed ---------- */
 #killFeed {
   position: absolute;
-  top: 206px;
+  top: 228px;
   right: 16px;
   display: flex;
   flex-direction: column;
   gap: 5px;
   align-items: flex-end;
   font-size: 13px;
+  font-family: var(--hud-stencil);
 }
 
 .feed-entry {
-  background: rgba(10, 14, 20, 0.65);
-  border-radius: 6px;
+  background: rgba(16, 20, 12, 0.78);
+  border-radius: 0;
   padding: 4px 10px;
-  color: #dfe6ee;
-  border: 1px solid transparent;
+  color: #dfe6d0;
+  border: 1px solid rgba(201, 179, 106, 0.22);
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .feed-weapon {
-  color: var(--accent);
+  color: var(--hud-khaki);
   font-size: 11px;
+  font-family: var(--hud-mono);
+  letter-spacing: 0.8px;
 }
 
 .feed-entry.streak {
   background: linear-gradient(
     90deg,
-    rgba(255, 140, 40, 0.35),
-    rgba(10, 14, 20, 0.75)
+    rgba(180, 140, 40, 0.4),
+    rgba(16, 20, 12, 0.82)
   );
-  border-color: rgba(255, 180, 60, 0.55);
-  box-shadow: 0 0 12px rgba(255, 140, 40, 0.35);
+  border-color: rgba(201, 179, 106, 0.6);
+  box-shadow: 0 0 12px rgba(180, 140, 40, 0.28);
 }
 
 .feed-entry.streak .feed-killer {
-  color: #ffd56a;
-  text-shadow: 0 0 8px rgba(255, 180, 40, 0.55);
+  color: #ead889;
+  text-shadow: 0 0 8px rgba(201, 179, 106, 0.45);
 }
 
 .feed-entry.streak-3,
@@ -696,33 +765,34 @@ body {
 .feed-entry.streak-5 {
   background: linear-gradient(
     90deg,
-    rgba(255, 90, 40, 0.45),
-    rgba(10, 14, 20, 0.8)
+    rgba(180, 80, 30, 0.48),
+    rgba(16, 20, 12, 0.85)
   );
-  border-color: rgba(255, 120, 50, 0.7);
-  box-shadow: 0 0 16px rgba(255, 100, 40, 0.45);
+  border-color: rgba(200, 110, 50, 0.7);
+  box-shadow: 0 0 16px rgba(180, 80, 30, 0.4);
 }
 
 .feed-entry.streak-5 {
   background: linear-gradient(
     90deg,
-    rgba(255, 60, 120, 0.5),
-    rgba(10, 14, 20, 0.85)
+    rgba(160, 40, 40, 0.52),
+    rgba(16, 20, 12, 0.88)
   );
-  border-color: rgba(255, 100, 160, 0.75);
-  box-shadow: 0 0 18px rgba(255, 60, 120, 0.5);
+  border-color: rgba(200, 80, 70, 0.75);
+  box-shadow: 0 0 18px rgba(160, 40, 40, 0.45);
 }
 
 .feed-streak {
   margin-left: 8px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: 0;
   font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.4px;
-  color: #1a0e05;
-  background: linear-gradient(180deg, #ffe08a, #ff9d2f);
-  box-shadow: 0 0 6px rgba(255, 180, 40, 0.55);
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  font-family: var(--hud-mono);
+  color: #1a1608;
+  background: linear-gradient(180deg, #ead889, #c9b36a);
+  box-shadow: 0 0 6px rgba(201, 179, 106, 0.45);
 }
 
 /* ---------- Kills (topo) ---------- */
@@ -731,16 +801,27 @@ body {
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(10, 14, 20, 0.55);
-  border-radius: 8px;
-  padding: 6px 16px;
-  font-size: 14px;
-  letter-spacing: 0.5px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 18px 7px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+#killsPanel .hud-tag {
+  display: inline;
+  margin-right: 2px;
 }
 
 #killCount {
-  color: var(--accent);
+  color: var(--hud-khaki);
   font-weight: 700;
+  font-family: var(--hud-mono);
+  font-size: 16px;
 }
 
 #killsPanelTdm {
@@ -780,37 +861,61 @@ body {
   left: 20px;
   bottom: 20px;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  min-width: 248px;
+}
+
+.hud-vital-row {
+  display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
 }
 
 #healthText {
   font-size: 34px;
   font-weight: 700;
+  font-family: var(--hud-mono);
+  letter-spacing: 1px;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
   min-width: 58px;
   text-align: right;
+  line-height: 1;
+  color: #e8ecd8;
 }
 
 #healthBar {
-  width: 180px;
-  height: 12px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.5);
+  flex: 1;
+  height: 10px;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.55);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(201, 179, 106, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
 #healthFill {
   height: 100%;
   width: 100%;
-  background: #6fd66f;
-  border-radius: inherit;
+  --hp-color: #7aab45;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 3px,
+      rgba(0, 0, 0, 0.22) 3px,
+      rgba(0, 0, 0, 0.22) 6px
+    ),
+    var(--hp-color);
+  border-radius: 0;
   transition: width 0.12s linear, background 0.15s ease;
 }
 
 #healthPanel.heli #healthFill {
-  background: linear-gradient(90deg, #e8a23a, #d45b28);
+  --hp-color: #d4a017;
 }
 
 /* ---------- Munição / arma ---------- */
@@ -819,54 +924,69 @@ body {
   right: 20px;
   bottom: 20px;
   text-align: right;
+  padding: 8px 12px 10px;
+  min-width: 168px;
+}
+
+#ammoPanel .hud-tag {
+  margin-bottom: 4px;
 }
 
 #weaponName {
-  font-size: 14px;
+  font-size: 13px;
+  font-family: var(--hud-mono);
   text-transform: uppercase;
-  letter-spacing: 2px;
-  color: #aab6c2;
+  letter-spacing: 2.2px;
+  color: var(--hud-khaki);
 }
 
 #ammoCounts {
-  font-size: 34px;
+  font-size: 36px;
   font-weight: 700;
+  font-family: var(--hud-mono);
+  letter-spacing: 1px;
+  line-height: 1.05;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+  color: #e8ecd8;
 }
 
 #ammoMag.low {
-  color: #e05545;
+  color: #c44a3a;
 }
 
 .ammo-sep {
   margin: 0 6px;
-  color: #77828e;
+  color: #8a8f70;
 }
 
 #ammoReserve {
   font-size: 20px;
-  color: #aab6c2;
+  color: #b8c09a;
 }
 
 #weaponSlots {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .slot {
   font-size: 11px;
+  font-family: var(--hud-mono);
+  letter-spacing: 0.6px;
   padding: 3px 8px;
-  border-radius: 5px;
-  background: rgba(10, 14, 20, 0.55);
-  color: #8b97a3;
-  border: 1px solid transparent;
+  border-radius: 0;
+  background: rgba(8, 10, 6, 0.55);
+  color: #8a8f70;
+  border: 1px solid rgba(201, 179, 106, 0.18);
+  text-transform: uppercase;
 }
 
 .slot.active {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border-color: var(--hud-khaki);
 }
 
 /* ---------- Scoreboard ---------- */
@@ -876,10 +996,7 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   min-width: 340px;
-  background: rgba(10, 14, 20, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 18px 24px;
+  padding: 16px 22px 18px;
   pointer-events: auto;
   user-select: none;
 }
@@ -936,13 +1053,14 @@ body {
   margin-top: 14px;
   padding: 10px 12px;
   font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.6px;
+  font-weight: 700;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.4px;
   text-transform: uppercase;
-  color: #1a1206;
-  background: var(--accent);
-  border: none;
-  border-radius: 8px;
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border: 1px solid #ead889;
+  border-radius: 0;
   cursor: pointer;
 }
 
@@ -951,10 +1069,11 @@ body {
 }
 
 #scoreboard h2 {
-  font-size: 16px;
+  font-size: 15px;
+  font-family: var(--hud-mono);
   text-transform: uppercase;
-  letter-spacing: 2px;
-  color: var(--accent);
+  letter-spacing: 3px;
+  color: var(--hud-khaki);
   margin-bottom: 10px;
 }
 
@@ -992,8 +1111,12 @@ body {
 }
 
 #scoreboard thead th {
-  color: #8b97a3;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: #9aa37a;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(201, 179, 106, 0.28);
 }
 
 #scoreboard tr[data-score-player]:not(.me) {
@@ -1008,17 +1131,19 @@ body {
   display: inline-block;
   margin-left: 6px;
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 0;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.6px;
+  font-family: var(--hud-mono);
+  letter-spacing: 0.8px;
   text-transform: uppercase;
   vertical-align: middle;
 }
 
 #scoreboard .score-tag.host {
-  color: #1a1206;
-  background: var(--accent);
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border-radius: 0;
 }
 
 #scoreboard .score-tag.you {
@@ -1027,7 +1152,7 @@ body {
 }
 
 #scoreboard tr.host:not(.me) td:nth-child(2) {
-  color: var(--accent);
+  color: var(--hud-khaki);
 }
 
 #scoreboard tr.score-team td {
@@ -1059,10 +1184,11 @@ body {
   gap: 8px;
   background: radial-gradient(
     ellipse at center,
-    rgba(10, 2, 2, 0.62),
-    rgba(0, 0, 0, 0.88)
+    rgba(28, 18, 8, 0.55),
+    rgba(6, 8, 4, 0.9)
   );
   animation: deathFadeIn 0.28s ease-out;
+  font-family: var(--hud-stencil);
 }
 
 #deathScreen.hidden {
@@ -1071,10 +1197,11 @@ body {
 
 #deathTitle {
   font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 3px;
+  font-weight: 400;
+  font-family: var(--hud-mono);
+  letter-spacing: 8px;
   text-transform: uppercase;
-  color: #ff6b6b;
+  color: #c44a3a;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
 }
 
@@ -1117,17 +1244,27 @@ body {
 
 #deathKillerHpBar {
   width: 140px;
-  height: 10px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.12);
+  height: 8px;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.45);
   overflow: hidden;
+  border: 1px solid rgba(201, 179, 106, 0.28);
 }
 
 #deathKillerHpFill {
   height: 100%;
   width: 100%;
-  border-radius: 4px;
-  background: #6fd66f;
+  --hp-color: #7aab45;
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 3px,
+      rgba(0, 0, 0, 0.22) 3px,
+      rgba(0, 0, 0, 0.22) 6px
+    ),
+    var(--hp-color);
 }
 
 #deathKillerHpText {
@@ -1139,11 +1276,12 @@ body {
 
 #deathCount {
   font-size: 108px;
-  font-weight: 800;
+  font-weight: 700;
+  font-family: var(--hud-mono);
   line-height: 1;
-  color: #ffffff;
+  color: #e8ecd8;
   text-shadow:
-    0 0 28px rgba(255, 70, 70, 0.55),
+    0 0 28px rgba(196, 74, 58, 0.45),
     0 4px 18px rgba(0, 0, 0, 0.9);
 }
 
@@ -1152,9 +1290,11 @@ body {
 }
 
 #deathTimer {
-  font-size: 15px;
-  letter-spacing: 1px;
-  color: #c8b8b8;
+  font-size: 13px;
+  font-family: var(--hud-mono);
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--hud-khaki);
 }
 
 @keyframes deathFadeIn {
@@ -1216,10 +1356,14 @@ body {
 }
 
 #endTitle {
-  font-size: 34px;
+  font-size: 32px;
   font-weight: 700;
+  font-family: var(--hud-mono);
+  letter-spacing: 3px;
+  text-transform: uppercase;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
   margin-bottom: 0;
+  color: var(--hud-khaki);
 }
 
 #endXpSummary {
@@ -1334,12 +1478,15 @@ body {
 
 #restartButton {
   padding: 10px 24px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #1a1206;
-  background: var(--accent);
-  border: none;
-  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border: 1px solid #ead889;
+  border-radius: 0;
   cursor: pointer;
 }
 
@@ -1416,10 +1563,10 @@ body {
   height: 46px;
   font-size: 22px;
   line-height: 1;
-  color: #c3ccd6;
-  background: rgba(18, 23, 31, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
+  color: var(--hud-khaki);
+  background: rgba(16, 20, 12, 0.92);
+  border: 1px solid var(--hud-khaki-dim);
+  border-radius: 0;
   cursor: pointer;
   transition: transform 0.2s ease, color 0.15s ease;
 }
@@ -1429,7 +1576,7 @@ body {
 }
 
 .page-settings-btn:hover {
-  color: var(--accent);
+  color: var(--hud-khaki);
   transform: rotate(30deg);
 }
 
@@ -2420,6 +2567,7 @@ kbd {
 #hud.prespawn #ammoPanel,
 #hud.prespawn #healthPanel,
 #hud.prespawn #scopeOverlay,
+#hud.prespawn #minimapFrame,
 #hud.prespawn #minimap,
 #hud.prespawn #debug-spread-circle,
 #hud.prespawn #killBadge,
@@ -2713,12 +2861,14 @@ kbd {
   left: 50%;
   transform: translateX(-50%);
   padding: 8px 16px;
-  border-radius: 8px;
-  background: rgba(10, 14, 20, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #b7c2cd;
+  border-radius: 0;
+  background: rgba(16, 20, 12, 0.82);
+  border: 1px solid rgba(201, 179, 106, 0.32);
+  color: var(--hud-khaki);
   font-size: 12px;
-  letter-spacing: 0.4px;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
   pointer-events: none;
   white-space: nowrap;
   max-width: min(920px, 92vw);
@@ -2801,13 +2951,22 @@ kbd {
 
 .end-actions button {
   padding: 10px 24px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #1a1206;
-  background: var(--accent);
-  border: none;
-  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border: 1px solid #ead889;
+  border-radius: 0;
   cursor: pointer;
+}
+
+#endScreen .end-actions button.secondary {
+  background: rgba(16, 20, 12, 0.92);
+  color: var(--hud-khaki);
+  border: 1px solid rgba(201, 179, 106, 0.4);
 }
 
 /* ---------- Configurações ---------- */
@@ -3377,17 +3536,11 @@ kbd {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 80px;
+  bottom: 92px;
   display: flex;
   align-items: center;
   gap: 15px;
   padding: 10px 20px;
-  border-radius: 12px;
-  background: rgba(10, 25, 45, 0.75);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(0, 240, 255, 0.3);
-  box-shadow: 0 4px 20px rgba(0, 240, 255, 0.2);
   min-width: 280px;
   z-index: 5;
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -3401,14 +3554,14 @@ kbd {
 
 .streak-icon {
   font-size: 24px;
-  color: #00f0ff;
+  color: var(--hud-khaki);
   animation: icon-glow 1.5s infinite ease-in-out;
 }
 
 @keyframes icon-glow {
-  0% { transform: scale(1); filter: drop-shadow(0 0 2px #00f0ff); }
-  50% { transform: scale(1.15); filter: drop-shadow(0 0 8px #00f0ff); }
-  100% { transform: scale(1); filter: drop-shadow(0 0 2px #00f0ff); }
+  0% { transform: scale(1); filter: drop-shadow(0 0 2px var(--hud-khaki)); }
+  50% { transform: scale(1.15); filter: drop-shadow(0 0 8px var(--hud-khaki)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 2px var(--hud-khaki)); }
 }
 
 .streak-details {
@@ -3417,8 +3570,9 @@ kbd {
 
 .streak-title {
   font-size: 11px;
-  font-weight: 800;
-  color: #00f0ff;
+  font-weight: 700;
+  font-family: var(--hud-mono);
+  color: var(--hud-khaki);
   letter-spacing: 2px;
   text-transform: uppercase;
   margin-bottom: 4px;
@@ -3428,26 +3582,28 @@ kbd {
   width: 100%;
   height: 6px;
   background: rgba(0, 0, 0, 0.4);
-  border-radius: 3px;
+  border-radius: 0;
   overflow: hidden;
+  border: 1px solid rgba(201, 179, 106, 0.25);
 }
 
 #streakActiveBar {
   height: 100%;
   width: 100%;
-  background: linear-gradient(90deg, #00f0ff, #0077ff);
-  border-radius: 3px;
+  background: linear-gradient(90deg, #7aab45, #c9b36a);
+  border-radius: 0;
   transition: width 0.1s linear;
 }
 
 #streakTimeText {
   font-size: 16px;
   font-weight: 700;
-  color: #fff;
+  font-family: var(--hud-mono);
+  color: #e8ecd8;
   min-width: 40px;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 8px #00f0ff;
+  text-shadow: 0 0 8px rgba(201, 179, 106, 0.55);
 }
 
 /* ---------- Kill Streak Timeline (direita) ---------- */
@@ -3458,11 +3614,6 @@ kbd {
   transform: translateY(-50%);
   width: 168px;
   padding: 12px 12px 10px;
-  border-radius: 10px;
-  background: rgba(8, 14, 22, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   pointer-events: none;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
@@ -3477,16 +3628,17 @@ kbd {
 
 .streak-tl-label {
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 400;
   letter-spacing: 1.6px;
-  color: rgba(200, 214, 230, 0.7);
+  color: var(--hud-khaki);
 }
 
 #streakTlCount {
   font-size: 22px;
-  font-weight: 800;
+  font-weight: 700;
+  font-family: var(--hud-mono);
   font-variant-numeric: tabular-nums;
-  color: #f2f6fa;
+  color: #e8ecd8;
   line-height: 1;
 }
 
@@ -3503,8 +3655,8 @@ kbd {
   top: 8px;
   bottom: 8px;
   width: 3px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
+  border-radius: 0;
+  background: rgba(201, 179, 106, 0.18);
   overflow: hidden;
 }
 
@@ -3514,9 +3666,9 @@ kbd {
   top: 0;
   width: 100%;
   height: 0%;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #00e5ff, #3d8bff);
-  box-shadow: 0 0 8px rgba(0, 229, 255, 0.45);
+  border-radius: 0;
+  background: linear-gradient(180deg, #c9b36a, #7aab45);
+  box-shadow: 0 0 8px rgba(201, 179, 106, 0.4);
   transition: height 0.35s ease;
 }
 
@@ -3551,27 +3703,28 @@ kbd {
   flex-shrink: 0;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
-  border: 2px solid rgba(180, 200, 220, 0.45);
-  background: rgba(10, 16, 24, 0.95);
+  border-radius: 0;
+  border: 2px solid rgba(201, 179, 106, 0.45);
+  background: rgba(12, 14, 8, 0.95);
   display: grid;
   place-items: center;
   font-size: 9px;
+  font-family: var(--hud-mono);
   line-height: 1;
-  color: rgba(220, 230, 240, 0.8);
+  color: rgba(232, 236, 216, 0.8);
   box-sizing: border-box;
 }
 
 .streak-tl-node.earned .streak-tl-dot {
-  border-color: #00e5ff;
-  background: rgba(0, 80, 110, 0.95);
+  border-color: var(--hud-khaki);
+  background: rgba(60, 70, 28, 0.95);
   color: #fff;
-  box-shadow: 0 0 10px rgba(0, 229, 255, 0.55);
+  box-shadow: 0 0 10px rgba(201, 179, 106, 0.5);
 }
 
 .streak-tl-node.next .streak-tl-dot {
-  border-color: #ffb347;
-  color: #ffb347;
+  border-color: var(--hud-amber);
+  color: var(--hud-amber);
   animation: streak-tl-pulse 1.6s ease-in-out infinite;
 }
 
@@ -3603,11 +3756,11 @@ kbd {
 }
 
 .streak-tl-node.earned .streak-tl-name {
-  color: #7ef0ff;
+  color: #d4e08a;
 }
 
 .streak-tl-node.next .streak-tl-name {
-  color: #ffd089;
+  color: #ead889;
 }
 
 .streak-tl-remain {
@@ -3623,17 +3776,17 @@ kbd {
 }
 
 .streak-tl-node.available .streak-tl-dot {
-  border-color: #7ef0ff;
-  background: rgba(0, 80, 110, 0.95);
+  border-color: var(--hud-khaki);
+  background: rgba(60, 70, 28, 0.95);
   color: #fff;
   font-weight: 800;
   font-size: 10px;
-  box-shadow: 0 0 12px rgba(0, 229, 255, 0.8);
+  box-shadow: 0 0 12px rgba(201, 179, 106, 0.75);
   animation: streak-tl-pulse 1.2s ease-in-out infinite;
 }
 
 .streak-tl-node.available .streak-tl-name {
-  color: #7ef0ff;
+  color: var(--hud-khaki);
 }
 
 .streak-tl-press {
@@ -3641,7 +3794,7 @@ kbd {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.4px;
-  color: #7ef0ff;
+  color: var(--hud-khaki);
   text-transform: uppercase;
 }
 
@@ -3651,15 +3804,15 @@ kbd {
 }
 
 .streak-tl-node.active .streak-tl-dot {
-  border-color: #6fd66f;
-  background: rgba(20, 80, 30, 0.95);
-  color: #6fd66f;
+  border-color: #7aab45;
+  background: rgba(30, 50, 18, 0.95);
+  color: #7aab45;
   font-size: 8px;
-  box-shadow: 0 0 12px rgba(111, 214, 111, 0.65);
+  box-shadow: 0 0 12px rgba(122, 171, 69, 0.6);
 }
 
 .streak-tl-node.active .streak-tl-name {
-  color: #6fd66f;
+  color: #7aab45;
 }
 
 .streak-tl-active-tag {
@@ -3667,16 +3820,16 @@ kbd {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.6px;
-  color: #6fd66f;
+  color: #7aab45;
 }
 
 .streak-tl-hint {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(201, 179, 106, 0.2);
   font-size: 11px;
   font-weight: 600;
-  color: rgba(200, 214, 230, 0.78);
+  color: rgba(220, 214, 170, 0.78);
   line-height: 1.3;
 }
 
@@ -3705,22 +3858,21 @@ kbd {
 }
 
 .streak-toast {
-  background: rgba(10, 25, 45, 0.9);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 240, 255, 0.4);
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.25);
-  color: #fff;
+  background: rgba(16, 20, 12, 0.92);
+  border: 1px solid rgba(201, 179, 106, 0.45);
+  box-shadow: 0 0 15px rgba(201, 179, 106, 0.18);
+  color: #e8ecd8;
   padding: 12px 24px;
-  border-radius: 8px;
+  border-radius: 0;
   font-size: 14px;
   font-weight: 700;
-  letter-spacing: 1px;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.4px;
   text-transform: uppercase;
   text-align: center;
   animation: toast-slide-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
              toast-fade-out 0.4s ease forwards 3.6s;
-  border-left: 4px solid #00f0ff;
+  border-left: 4px solid var(--hud-khaki);
 }
 
 @keyframes toast-slide-in {
@@ -5131,4 +5283,775 @@ kbd {
 
 #mapEditorTexture:disabled {
   opacity: 0.45;
+}
+
+/* ========== Menu militar (login / home / lobby) ========== */
+.mil-menu {
+  --accent: var(--hud-khaki);
+  font-family: var(--hud-stencil);
+  color: #e6ead8;
+}
+
+#pageLogin.mil-menu,
+#pageHome.mil-menu,
+#pageLobby.mil-menu,
+#appBoot.mil-menu {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(201, 179, 106, 0.1), transparent 52%),
+    radial-gradient(ellipse at 88% 100%, rgba(55, 72, 28, 0.2), transparent 55%),
+    #0e120c;
+}
+
+#pageLogin.mil-menu::before,
+#pageHome.mil-menu::before,
+#pageLobby.mil-menu::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background: repeating-linear-gradient(
+    -45deg,
+    #c9b36a,
+    #c9b36a 1px,
+    transparent 1px,
+    transparent 9px
+  );
+  z-index: 0;
+}
+
+.mil-menu > * {
+  position: relative;
+  z-index: 1;
+}
+
+.mil-menu .hud-tac {
+  background-color: var(--hud-olive-panel);
+  background-image:
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki)),
+    linear-gradient(var(--hud-khaki), var(--hud-khaki));
+  background-size:
+    11px 2px, 2px 11px,
+    11px 2px, 2px 11px,
+    11px 2px, 2px 11px,
+    11px 2px, 2px 11px;
+  background-position:
+    top left, top left,
+    top right, top right,
+    bottom left, bottom left,
+    bottom right, bottom right;
+  background-repeat: no-repeat;
+  border: 1px solid var(--hud-khaki-dim);
+  border-radius: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.mil-menu .login-card h1,
+.mil-menu .home-top h1,
+.mil-menu .boot-card h1 {
+  font-family: var(--hud-mono);
+  font-size: clamp(1.45rem, 3vw, 1.85rem);
+  font-weight: 400;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #e8ecd8;
+}
+
+.mil-menu .menu-header .hud-tag,
+.mil-menu .home-top .hud-tag {
+  margin-bottom: 8px;
+}
+
+.mil-menu .subtitle {
+  font-family: var(--hud-mono);
+  color: var(--hud-khaki);
+  letter-spacing: 2.4px;
+}
+
+.mil-menu .home-profile h2,
+.mil-menu .home-lobbies h2,
+.mil-menu .lobby-panel h2 {
+  font-family: var(--hud-mono);
+  font-weight: 400;
+  color: var(--hud-khaki);
+}
+
+.mil-menu .profile-name {
+  font-family: var(--hud-stencil);
+  letter-spacing: 0.8px;
+}
+
+.mil-menu .profile-meta,
+.mil-menu .guest-hint,
+.mil-menu #authStatus,
+.mil-menu #connectionStatus,
+.mil-menu .no-rooms,
+.mil-menu .lobby-hint,
+.mil-menu .setting-hint {
+  color: #9aa37a;
+}
+
+.mil-menu .auth-tab {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #9aa37a;
+  background: rgba(12, 14, 8, 0.88);
+  border: 1px solid var(--hud-khaki-dim);
+}
+
+.mil-menu .auth-tab.active {
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border-color: #ead889;
+}
+
+.mil-menu input,
+.mil-menu select,
+.mil-menu .setting-select,
+.mil-menu .lobby-chat-form input,
+.mil-menu .create-room-form input[type="text"] {
+  border-radius: 0;
+  background: rgba(12, 14, 8, 0.92);
+  border: 1px solid var(--hud-khaki-dim);
+  color: #e6ead8;
+  font-family: var(--hud-stencil);
+}
+
+.mil-menu input:focus,
+.mil-menu select:focus,
+.mil-menu .setting-select:focus,
+.mil-menu .lobby-chat-form input:focus,
+.mil-menu .create-room-form input[type="text"]:focus {
+  border-color: var(--hud-khaki);
+  outline: none;
+}
+
+.mil-menu #authForm button[type="submit"],
+.mil-menu #guestContinueButton,
+.mil-menu .social-btn,
+.mil-menu .lobby-actions button,
+.mil-menu .room-row button,
+.mil-menu .lobby-main-action,
+.mil-menu .modal-actions button {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border: 1px solid #ead889;
+}
+
+.mil-menu button.secondary,
+.mil-menu .lobby-actions button.secondary,
+.mil-menu #logoutButton,
+.mil-menu #lobbyLeaveButton,
+.mil-menu .modal-actions button.secondary {
+  color: var(--hud-khaki);
+  background: rgba(16, 20, 12, 0.88);
+  border: 1px solid var(--hud-khaki-dim);
+}
+
+.mil-menu .shop-btn,
+.mil-menu .skins-btn {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.4px;
+  background: rgba(16, 20, 12, 0.72);
+  border: 1px solid var(--hud-khaki);
+  color: var(--hud-khaki);
+}
+
+.mil-menu .shop-btn:hover,
+.mil-menu .skins-btn:hover {
+  background: var(--hud-khaki);
+  color: #1a1608;
+  filter: none;
+}
+
+.mil-menu .stat-cell,
+.mil-menu .rank-panel,
+.mil-menu .room-row,
+.mil-menu .lobby-player-row,
+.mil-menu .lobby-chat-log,
+.mil-menu .lobby-team-col {
+  border-radius: 0;
+  background: rgba(10, 12, 8, 0.55);
+  border: 1px solid rgba(201, 179, 106, 0.18);
+}
+
+.mil-menu .stat-value {
+  font-family: var(--hud-mono);
+  letter-spacing: 0.8px;
+  color: #e8ecd8;
+}
+
+.mil-menu .stat-label {
+  font-family: var(--hud-mono);
+  letter-spacing: 1.4px;
+  color: #9aa37a;
+}
+
+.mil-menu .gold-cell {
+  background: linear-gradient(135deg, rgba(90, 72, 18, 0.4), rgba(10, 14, 8, 0.55));
+  border-color: rgba(201, 179, 106, 0.4);
+}
+
+.mil-menu .gold-cell .stat-value {
+  color: var(--hud-khaki);
+}
+
+.mil-menu .gold-cell .stat-label {
+  color: #c9b36a;
+}
+
+.mil-menu .rank-name {
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--hud-khaki);
+}
+
+.mil-menu .rank-xpbar,
+.mil-menu .rank-xpfill {
+  border-radius: 0;
+}
+
+.mil-menu .rank-xpbar {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(201, 179, 106, 0.25);
+}
+
+.mil-menu .rank-xpfill {
+  background: linear-gradient(90deg, #6b9e3a, var(--hud-khaki));
+}
+
+.mil-menu .rank-xptext {
+  font-family: var(--hud-mono);
+  color: #9aa37a;
+}
+
+.mil-menu .home-3d-view {
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse at 50% 78%, rgba(201, 179, 106, 0.14), transparent 62%),
+    rgba(10, 14, 8, 0.75);
+  border: 1px solid var(--hud-khaki-dim);
+}
+
+.mil-menu .room-meta,
+.mil-menu .lobby-count {
+  color: #9aa37a;
+}
+
+.mil-menu .room-live,
+.mil-menu #lobbyStatus.live {
+  color: #8fbf4a;
+}
+
+.mil-menu .lobby-chip {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+}
+
+.mil-menu .lobby-chip.host {
+  background: rgba(201, 179, 106, 0.2);
+  color: var(--hud-khaki);
+}
+
+.mil-menu .lobby-player-row.self {
+  border-color: var(--hud-khaki);
+}
+
+.mil-menu .lobby-players-list,
+.mil-menu .lobby-chat-log,
+.mil-menu #roomList {
+  scrollbar-color: rgba(201, 179, 106, 0.75) rgba(16, 20, 12, 0.5);
+}
+
+.mil-menu .lobby-main-action.ready {
+  background: #7aab45;
+  border-color: #a8d070;
+  color: #1a1608;
+}
+
+.mil-menu .lobby-main-action.play {
+  background: var(--hud-khaki);
+  color: #1a1608;
+  border-color: #ead889;
+}
+
+.mil-menu .lobby-kick {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+}
+
+.mil-menu .setting-row label {
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: #c4c9a8;
+}
+
+.mil-menu .setting-control input[type="range"] {
+  accent-color: var(--hud-khaki);
+}
+
+#createRoomModal.mil-menu {
+  background: rgba(8, 10, 6, 0.78);
+}
+
+#createRoomModal.mil-menu .modal-card h2 {
+  font-family: var(--hud-mono);
+  font-weight: 400;
+  color: var(--hud-khaki);
+}
+
+.mil-menu .boot-spinner {
+  border-color: rgba(201, 179, 106, 0.18);
+  border-top-color: var(--hud-khaki);
+}
+
+.mil-menu .boot-status {
+  font-family: var(--hud-mono);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--hud-khaki);
+}
+
+.mil-menu .lobby-team-col {
+  overflow: hidden;
+}
+
+.mil-menu .lobby-team-col.alpha {
+  border-color: rgba(77, 141, 255, 0.35);
+}
+
+.mil-menu .lobby-team-col.echo {
+  border-color: rgba(224, 85, 69, 0.35);
+}
+
+.mil-menu #guestPanel {
+  border-top-color: var(--hud-khaki-dim);
+}
+
+.mil-menu .social-badge {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+}
+
+.mil-menu #lobbyBotsValue,
+.mil-menu #createMaxPlayersValue,
+.mil-menu #createBotsValue {
+  font-family: var(--hud-mono);
+  color: var(--hud-khaki);
+}
+
+.mil-menu .lobby-kick {
+  border-radius: 0;
+}
+
+#settingsModal.mil-menu,
+#shopModal.mil-menu,
+#inventoryModal.mil-menu,
+#createRoomModal.mil-menu {
+  background: rgba(8, 10, 6, 0.82);
+}
+
+.mil-menu .modal-card h2,
+.mil-menu .skins-header h2 {
+  font-family: var(--hud-mono);
+  font-weight: 400;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--hud-khaki);
+}
+
+.mil-menu .skins-header {
+  border-bottom-color: var(--hud-khaki-dim);
+  align-items: flex-start;
+}
+
+.mil-menu .skins-header .hud-tag,
+.mil-menu .modal-card > .hud-tag {
+  margin-bottom: 8px;
+}
+
+.mil-menu .skins-hint,
+.mil-menu .shop-empty,
+.mil-menu .shop-section-title {
+  font-family: var(--hud-mono);
+  letter-spacing: 0.8px;
+  color: #9aa37a;
+}
+
+.mil-menu .shop-section-title {
+  border-bottom-color: var(--hud-khaki-dim);
+}
+
+.mil-menu .skins-user-gold {
+  border-radius: 0;
+  background: rgba(12, 14, 8, 0.88);
+  border: 1px solid rgba(201, 179, 106, 0.45);
+  color: var(--hud-khaki);
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.mil-menu .inv-tabs,
+.mil-menu .settings-tabs {
+  border-bottom-color: var(--hud-khaki-dim);
+}
+
+.mil-menu .inv-tab,
+.mil-menu .settings-tab,
+.mil-menu .reticle-style-btn,
+.mil-menu .reticle-mode-btn {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+  color: #9aa37a;
+  background: rgba(12, 14, 8, 0.88);
+  border: 1px solid var(--hud-khaki-dim);
+}
+
+.mil-menu .inv-tab:hover,
+.mil-menu .settings-tab:hover,
+.mil-menu .reticle-style-btn:hover,
+.mil-menu .reticle-mode-btn:hover {
+  color: #e8ecd8;
+  border-color: var(--hud-khaki);
+}
+
+.mil-menu .inv-tab.active,
+.mil-menu .settings-tab.active,
+.mil-menu .reticle-style-btn.active,
+.mil-menu .reticle-mode-btn.active {
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border-color: #ead889;
+}
+
+.mil-menu .settings {
+  border-radius: 0;
+  background: rgba(10, 12, 8, 0.55);
+  border: 1px solid rgba(201, 179, 106, 0.18);
+  scrollbar-color: rgba(201, 179, 106, 0.75) rgba(16, 20, 12, 0.5);
+}
+
+.mil-menu .settings h3 {
+  font-family: var(--hud-mono);
+  color: var(--hud-khaki);
+}
+
+.mil-menu #sensValue,
+.mil-menu #volValue,
+.mil-menu #reticleSizeValue,
+.mil-menu #botsValue {
+  font-family: var(--hud-mono);
+  color: var(--hud-khaki);
+}
+
+.mil-menu .skins-3d-view,
+.mil-menu .reticle-preview-box {
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse at 50% 78%, rgba(201, 179, 106, 0.12), transparent 62%),
+    rgba(10, 14, 8, 0.75);
+  border: 1px solid var(--hud-khaki-dim);
+}
+
+.mil-menu .skins-catalog {
+  scrollbar-color: rgba(201, 179, 106, 0.75) rgba(16, 20, 12, 0.5);
+}
+
+.mil-menu .skin-card {
+  border-radius: 0;
+  background: rgba(10, 12, 8, 0.55);
+  border: 1px solid rgba(201, 179, 106, 0.18);
+}
+
+.mil-menu .skin-card:hover {
+  background: rgba(24, 28, 16, 0.72);
+  border-color: var(--hud-khaki-dim);
+}
+
+.mil-menu .skin-card.is-active {
+  border-color: var(--hud-khaki);
+  background: rgba(201, 179, 106, 0.1);
+}
+
+.mil-menu .skin-info h4 {
+  font-family: var(--hud-stencil);
+  color: #e8ecd8;
+}
+
+.mil-menu .skin-desc {
+  color: #9aa37a;
+}
+
+.mil-menu .skin-price-label {
+  font-family: var(--hud-mono);
+  color: var(--hud-khaki);
+}
+
+.mil-menu .skin-action button {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+}
+
+.mil-menu .btn-equip {
+  background: rgba(16, 20, 12, 0.72);
+  border: 1px solid var(--hud-khaki-dim);
+  color: #e8ecd8;
+}
+
+.mil-menu .btn-equip:hover {
+  background: var(--hud-khaki);
+  color: #1a1608;
+  border-color: #ead889;
+}
+
+.mil-menu .btn-buy {
+  background: var(--hud-khaki);
+  border: 1px solid #ead889;
+  color: #1a1608;
+}
+
+.mil-menu .btn-buy:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 0 10px rgba(201, 179, 106, 0.35);
+}
+
+.mil-menu .btn-equipped {
+  background: rgba(122, 171, 69, 0.16) !important;
+  border: 1px solid #7aab45 !important;
+  color: #8fbf4a !important;
+}
+
+.mil-menu .weapon-select-label {
+  font-family: var(--hud-mono);
+  color: #9aa37a;
+}
+
+.mil-menu .weapon-select-current,
+.mil-menu .weapon-skin-btn,
+.mil-menu .weapon-select-panel {
+  border-radius: 0;
+  background: rgba(12, 14, 8, 0.92);
+  border: 1px solid var(--hud-khaki-dim);
+  color: #e8ecd8;
+  font-family: var(--hud-stencil);
+}
+
+.mil-menu .weapon-select-current:hover,
+.mil-menu .weapon-select-current:focus-visible,
+.mil-menu .weapon-skin-btn:hover,
+.mil-menu .weapon-select.open .weapon-select-current {
+  border-color: var(--hud-khaki);
+  color: var(--hud-khaki);
+  background: rgba(18, 22, 12, 0.96);
+  box-shadow: none;
+}
+
+.mil-menu .weapon-select.open .weapon-select-chevron {
+  color: var(--hud-khaki);
+}
+
+.mil-menu .toggle-control {
+  color: #c4c9a8;
+}
+
+.mil-menu .toggle-control input[type="checkbox"] {
+  accent-color: var(--hud-khaki);
+}
+
+.mil-menu .weapon-option {
+  border-radius: 0;
+  color: #e8ecd8;
+}
+
+.mil-menu .weapon-option:hover,
+.mil-menu .weapon-option:focus-visible {
+  background: rgba(24, 28, 16, 0.85);
+}
+
+.mil-menu .weapon-option.selected {
+  border-color: var(--hud-khaki);
+  background: rgba(201, 179, 106, 0.1);
+}
+
+.mil-menu .weapon-option-check {
+  color: var(--hud-khaki);
+}
+
+.mil-menu .modal-card > .hud-tag {
+  text-align: center;
+}
+
+#loadoutModal.mil-menu {
+  background: rgba(8, 10, 6, 0.82);
+}
+
+#loadoutModal.mil-menu.prespawn {
+  background: rgba(8, 10, 6, 0.28);
+}
+
+.mil-menu .loadout-card h2 {
+  font-family: var(--hud-mono);
+  font-weight: 400;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--hud-khaki);
+}
+
+.mil-menu .loadout-hint {
+  font-family: var(--hud-mono);
+  letter-spacing: 0.6px;
+  color: #9aa37a;
+  text-align: center;
+}
+
+.mil-menu .loadout-hint kbd {
+  border-radius: 0;
+  border-color: var(--hud-khaki-dim);
+  background: rgba(16, 20, 12, 0.85);
+  color: var(--hud-khaki);
+  font-family: var(--hud-mono);
+}
+
+.mil-menu .spawn-btn {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border: 1px solid #ead889;
+}
+
+.mil-menu .spectate-btn {
+  border-radius: 0 !important;
+  font-family: var(--hud-mono);
+  background: rgba(16, 20, 12, 0.88) !important;
+  color: var(--hud-khaki) !important;
+  border: 1px solid var(--hud-khaki-dim) !important;
+}
+
+.mil-menu .spectate-btn:hover {
+  border-color: var(--hud-khaki) !important;
+  color: #ead889 !important;
+}
+
+.social-overlay.mil-menu {
+  background: rgba(8, 10, 6, 0.82);
+}
+
+.mil-menu .social-card h2,
+.mil-menu .add-friend-card h2,
+.mil-menu .friend-info-card h2 {
+  font-family: var(--hud-mono);
+  font-weight: 400;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--hud-khaki);
+}
+
+.mil-menu .social-hint,
+.mil-menu .social-guest,
+.mil-menu .add-friend-status,
+.mil-menu .social-row-status {
+  font-family: var(--hud-mono);
+  color: #9aa37a;
+}
+
+.mil-menu .social-guest {
+  border-radius: 0;
+  background: rgba(10, 12, 8, 0.55);
+  border: 1px solid rgba(201, 179, 106, 0.18);
+  color: #c4c9a8;
+}
+
+.mil-menu .social-section h3 {
+  font-family: var(--hud-mono);
+  color: var(--hud-khaki);
+}
+
+.mil-menu .social-row {
+  border-radius: 0;
+  background: rgba(10, 12, 8, 0.55);
+  border: 1px solid rgba(201, 179, 106, 0.18);
+}
+
+.mil-menu .social-row.friend:hover {
+  border-color: var(--hud-khaki);
+}
+
+.mil-menu .social-row-status.online {
+  color: #8fbf4a;
+}
+
+.mil-menu .social-mini {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.mil-menu .social-mini.accept {
+  color: #1a1608;
+  background: var(--hud-khaki);
+}
+
+.mil-menu .social-mini.decline {
+  color: var(--hud-khaki);
+  background: rgba(16, 20, 12, 0.88);
+  border: 1px solid var(--hud-khaki-dim);
+}
+
+.mil-menu .friend-info-card .home-3d-view canvas {
+  border-radius: 0;
+}
+
+#contextMenu {
+  border-radius: 0;
+  background: rgba(16, 20, 12, 0.98);
+  border: 1px solid var(--hud-khaki-dim);
+  font-family: var(--hud-stencil);
+}
+
+.ctx-item {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  letter-spacing: 0.8px;
+}
+
+.ctx-item:hover:not(:disabled) {
+  background: rgba(201, 179, 106, 0.16);
+  color: var(--hud-khaki);
+}
+
+.social-toast {
+  border-radius: 0;
+  background: rgba(16, 20, 12, 0.97);
+  border: 1px solid var(--hud-khaki-dim);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 12px 40px rgba(0, 0, 0, 0.65);
+}
+
+.social-toast-title {
+  font-family: var(--hud-mono);
+  color: var(--hud-khaki);
 }
