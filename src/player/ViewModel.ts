@@ -237,6 +237,17 @@ function markCatalogTextureOpaque(tex: Texture): void {
   tex.getAlphaFromRGB = false;
 }
 
+function isResourceDisposed(obj: unknown): boolean {
+  if (!obj || typeof obj !== "object") return false;
+  const rec = obj as { isDisposed?: boolean; _isDisposed?: boolean };
+  return Boolean(rec.isDisposed ?? rec._isDisposed);
+}
+
+function catalogTextureUnusable(tex: Texture): boolean {
+  if (isResourceDisposed(tex)) return true;
+  return isResourceDisposed(tex.getInternalTexture());
+}
+
 const sceneTexCache = new WeakMap<Scene, Map<string, Texture>>();
 
 function cachedTexture(scene: Scene, url: string, scale: number): Texture {
@@ -247,6 +258,10 @@ function cachedTexture(scene: Scene, url: string, scale: number): Texture {
   }
   const key = `${url}@${scale}`;
   let tex = map.get(key);
+  if (tex && catalogTextureUnusable(tex)) {
+    map.delete(key);
+    tex = undefined;
+  }
   if (!tex) {
     const created = new Texture(url, scene);
     created.wrapU = Texture.WRAP_ADDRESSMODE;
@@ -366,6 +381,19 @@ export function clearMeshGameTexture(m: AbstractMesh): void {
   const mat = m.material as unknown as TintMat | null;
   if (!mat) return;
   bindMeshTexture(mat, null);
+}
+
+/** Liberta o GLB da arma sem destruir texturas do catálogo (partilhadas com o viewmodel). */
+export function disposeWeaponModelKeepTextures(model: AbstractMesh | null): void {
+  if (!model || model.isDisposed()) return;
+  for (const m of model.getChildMeshes()) {
+    const mat = m.material;
+    if (!mat) continue;
+    clearMeshGameTexture(m);
+    m.material = null;
+    mat.dispose(false, false);
+  }
+  model.dispose(false, false);
 }
 
 /** Aplica (ou limpa) uma textura do catálogo numa parte da arma. */

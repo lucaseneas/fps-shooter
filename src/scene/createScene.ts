@@ -62,7 +62,7 @@ function disposeMapWorld(scene: Scene): void {
   }
   for (const mat of scene.materials.slice()) {
     if ((mat.metadata as { mapWorld?: boolean } | null)?.mapWorld) {
-      mat.dispose(true, true);
+      mat.dispose(true, false);
     }
   }
 }

@@ -9,7 +9,7 @@ import { Material } from "@babylonjs/core/Materials/material";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 
-import { WEAPON_ASSETS, weaponModelTransform, applyWeaponAppearance, clearMeshGameTexture } from "./ViewModel";
+import { WEAPON_ASSETS, weaponModelTransform, applyWeaponAppearance, clearMeshGameTexture, disposeWeaponModelKeepTextures } from "./ViewModel";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { getWeaponSkin } from "../../shared/weaponSkins";
 import { MuzzleFlash } from "../game/effects";
@@ -174,7 +174,7 @@ export class PlayerVisual {
       }
 
       if (this.currentWeaponModel) {
-        this.currentWeaponModel.dispose(false, true);
+        disposeWeaponModelKeepTextures(this.currentWeaponModel);
         this.currentWeaponModel = null;
       }
 
@@ -397,8 +397,10 @@ export class PlayerVisual {
     }
     this.animGroups.clear();
     this.skinTexture?.dispose();
-    this.currentWeaponModel?.dispose(false, true);
+    this.skinTexture = null;
+    disposeWeaponModelKeepTextures(this.currentWeaponModel);
+    this.currentWeaponModel = null;
     this.muzzleFlash.dispose();
-    this.root.dispose(false, true);
+    this.root.dispose(false, false);
   }
 }

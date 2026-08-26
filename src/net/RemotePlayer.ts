@@ -837,6 +837,6 @@ export class RemotePlayer {
     this.chute.dispose();
     this.debugBodyHitbox.dispose();
     this.debugHeadHitbox.dispose();
-    this.root.dispose(false, true);
+    this.root.dispose(false, false);
   }
 }

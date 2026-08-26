@@ -2770,6 +2770,7 @@ function startMatchLocal(): void {
   navigate("/play");
   audio.resume();
   applyClientWorldMap();
+  syncAllViewModelSkins();
   enterPreSpawn();
   pushSocialPresence();
 }
