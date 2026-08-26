@@ -306,6 +306,7 @@ function loadSensitivity(): void {
 let baseSensitivity = 1;
 let adsAmount = 0;
 let lastThirdPersonPeek = false;
+let adsHiddenByOverlay = false;
 const ADS_SENS_SCALE = 0.38;
 
 function applySensitivity(value: number): void {
@@ -651,11 +652,20 @@ let endScreenShown = false;
 let chatTyping = false;
 let loadoutPicking = false;
 let loadoutPickInMatch = false;
+let matchLoadoutDraft: LoadoutSlots | null = null;
+let pendingMatchLoadout: LoadoutSlots | null = null;
+let matchSpectating = false;
+let pendingSpectateAfterDeath = false;
 let awaitingSpawn = false;
 let scoreboardOpen = false;
 let teamSwitchOpen = false;
 let freeSpectating = false;
 let preSpawnKitReady = false;
+
+/** Espectador (pré-spawn ou na partida): sem arma, sem tiro, invisível. */
+function isGhostSpectating(): boolean {
+  return matchSpectating || freeSpectating || player.isSpectating;
+}
 let lastWeaponIndex = 1;
 let pingMs: number | null = null;
 let serverRttMs = 0;
@@ -1521,10 +1531,22 @@ function refreshWeaponSelectUI(container: HTMLElement, w: WeaponDef): void {
 }
 
 function renderLoadoutOptions(): void {
+  const slots =
+    loadoutPickInMatch && matchLoadoutDraft
+      ? matchLoadoutDraft
+      : loadoutPickInMatch
+        ? pendingMatchLoadout ?? weapons.loadout
+        : weapons.loadout;
+
   buildWeaponSelects(
     loadoutOptions,
-    weapons.loadout,
+    slots,
     (container, slot, id) => {
+      if (loadoutPickInMatch) {
+        matchLoadoutDraft = { ...slots, [slot]: id };
+        refreshWeaponSelectUI(container, getWeapon(id)!);
+        return;
+      }
       applySelectedLoadout({ ...weapons.loadout, [slot]: id });
       exitAds();
       refreshWeaponSelectUI(container, getWeapon(id)!);
@@ -1547,6 +1569,9 @@ function applySelectedLoadout(slots: LoadoutSlots): void {
 
 function enterPreSpawn(): void {
   awaitingSpawn = true;
+  pendingMatchLoadout = null;
+  matchSpectating = false;
+  pendingSpectateAfterDeath = false;
   applySelectedLoadout(savedLoadout());
   preSpawnKitReady = true;
   ownInitialized = false;
@@ -1608,7 +1633,7 @@ function disposeLocalPlayerVisual(): void {
 function updateLocalPlayerVisual(dt: number): void {
   if (!localPlayerVisual || !localVisualRoot) return;
 
-  const peeking = player.isThirdPersonPeeking;
+  const peeking = player.isThirdPersonPeeking && !isGhostSpectating();
   localVisualRoot.setEnabled(peeking);
   if (!peeking) return;
 
@@ -1639,20 +1664,26 @@ function updateLocalPlayerVisual(dt: number): void {
 
 function openLoadoutModal(inMatch: boolean): void {
   loadoutPicking = true;
-  loadoutPickInMatch = inMatch;
+  loadoutPickInMatch = inMatch || matchSpectating;
   weapons.setTrigger(false);
   settingsModal.classList.add("hidden");
 
-  if (inMatch) {
+  if (loadoutPickInMatch) {
     player.setMovementEnabled(false);
     player.setLookEnabled(false);
     if (player.isPointerLocked) player.releasePointerLock();
-    loadoutHint.textContent =
-      "Troca as armas nos slots — aplica na hora. ESC ou Confirmar para voltar.";
+    matchLoadoutDraft = {
+      ...(pendingMatchLoadout ?? weapons.loadout),
+    };
+    loadoutHint.textContent = matchSpectating
+      ? "Escolhe as armas e Renascer para voltar · Confirmar guarda para a próxima morte."
+      : "Troca as armas — Confirmar aplica na próxima morte · Renascer troca já · Espectador observa.";
     loadoutCancelButton.textContent = "Confirmar";
     loadoutCancelButton.classList.remove("hidden");
-    spawnButton.classList.add("hidden");
-    spectateButton.classList.add("hidden");
+    spawnButton.textContent = "Renascer";
+    spawnButton.classList.remove("hidden");
+    spawnButton.disabled = false;
+    spectateButton.classList.toggle("hidden", matchSpectating);
     loadoutModal.classList.remove("prespawn");
   } else {
     loadoutHint.textContent = freeSpectating
@@ -1661,6 +1692,7 @@ function openLoadoutModal(inMatch: boolean): void {
     loadoutCancelButton.textContent = "Cancelar";
     loadoutCancelButton.classList.toggle("hidden", !freeSpectating);
     loadoutModal.classList.add("prespawn");
+    spawnButton.textContent = "Spawn";
     spawnButton.classList.toggle("hidden", !preSpawnKitReady);
     spawnButton.disabled = false;
     spectateButton.classList.toggle("hidden", freeSpectating);
@@ -1677,6 +1709,7 @@ function closeLoadoutModal(relock: boolean): void {
   if (!loadoutPicking) return;
   loadoutPicking = false;
   loadoutPickInMatch = false;
+  matchLoadoutDraft = null;
   loadoutModal.classList.add("hidden");
   loadoutModal.classList.remove("prespawn");
   loadoutCancelButton.classList.add("hidden");
@@ -1705,11 +1738,100 @@ function closeLoadoutModal(relock: boolean): void {
   }
 }
 
+function confirmMatchLoadoutPick(): void {
+  if (!loadoutPicking || !loadoutPickInMatch) return;
+  if (matchLoadoutDraft) {
+    pendingMatchLoadout = { ...matchLoadoutDraft };
+    localStorage.setItem(LOADOUT_STORAGE_KEY, JSON.stringify(pendingMatchLoadout));
+  }
+  closeLoadoutModal(true);
+}
+
 function cancelLoadoutPick(): void {
   if (!loadoutPicking) return;
-  if (loadoutPickInMatch || freeSpectating) {
+  if (loadoutPickInMatch) {
+    confirmMatchLoadoutPick();
+    return;
+  }
+  if (freeSpectating) {
     closeLoadoutModal(true);
   }
+}
+
+function closeLoadoutModalWithoutResume(): void {
+  loadoutPicking = false;
+  loadoutPickInMatch = false;
+  matchLoadoutDraft = null;
+  loadoutModal.classList.add("hidden");
+  loadoutModal.classList.remove("prespawn");
+  loadoutCancelButton.classList.add("hidden");
+  spawnButton.classList.add("hidden");
+  spectateButton.classList.add("hidden");
+}
+
+function requestMatchRespawn(): void {
+  if (!room || !loadoutPickInMatch || playerDead || endScreenShown || localPredator) return;
+  const slots = matchLoadoutDraft ?? pendingMatchLoadout ?? weapons.loadout;
+  applySelectedLoadout(slots);
+  pendingMatchLoadout = null;
+  closeLoadoutModalWithoutResume();
+  player.setMovementEnabled(false);
+  player.setLookEnabled(false);
+  player.requestPointerLock();
+  room.send("suicideRespawn");
+}
+
+function exitMatchSpectateUi(): void {
+  matchSpectating = false;
+  freeSpectating = false;
+  pendingSpectateAfterDeath = false;
+  hudRoot.classList.remove("freefly");
+  spectateBanner.classList.add("hidden");
+  player.exitSpectatorOverview();
+}
+
+function requestRespawnFromSpectate(): void {
+  if (!room || !matchSpectating) return;
+  const slots = matchLoadoutDraft ?? pendingMatchLoadout ?? savedLoadout();
+  applySelectedLoadout(slots);
+  pendingMatchLoadout = null;
+  closeLoadoutModalWithoutResume();
+  player.setMovementEnabled(false);
+  player.setLookEnabled(false);
+  player.requestPointerLock();
+  room.send("requestSpawn");
+}
+
+function enterInMatchSpectate(): void {
+  matchSpectating = true;
+  freeSpectating = true;
+  playerDead = false;
+  deathCountdown = 0;
+  pendingSpectateAfterDeath = false;
+  hud.hideDeathScreen();
+  hudRoot.classList.add("freefly");
+  spectateBanner.classList.remove("hidden");
+  viewModel.setVisible(false);
+  weapons.setTrigger(false);
+  weapons.setEnabled(false);
+  player.setMovementEnabled(false);
+  player.setLookEnabled(true);
+  const feet = player.getFeet();
+  player.enterFreeFlySpectator({ x: feet.x, y: feet.y + 2, z: feet.z });
+  player.requestPointerLock();
+}
+
+function enterMatchSpectate(): void {
+  if (!room || !loadoutPickInMatch) return;
+  if (matchLoadoutDraft) {
+    pendingMatchLoadout = { ...matchLoadoutDraft };
+    localStorage.setItem(LOADOUT_STORAGE_KEY, JSON.stringify(pendingMatchLoadout));
+  }
+  closeLoadoutModalWithoutResume();
+  player.setMovementEnabled(false);
+  player.setLookEnabled(false);
+  player.requestPointerLock();
+  room.send("suicideSpectate");
 }
 
 function requestPlayerSpawn(): void {
@@ -1741,8 +1863,18 @@ function enterFreeSpectate(): void {
 }
 
 loadoutCancelButton.addEventListener("click", () => cancelLoadoutPick());
-spawnButton.addEventListener("click", () => requestPlayerSpawn());
-spectateButton.addEventListener("click", () => enterFreeSpectate());
+spawnButton.addEventListener("click", () => {
+  if (loadoutPickInMatch) {
+    if (matchSpectating) requestRespawnFromSpectate();
+    else requestMatchRespawn();
+    return;
+  }
+  requestPlayerSpawn();
+});
+spectateButton.addEventListener("click", () => {
+  if (loadoutPickInMatch) enterMatchSpectate();
+  else enterFreeSpectate();
+});
 
 // --- Inventário do jogador + Loja ---
 // Modelo extensível (shared/inventory): hoje skins de personagem e armas;
@@ -2734,7 +2866,9 @@ function enterLobby(r: Room): void {
   settingsModal.classList.add("hidden");
 
   player.onInput = (input) => {
-    if (ownInitialized && !awaitingSpawn) room?.send("input", input);
+    if (ownInitialized && !awaitingSpawn && !isGhostSpectating()) {
+      room?.send("input", input);
+    }
   };
   player.onStreakKey = (code, key) => {
     trySendActivateStreak(code, key);
@@ -2831,6 +2965,10 @@ function cleanupMatchLocal(): void {
   awaitingSpawn = false;
   preSpawnKitReady = false;
   freeSpectating = false;
+  matchSpectating = false;
+  pendingSpectateAfterDeath = false;
+  pendingMatchLoadout = null;
+  matchLoadoutDraft = null;
   lastKnownHealth = CONFIG.playerMaxHealth;
   pingMs = null;
   serverRttMs = 0;
@@ -3122,6 +3260,10 @@ function openMatchScoreboard(): void {
   weapons.setTrigger(false);
   player.setMovementEnabled(false);
   player.setLookEnabled(false);
+  if (isGhostSpectating()) {
+    weapons.setEnabled(false);
+    viewModel.setVisible(false);
+  }
   if (player.isPointerLocked) player.releasePointerLock();
   refreshMatchScoreboard();
 }
@@ -3137,6 +3279,16 @@ function closeMatchScoreboard(relock: boolean): void {
   scoreboardOpen = false;
   if (!endScreenShown) hud.setScoreboardVisible(false);
   if (awaitingSpawn) return;
+  if (isGhostSpectating()) {
+    weapons.setEnabled(false);
+    viewModel.setVisible(false);
+    player.setLookEnabled(true);
+    player.setMovementEnabled(false);
+    if (relock && inGame && !endScreenShown && !loadoutPicking) {
+      player.requestPointerLock();
+    }
+    return;
+  }
   player.setLookEnabled(true);
   player.setMovementEnabled(!playerDead && !endScreenShown);
   if (relock && inGame && !playerDead && !endScreenShown && !loadoutPicking) {
@@ -3540,32 +3692,50 @@ function setupRoom(r: Room): void {
     killerName: string;
     weaponName: string;
     killerHealth?: number;
+    voluntary?: string;
   }) => {
     if (!inGame) return;
     closeChat(false);
+    weapons.setEnabled(false);
+    exitAdsImmediate();
+    hud.resetKillStreak();
+    setLocalPredator(false);
+    setLocalParachute(false);
+
     playerDead = true;
     deathCountdown = CONFIG.respawnDelay;
     player.setMovementEnabled(false);
-    weapons.setEnabled(false);
-    exitAdsImmediate();
+    player.setLookEnabled(false);
     hud.showDeathScreen(e.killerName, e.weaponName, e.killerHealth ?? 0);
     hud.updateDeathTimer(deathCountdown);
-    hud.resetKillStreak();
     audio.death();
-    setLocalPredator(false);
-    setLocalParachute(false);
+
+    if (e.voluntary === "spectate") {
+      pendingSpectateAfterDeath = true;
+    }
   });
 
   r.onMessage("respawn", (e: { x: number; z: number; y?: number }) => {
     if (!inGame) return;
     const wasPreSpawn = awaitingSpawn;
+    const wasGhost = isGhostSpectating();
     if (wasPreSpawn) {
       loadoutPicking = false;
       loadoutPickInMatch = false;
+      matchLoadoutDraft = null;
       loadoutModal.classList.add("hidden");
       loadoutModal.classList.remove("prespawn");
       loadoutCancelButton.classList.add("hidden");
       exitPreSpawn();
+    }
+
+    if (wasGhost || matchSpectating || freeSpectating) {
+      exitMatchSpectateUi();
+    }
+
+    if (pendingMatchLoadout) {
+      applySelectedLoadout(pendingMatchLoadout);
+      pendingMatchLoadout = null;
     }
 
     player.teleport(new Vector3(e.x, e.y ?? 0, e.z));
@@ -3576,9 +3746,12 @@ function setupRoom(r: Room): void {
     player.setLookEnabled(true);
     playerDead = false;
     hud.hideDeathScreen();
+    viewModel.setWeapon(weapons.weapon);
+    applyEquippedSkinToViewModel(weapons.weapon.id);
+    viewModel.setVisible(true);
     audio.respawn();
 
-    if (wasPreSpawn) {
+    if (wasPreSpawn || wasGhost) {
       settingsModal.classList.add("hidden");
       player.requestPointerLock();
     }
@@ -3969,7 +4142,7 @@ function setLocalParachute(on: boolean, p?: PlayerSnapshot): void {
 }
 
 function handleOwnState(p: PlayerSnapshot): void {
-  if (awaitingSpawn) {
+  if (awaitingSpawn || isGhostSpectating()) {
     return;
   }
 
@@ -4068,7 +4241,7 @@ function scoreboardRows(r: Room): ScoreRow[] {
 }
 
 weapons.onFire = (data) => {
-  if (!room) return;
+  if (!room || isGhostSpectating() || playerDead) return;
   const weaponId = weapons.weapon.id;
   const skin = getVisualWeaponSkin(weaponId);
   room.send("fire", {
@@ -4116,6 +4289,7 @@ function canAds(): boolean {
     player.isPointerLocked &&
     weapons.weapon.id === "awp" &&
     !playerDead &&
+    !isGhostSpectating() &&
     !localPredator &&
     // Correndo (mesmo no ar) o scope fica bloqueado — arma está levantada.
     !(player.isRunning && player.isMoving)
@@ -4221,18 +4395,20 @@ function exitAdsImmediate(): void {
   weapons.setAiming(false);
   lastAdsFov = HIP_FOV;
   player.camera.fov = HIP_FOV;
-  viewModel.setVisible(true);
+  viewModel.setVisible(!playerDead && !isGhostSpectating() && !awaitingSpawn);
   setScopeOverlay(false);
   setCrosshairScoped(false);
   player.setSensitivity(baseSensitivity);
 }
 
 function updateAds(dt: number): void {
-  if (awaitingSpawn) {
+  if (awaitingSpawn || isGhostSpectating()) {
+    adsHiddenByOverlay = true;
     viewModel.setVisible(false);
     return;
   }
   if (localPredator) {
+    adsHiddenByOverlay = false;
     viewModel.setVisible(true);
     if (lastAdsFov !== HIP_FOV) {
       lastAdsFov = HIP_FOV;
@@ -4263,8 +4439,10 @@ function updateAds(dt: number): void {
   const peeking = player.isThirdPersonPeeking;
   const peekChanged = peeking !== lastThirdPersonPeek;
   lastThirdPersonPeek = peeking;
+  const overlayChanged = adsHiddenByOverlay;
+  adsHiddenByOverlay = false;
 
-  if (adsAmount === prevAmount && adsAmount === target && !peekChanged) return;
+  if (adsAmount === prevAmount && adsAmount === target && !peekChanged && !overlayChanged) return;
 
   viewModel.setVisible(adsAmount < 0.45 && !peeking);
   setScopeOverlay(adsAmount > 0.5 && !peeking);
@@ -4276,6 +4454,7 @@ function updateAds(dt: number): void {
 
 canvas.addEventListener("mousedown", (e) => {
   if (!player.isPointerLocked) return;
+  if (isGhostSpectating() || playerDead || awaitingSpawn) return;
   if (e.button === 0) {
     weapons.setTrigger(true);
   }
@@ -4299,7 +4478,7 @@ canvas.addEventListener("contextmenu", (e) => {
   if (player.isPointerLocked) e.preventDefault();
 });
 window.addEventListener("wheel", (e) => {
-  if (!player.isPointerLocked || localPredator) return;
+  if (!player.isPointerLocked || localPredator || isGhostSpectating()) return;
   const from = weapons.weaponIndex;
   weapons.cycleWeapon(e.deltaY > 0 ? 1 : -1);
   rememberWeaponSwitch(from);
@@ -4318,16 +4497,22 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (loadoutPicking) return;
-  if (!player.isPointerLocked) return;
   if (e.code === "KeyI") {
     e.preventDefault();
     if (awaitingSpawn) {
       if (freeSpectating && !loadoutPicking) openLoadoutModal(false);
       return;
     }
+    if (matchSpectating || (freeSpectating && inGame)) {
+      openLoadoutModal(true);
+      return;
+    }
+    if (!player.isPointerLocked) return;
     if (!playerDead && !endScreenShown && !localPredator) openLoadoutModal(true);
     return;
   }
+  if (!player.isPointerLocked) return;
+  if (isGhostSpectating() || playerDead) return;
   if (e.code === "KeyR") weapons.startReload();
   if (e.code === "KeyQ") {
     e.preventDefault();
@@ -4355,7 +4540,7 @@ window.addEventListener("blur", () => {
 function trySendActivateStreak(code: string, key = ""): boolean {
   const reward = killStreakRewardForKey(code, key);
   if (!reward) return false;
-  if (room && inGame && !playerDead && !awaitingSpawn && !endScreenShown) {
+  if (room && inGame && !playerDead && !awaitingSpawn && !endScreenShown && !isGhostSpectating()) {
     room.send("activateStreak", { id: reward.id });
   }
   return true;
@@ -4372,7 +4557,7 @@ function rememberWeaponSwitch(fromIndex: number): void {
 }
 
 function switchTo(index: number): void {
-  if (localPredator) return;
+  if (localPredator || isGhostSpectating()) return;
   const from = weapons.weaponIndex;
   weapons.switchWeapon(index);
   rememberWeaponSwitch(from);
@@ -4414,6 +4599,7 @@ document.addEventListener("pointerlockchange", () => {
   } else if (inGame && !endScreenShown) {
     exitAdsImmediate();
     if (chatTyping || loadoutPicking || scoreboardOpen || teamSwitchOpen) return;
+    if (playerDead || pendingSpectateAfterDeath || isGhostSpectating()) return;
     if (awaitingSpawn && !freeSpectating) return;
     openPauseModal();
   }
@@ -4577,6 +4763,11 @@ engine.runRenderLoop(() => {
   viewModel.setSprinting(sprinting);
   weapons.update(dt);
   updateAds(dt);
+  if (isGhostSpectating()) {
+    weapons.setEnabled(false);
+    weapons.setTrigger(false);
+    viewModel.setVisible(false);
+  }
   updateScopeOverlayBlur(dt);
   viewModel.update(dt);
   if (localHeli && (localPredator || localHeliLinger > 0)) {
@@ -4633,6 +4824,9 @@ engine.runRenderLoop(() => {
   if (playerDead) {
     deathCountdown = Math.max(0, deathCountdown - dt);
     hud.updateDeathTimer(deathCountdown);
+    if (deathCountdown <= 0 && pendingSpectateAfterDeath) {
+      enterInMatchSpectate();
+    }
   }
 
   // Minimapa (~15 Hz é suficiente).

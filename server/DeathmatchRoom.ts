@@ -398,6 +398,24 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.respawnPlayer(id);
     });
 
+    /** Suicídio voluntário — renasce na hora (troca de kit na partida). */
+    this.onMessage("suicideRespawn", (client) => {
+      if (this.state.matchOver) return;
+      const id = client.sessionId;
+      const p = this.state.players.get(id);
+      if (!p || !p.alive || !p.inMatch) return;
+      this.killSelf(id, { immediateRespawn: true });
+    });
+
+    /** Suicídio voluntário — fica em espectador até renascer manualmente. */
+    this.onMessage("suicideSpectate", (client) => {
+      if (this.state.matchOver) return;
+      const id = client.sessionId;
+      const p = this.state.players.get(id);
+      if (!p || !p.alive || !p.inMatch) return;
+      this.killSelf(id, { spectate: true });
+    });
+
     this.setSimulationInterval(
       (dtMs) => this.update(dtMs / 1000),
       CONFIG.simulationIntervalMs
@@ -1272,6 +1290,42 @@ export class DeathmatchRoom extends Room<MatchState> {
     // Só o jogador em debug recebe o traço que o servidor realmente usou.
     if (this.devTracerClients.has(shooterId)) {
       client.send("debugShot", { origin, ends });
+    }
+  }
+
+  /** Morte voluntária (renascer / espectador) — sem kill feed nem crédito de abate. */
+  private killSelf(
+    targetId: string,
+    opts: { immediateRespawn?: boolean; spectate?: boolean }
+  ): void {
+    const target = this.state.players.get(targetId);
+    if (!target || !target.alive) return;
+
+    target.alive = false;
+    target.deaths++;
+    target.killStreak = 0;
+    target.activeStreak = "";
+    target.streakTimeLeft = 0;
+    target.invincibleTimeLeft = 0;
+    target.availableStreaks.clear();
+    this.clearPredator(targetId, target);
+
+    const victimClient = this.clients.find((c) => c.sessionId === targetId);
+    victimClient?.send("died", {
+      killerName: target.name,
+      weaponName: "Suicídio",
+      killerHealth: 0,
+      voluntary: opts.spectate ? "spectate" : "respawn",
+    });
+
+    this.deathPos.set(targetId, { x: target.x, z: target.z });
+
+    if (opts.spectate) {
+      this.bodies.delete(targetId);
+      this.pendingInputs.get(targetId)?.splice(0);
+      this.history.set(targetId, []);
+    } else {
+      this.respawnAt.set(targetId, Date.now() + CONFIG.respawnDelay * 1000);
     }
   }
 
