@@ -666,6 +666,13 @@ let preSpawnKitReady = false;
 function isGhostSpectating(): boolean {
   return matchSpectating || freeSpectating || player.isSpectating;
 }
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return target.isContentEditable;
+}
 let lastWeaponIndex = 1;
 let pingMs: number | null = null;
 let serverRttMs = 0;
@@ -4491,12 +4498,12 @@ window.addEventListener("keydown", (e) => {
     openMatchScoreboard();
     return;
   }
-  if (e.code === "Enter" && inGame && player.isPointerLocked) {
+  if (e.code === "Enter" && inGame && player.isPointerLocked && !isEditableTarget(e.target)) {
     e.preventDefault();
     openChat();
     return;
   }
-  if (loadoutPicking) return;
+  if (loadoutPicking || chatTyping || isEditableTarget(e.target)) return;
   if (e.code === "KeyI") {
     e.preventDefault();
     if (awaitingSpawn) {
