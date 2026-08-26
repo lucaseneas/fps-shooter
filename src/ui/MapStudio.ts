@@ -151,6 +151,7 @@ export class MapStudio {
   private readonly colorInput: HTMLInputElement;
   private readonly texturePicker: TexturePicker;
   private readonly canvas: HTMLCanvasElement;
+  private readonly gizmo: HTMLElement;
   private readonly toastContainer: HTMLElement;
   private readonly objectSelect: HTMLSelectElement;
   private readonly spawnSelect: HTMLSelectElement;
@@ -191,6 +192,7 @@ export class MapStudio {
       },
     });
     this.canvas = el("mapEditorCanvas");
+    this.gizmo = el("mapEditorGizmo");
     this.toastContainer = el("mapStudioToastContainer");
     this.objectSelect = el("mapEditorObject");
     this.spawnSelect = el("mapEditorSpawn");
@@ -231,6 +233,17 @@ export class MapStudio {
     el<HTMLButtonElement>("mapEditorRotate").addEventListener("click", () => {
       this.editor?.rotateSelected();
     });
+    el<HTMLButtonElement>("mapEditorGizmoRotate").addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.editor?.rotateSelected();
+    });
+    el<HTMLButtonElement>("mapEditorGizmoDuplicate").addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.editor?.duplicateSelected();
+    });
+    this.gizmo.addEventListener("pointerdown", (ev) => ev.stopPropagation());
     el<HTMLButtonElement>("mapEditorDelete").addEventListener("click", () => {
       this.editor?.deleteSelected();
     });
@@ -431,6 +444,7 @@ export class MapStudio {
     this.sizePane.classList.add("hidden");
     this.editorPane.classList.add("hidden");
     this.page.classList.remove("map-page-editor");
+    this.placeGizmo(null);
   }
 
   private showSize(): void {
@@ -456,6 +470,7 @@ export class MapStudio {
       this.editor.onChange = () => this.syncStatus();
       this.editor.onSelect = () => this.syncInspector();
     }
+    this.editor.onGizmoMove = (pos) => this.placeGizmo(pos);
     this.editor.start();
     this.editor.load(def);
     requestAnimationFrame(() => this.editor?.resize());
@@ -629,7 +644,7 @@ export class MapStudio {
     if (sel?.type === "piece" && def) {
       const p = def.pieces.find((x) => x.id === sel.id);
       this.selLabel.textContent = p
-        ? `${PIECE_PRESETS[p.kind].label} · R gira · Del apaga`
+        ? `${PIECE_PRESETS[p.kind].label} · R gira 45° · Del apaga`
         : "Peça";
       this.xInput.value = p ? String(p.x) : "0";
       this.zInput.value = p ? String(p.z) : "0";
@@ -705,6 +720,18 @@ export class MapStudio {
     const borderBtn = document.getElementById("mapEditorPickBorder");
     groundBtn?.classList.toggle("active", sel?.type === "ground");
     borderBtn?.classList.toggle("active", sel?.type === "border");
+  }
+
+  private placeGizmo(pos: { x: number; y: number } | null): void {
+    if (!pos) {
+      this.gizmo.classList.add("hidden");
+      this.gizmo.setAttribute("aria-hidden", "true");
+      return;
+    }
+    this.gizmo.classList.remove("hidden");
+    this.gizmo.setAttribute("aria-hidden", "false");
+    this.gizmo.style.left = `${pos.x}px`;
+    this.gizmo.style.top = `${pos.y}px`;
   }
 
   private setLookEnabled(

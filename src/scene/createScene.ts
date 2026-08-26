@@ -125,7 +125,7 @@ function hexToColor3(hex: string): Color3 | null {
 }
 
 function lookKey(b: BoxDef): string {
-  return `${b.kind}|${b.texture ?? ""}|${b.color ?? ""}`;
+  return `${b.kind}|${b.texture ?? ""}|${b.color ?? ""}|${b.yaw ?? 0}`;
 }
 
 function kindDefaultColor(kind: BoxDef["kind"]): Color3 {
@@ -192,6 +192,12 @@ function createMapBoxes(scene: Scene, boxes: readonly BoxDef[]): void {
       scene
     );
     mesh.position = new Vector3(b.x, b.y, b.z);
+    const yaw = ((b.yaw ?? 0) * Math.PI) / 180;
+    if (yaw) {
+      mesh.rotation.y = yaw;
+      mesh.computeWorldMatrix(true);
+      mesh.bakeCurrentTransformIntoVertices();
+    }
     mesh.material = mat;
     mesh.checkCollisions = false;
     tagMap(mesh);

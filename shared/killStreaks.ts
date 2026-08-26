@@ -1,5 +1,6 @@
 import { PLAYER_HEIGHT, PLAYER_RADIUS, type BodyState } from "./movement";
 import type { MapCollision } from "./mapRuntime";
+import { boxCollisionSize } from "./mapData";
 
 /** Recompensas de kill streak (kills sem morrer). */
 export interface KillStreakReward {
@@ -190,8 +191,9 @@ export function stepParachute(
     const bottom = b.y - b.h / 2;
     if (top <= prevFeet + CHUTE_EPS) continue;
     if (bottom >= prevFeet + PLAYER_HEIGHT) continue;
-    const ex = b.w / 2 + PLAYER_RADIUS;
-    const ez = b.d / 2 + PLAYER_RADIUS;
+    const dim = boxCollisionSize(b);
+    const ex = dim.w / 2 + PLAYER_RADIUS;
+    const ez = dim.d / 2 + PLAYER_RADIUS;
     const rx = s.x - b.x;
     const rz = s.z - b.z;
     if (Math.abs(rx) >= ex || Math.abs(rz) >= ez) continue;
@@ -218,8 +220,9 @@ export function stepParachute(
   let landing = s.y <= 0 ? 0 : -Infinity;
   for (const b of map.boxes) {
     const top = b.y + b.h / 2;
-    const ex = b.w / 2 + PLAYER_RADIUS;
-    const ez = b.d / 2 + PLAYER_RADIUS;
+    const dim = boxCollisionSize(b);
+    const ex = dim.w / 2 + PLAYER_RADIUS;
+    const ez = dim.d / 2 + PLAYER_RADIUS;
     if (Math.abs(s.x - b.x) >= ex || Math.abs(s.z - b.z) >= ez) continue;
     if (top <= prevFeet + CHUTE_EPS && s.y <= top && top > landing) {
       landing = top;

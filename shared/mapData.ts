@@ -1,7 +1,8 @@
 /**
  * Geometria do mapa como dados — fonte única usada pelo cliente (render +
  * colisão Babylon) e pelo servidor (física, hitscan e LOS dos bots).
- * Todas as caixas são AABBs: centro (x, y, z) + dimensões completas (w, h, d).
+ * Colisão usa AABBs: centro (x, y, z) + dimensões (w, h, d). Peças com `yaw`
+ * mantêm w/d visuais; a AABB de colisão é o envelope via `boxCollisionSize`.
  *
  * Mapa "Praça" (Fase 5): arena 80x80 com uma praça elevada no centro,
  * um armazém (NO), um corredor fechado (NE, zona de escopeta), um campo
@@ -20,6 +21,23 @@ export interface BoxDef {
   color?: string;
   /** Id de textura do editor (mapa custom). */
   texture?: string;
+  /** Yaw visual em graus (0 / 45 / … / 315). Colisão usa o AABB envelopado. */
+  yaw?: number;
+}
+
+/** Envelope AABB no plano XZ após o yaw da caixa (idêntico a 0°/90°). */
+export function boxCollisionSize(b: {
+  w: number;
+  d: number;
+  yaw?: number;
+}): { w: number; d: number } {
+  const deg = ((b.yaw ?? 0) % 360 + 360) % 360;
+  if (deg === 0 || deg === 180) return { w: b.w, d: b.d };
+  if (deg === 90 || deg === 270) return { w: b.d, d: b.w };
+  const rad = (deg * Math.PI) / 180;
+  const c = Math.abs(Math.cos(rad));
+  const s = Math.abs(Math.sin(rad));
+  return { w: b.w * c + b.d * s, d: b.w * s + b.d * c };
 }
 
 export const MAP_SIZE = 80;

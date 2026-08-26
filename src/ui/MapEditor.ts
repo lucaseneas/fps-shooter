@@ -4,7 +4,7 @@ import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { ArcRotateCameraPointersInput } from "@babylonjs/core/Cameras/Inputs/arcRotateCameraPointersInput";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
-import { Vector3, Color3, Color4, Vector4 } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3, Color4, Vector4, Matrix } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -15,6 +15,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 
 import {
   KIND_DEFAULT_HEX,
+  MAX_MAP_PIECES,
   PIECE_PRESETS,
   aabbAfterYaw,
   applyPieceElev,
@@ -31,7 +32,7 @@ import {
   snapTo,
   stairToBoxes,
   textureUrlFor,
-  yawTo90,
+  yawTo45,
   type CustomMapDef,
   type EditorPiece,
   type EditorPieceKind,
@@ -138,6 +139,7 @@ export class MapEditor {
 
   onChange: (() => void) | null = null;
   onSelect: ((sel: EditorSelection) => void) | null = null;
+  onGizmoMove: ((pos: { x: number; y: number } | null) => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, true, { antialias: true });
@@ -207,13 +209,17 @@ export class MapEditor {
     if (this.running) return;
     this.running = true;
     window.addEventListener("keydown", this.onKey);
-    this.engine.runRenderLoop(() => this.scene.render());
+    this.engine.runRenderLoop(() => {
+      this.scene.render();
+      this.syncGizmo();
+    });
   }
 
   stop(): void {
     this.running = false;
     window.removeEventListener("keydown", this.onKey);
     this.engine.stopRenderLoop();
+    this.onGizmoMove?.(null);
   }
 
   dispose(): void {
@@ -358,9 +364,41 @@ export class MapEditor {
   rotateSelected(): void {
     const p = this.selectedPiece();
     if (!p) return;
-    p.yawDeg = yawTo90(p.yawDeg + 90);
+    p.yawDeg = yawTo45(p.yawDeg - 45);
     this.rebuildPieces();
     this.markDirty();
+    this.updateSelectBox();
+  }
+
+  duplicateSelected(): void {
+    if (!this.def) return;
+    const src = this.selectedPiece();
+    if (!src) return;
+    if (this.def.pieces.length >= MAX_MAP_PIECES) return;
+    const copy: EditorPiece = {
+      id: newPieceId(),
+      kind: src.kind,
+      x: snapTo(src.x + 2, this.grid),
+      y: src.y,
+      z: src.z,
+      w: src.w,
+      h: src.h,
+      d: src.d,
+      elev: src.elev,
+      yawDeg: src.yawDeg,
+      color: src.color,
+      texture: src.texture,
+    };
+    this.clampPiece(copy);
+    if (copy.x === src.x && copy.z === src.z) {
+      copy.z = snapTo(src.z + 2, this.grid);
+      this.clampPiece(copy);
+    }
+    this.def.pieces.push(copy);
+    this.spawnPieceMeshes(copy);
+    this.selection = { type: "piece", id: copy.id };
+    this.markDirty();
+    this.emitSelect();
     this.updateSelectBox();
   }
 
@@ -648,8 +686,10 @@ export class MapEditor {
               x: p.x,
               y: p.y,
               z: p.z,
-              ...aabbAfterYaw(p.w, p.d, p.yawDeg),
+              w: p.w,
               h: p.h,
+              d: p.d,
+              yaw: p.yawDeg,
             },
           ];
     const meshes: Mesh[] = [];
@@ -660,6 +700,7 @@ export class MapEditor {
         this.scene
       );
       mesh.position = new Vector3(b.x, b.y, b.z);
+      mesh.rotation.y = (((b.yaw ?? 0) * Math.PI) / 180);
       mesh.material = this.pieceMat(p);
       mesh.isPickable = true;
       mesh.metadata = { editor: "piece", id: p.id };
@@ -829,7 +870,7 @@ export class MapEditor {
 
   private placePiece(kind: EditorPieceKind, x: number, z: number): void {
     if (!this.def) return;
-    if (this.def.pieces.length >= 250) return;
+    if (this.def.pieces.length >= MAX_MAP_PIECES) return;
     const preset = PIECE_PRESETS[kind];
     const piece: EditorPiece = {
       id: newPieceId(),
@@ -915,21 +956,19 @@ export class MapEditor {
     let w = 1.2;
     let h = 1.4;
     let d = 1.2;
+    let yaw = 0;
     if (this.selection.type === "piece") {
       const p = this.selectedPiece();
       if (!p) return;
-      const dim = aabbAfterYaw(p.w, p.d, p.yawDeg);
       x = p.x;
       y = p.y;
       z = p.z;
-      w = dim.w + 0.12;
+      w = p.w + 0.12;
       h = p.h + 0.12;
-      d = dim.d + 0.12;
+      d = p.d + 0.12;
+      yaw = p.yawDeg;
       if (p.kind === "stair") {
         y = centerYFromElev(p.h, pieceElev(p));
-        h = p.h + 0.12;
-        d = p.d + 0.12;
-        w = p.w + 0.12;
       }
     } else if (this.selection.type === "spawn") {
       const s = this.spawnArray(this.selection.list)[this.selection.index];
@@ -953,6 +992,7 @@ export class MapEditor {
     }
     const box = MeshBuilder.CreateBox("ed_select", { width: w, height: h, depth: d }, this.scene);
     box.position = new Vector3(x, y, z);
+    box.rotation.y = (yaw * Math.PI) / 180;
     const mat = this.mat("select", new Color3(1, 0.62, 0.18), 0.22);
     mat.wireframe = true;
     box.material = mat;
@@ -997,6 +1037,39 @@ export class MapEditor {
       this.brushTexture = p.texture ?? "default";
     }
     this.onSelect?.(this.selection);
+  }
+
+  private projectToView(world: Vector3): { x: number; y: number } | null {
+    const rw = this.engine.getRenderWidth();
+    const rh = this.engine.getRenderHeight();
+    if (rw < 1 || rh < 1) return null;
+    const canvas = this.engine.getRenderingCanvas();
+    const rect = canvas?.getBoundingClientRect();
+    const projected = Vector3.Project(
+      world,
+      Matrix.Identity(),
+      this.scene.getTransformMatrix(),
+      this.camera.viewport.toGlobal(rw, rh)
+    );
+    if (projected.z < 0 || projected.z > 1) return null;
+    const sx = rect ? rect.width / rw : 1;
+    const sy = rect ? rect.height / rh : 1;
+    const x = projected.x * sx;
+    const y = projected.y * sy;
+    const vw = rect?.width ?? rw;
+    const vh = rect?.height ?? rh;
+    if (x < -48 || y < -48 || x > vw + 48 || y > vh + 48) return null;
+    return { x, y };
+  }
+
+  private syncGizmo(): void {
+    const p = this.selectedPiece();
+    if (!p) {
+      this.onGizmoMove?.(null);
+      return;
+    }
+    const world = new Vector3(p.x, p.y + p.h / 2 + 0.55, p.z);
+    this.onGizmoMove?.(this.projectToView(world));
   }
 }
 

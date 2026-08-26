@@ -1,5 +1,6 @@
 import { MAX_MOVE_SPEED_MULT, MIN_MOVE_SPEED_MULT } from "./weapons";
 import { getActiveMap, type MapCollision } from "./mapRuntime";
+import { boxCollisionSize } from "./mapData";
 
 /**
  * Simulação de movimento do player — código COMPARTILHADO e determinístico.
@@ -121,8 +122,9 @@ export function stepPlayer(
     if (top <= prevFeet + STEP_HEIGHT) continue;
     if (bottom >= prevFeet + PLAYER_HEIGHT) continue;
 
-    const ex = b.w / 2 + PLAYER_RADIUS;
-    const ez = b.d / 2 + PLAYER_RADIUS;
+    const dim = boxCollisionSize(b);
+    const ex = dim.w / 2 + PLAYER_RADIUS;
+    const ez = dim.d / 2 + PLAYER_RADIUS;
     const rx = s.x - b.x;
     const rz = s.z - b.z;
     if (Math.abs(rx) >= ex || Math.abs(rz) >= ez) continue;
@@ -154,8 +156,9 @@ export function stepPlayer(
     let landing = s.y <= 0 ? 0 : -Infinity;
     for (const b of boxes) {
       const top = b.y + b.h / 2;
-      const ex = b.w / 2 + PLAYER_RADIUS;
-      const ez = b.d / 2 + PLAYER_RADIUS;
+      const dim = boxCollisionSize(b);
+      const ex = dim.w / 2 + PLAYER_RADIUS;
+      const ez = dim.d / 2 + PLAYER_RADIUS;
       if (Math.abs(s.x - b.x) >= ex || Math.abs(s.z - b.z) >= ez) continue;
 
       // Andando pode "subir" degraus; caindo só pousa em topo que cruzou.

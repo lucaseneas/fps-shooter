@@ -3,6 +3,7 @@ import {
   MAP_SIZE,
   WALL_HEIGHT,
   buildPracaGeometry,
+  boxCollisionSize,
   type BoxDef,
   type MapGeometry,
   type SpawnPoint,
@@ -122,7 +123,7 @@ export interface EditorPiece {
   d: number;
   /** Altura da base acima do chão (0 = apoiado no chão). */
   elev: number;
-  /** 0 / 90 / 180 / 270 — só muda o AABB em múltiplos de 90°. */
+  /** 0 / 45 / … / 315 — visual gira; colisão usa o AABB envelopado. */
   yawDeg: number;
   color?: string;
   texture?: MapTextureId;
@@ -246,18 +247,23 @@ export function snapTo(value: number, grid: number): number {
   return Math.round(value / grid) * grid;
 }
 
+export function yawTo45(deg: number): number {
+  const wrapped = ((Math.round(deg / 45) * 45) % 360 + 360) % 360;
+  return wrapped;
+}
+
 export function yawTo90(deg: number): number {
   const wrapped = ((Math.round(deg / 90) * 90) % 360 + 360) % 360;
   return wrapped;
 }
 
-/** Dimensões AABB depois da rotação de 90° (troca largura/profundidade). */
+/** Envelope AABB no plano XZ depois do yaw (45° inclusive). */
 export function aabbAfterYaw(
   w: number,
   d: number,
   yawDeg: number
 ): { w: number; d: number } {
-  return yawTo90(yawDeg) % 180 === 90 ? { w: d, d: w } : { w, d };
+  return boxCollisionSize({ w, d, yaw: yawDeg });
 }
 
 export function defaultSpawnsForSize(sizeX: number, sizeZ: number = sizeX): SpawnPoint[] {
@@ -376,23 +382,24 @@ export function stairToBoxes(p: EditorPiece): BoxDef[] {
   const length = Math.max(1, p.d);
   const width = Math.max(0.8, p.w);
   const elev = pieceElev(p);
-  const yaw = yawTo90(p.yawDeg);
-  const alongX = yaw === 90 ? 1 : yaw === 270 ? -1 : 0;
-  const alongZ = yaw === 0 ? 1 : yaw === 180 ? -1 : 0;
+  const yaw = yawTo45(p.yawDeg);
+  const rad = (yaw * Math.PI) / 180;
+  const alongX = Math.sin(rad);
+  const alongZ = Math.cos(rad);
   const stepLen = length / steps;
   const boxes: BoxDef[] = [];
   for (let i = 0; i < steps; i++) {
     const t = (i + 0.5) / steps - 0.5;
     const along = t * length;
     const h = (i + 1) * actualStep;
-    const swapped = yaw === 90 || yaw === 270;
     boxes.push({
       x: p.x + alongX * along,
       y: elev + h / 2,
       z: p.z + alongZ * along,
-      w: swapped ? stepLen : width,
+      w: width,
       h,
-      d: swapped ? width : stepLen,
+      d: stepLen,
+      yaw,
       kind: "platform",
       ...lookFromPiece(p),
     });
@@ -409,15 +416,16 @@ function lookFromPiece(p: EditorPiece): Pick<BoxDef, "color" | "texture"> {
 
 function pieceToBoxes(p: EditorPiece): BoxDef[] {
   if (p.kind === "stair") return stairToBoxes(p);
-  const dim = aabbAfterYaw(p.w, p.d, p.yawDeg);
+  const yaw = yawTo45(p.yawDeg);
   return [
     {
       x: p.x,
       y: p.y,
       z: p.z,
-      w: dim.w,
+      w: p.w,
       h: p.h,
-      d: dim.d,
+      d: p.d,
+      yaw,
       kind: p.kind,
       ...lookFromPiece(p),
     },
@@ -490,7 +498,7 @@ function sanitizePiece(raw: unknown): EditorPiece | null {
     h,
     d: num(o.d, preset.d, 0.4, 80),
     elev,
-    yawDeg: yawTo90(num(o.yawDeg, 0, 0, 360)),
+    yawDeg: yawTo45(num(o.yawDeg, 0, 0, 360)),
     color: sanitizeHexColor(o.color),
     texture: sanitizeTextureId(o.texture),
   };

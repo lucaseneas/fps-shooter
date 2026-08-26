@@ -1,4 +1,5 @@
 import { getActiveMap, type MapCollision } from "../shared/mapRuntime";
+import { boxCollisionSize } from "../shared/mapData";
 
 export interface Vec2 {
   x: number;
@@ -22,8 +23,9 @@ export function moveWithCollisions(
   pos.z += dz;
 
   for (const b of geo.boxes) {
-    const ex = b.w / 2 + radius;
-    const ez = b.d / 2 + radius;
+    const dim = boxCollisionSize(b);
+    const ex = dim.w / 2 + radius;
+    const ez = dim.d / 2 + radius;
     const rx = pos.x - b.x;
     const rz = pos.z - b.z;
     if (Math.abs(rx) >= ex || Math.abs(rz) >= ez) continue;
@@ -70,8 +72,9 @@ export function segmentBlocked(
     if (top < minEye) continue;
     if (bottom > maxEye) continue;
 
-    const min = [b.x - b.w / 2, bottom, b.z - b.d / 2];
-    const max = [b.x + b.w / 2, top, b.z + b.d / 2];
+    const dim = boxCollisionSize(b);
+    const min = [b.x - dim.w / 2, bottom, b.z - dim.d / 2];
+    const max = [b.x + dim.w / 2, top, b.z + dim.d / 2];
     const origin = [ax, ay, az];
     const dir = [dx, dy, dz];
 
@@ -200,7 +203,8 @@ export function raycastMap(
   }
 
   for (const b of (map ?? getActiveMap()).boxes) {
-    const t = rayAabb(o, d, b.x, b.y, b.z, b.w / 2, b.h / 2, b.d / 2, best);
+    const dim = boxCollisionSize(b);
+    const t = rayAabb(o, d, b.x, b.y, b.z, dim.w / 2, b.h / 2, dim.d / 2, best);
     if (t !== null && t < best) best = t;
   }
   return best;

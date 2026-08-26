@@ -5110,6 +5110,41 @@ kbd {
   touch-action: none;
 }
 
+#pageMaps .map-gizmo {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 10px));
+}
+
+#pageMaps .map-gizmo.hidden {
+  display: none !important;
+}
+
+#pageMaps button.map-gizmo-btn {
+  pointer-events: auto;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #e8ecf1;
+  background: rgba(16, 20, 28, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  filter: none;
+}
+
+#pageMaps button.map-gizmo-btn:hover {
+  color: #1a1206;
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: none;
+}
+
 .map-tools {
   display: grid;
   grid-template-columns: 1fr;

@@ -4,7 +4,7 @@ import {
   STEP_HEIGHT,
 } from "../shared/movement";
 import type { MapCollision } from "../shared/mapRuntime";
-import type { BoxDef } from "../shared/mapData";
+import { boxCollisionSize, type BoxDef } from "../shared/mapData";
 
 /** Malha de navegação no plano XZ, com altura de piso por célula. */
 export const NAV_CELL = 1.25;
@@ -244,8 +244,9 @@ function capsuleBlocked(
 }
 
 function containsXz(b: BoxDef, x: number, z: number, extra: number): boolean {
+  const dim = boxCollisionSize(b);
   return (
-    Math.abs(x - b.x) < b.w / 2 + extra && Math.abs(z - b.z) < b.d / 2 + extra
+    Math.abs(x - b.x) < dim.w / 2 + extra && Math.abs(z - b.z) < dim.d / 2 + extra
   );
 }
 

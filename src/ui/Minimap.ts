@@ -66,9 +66,18 @@ export class Minimap {
 
     for (const b of this.boxes) {
       ctx.fillStyle = colors[b.kind] ?? "#666";
-      const x = this.toPx(b.x - b.w / 2);
-      const y = this.toPy(b.z + b.d / 2);
-      ctx.fillRect(x, y, b.w * this.scale, b.d * this.scale);
+      const cx = this.toPx(b.x);
+      const cy = this.toPy(b.z);
+      ctx.save();
+      ctx.translate(cx, cy);
+      if (b.yaw) ctx.rotate((-b.yaw * Math.PI) / 180);
+      ctx.fillRect(
+        (-b.w * this.scale) / 2,
+        (-b.d * this.scale) / 2,
+        b.w * this.scale,
+        b.d * this.scale
+      );
+      ctx.restore();
     }
     return off;
   }
