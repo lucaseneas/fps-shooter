@@ -134,7 +134,7 @@ function drawObjectPreview(canvas: HTMLCanvasElement, kind: EditorPieceKind | ""
 }
 
 /**
- * Página de criação de mapas: lista, tamanho, editor 3D e publicação no catálogo global.
+ * Página de mapas: lista, tamanho, editor 3D e publicação no catálogo global.
  */
 export class MapStudio {
   private readonly page: HTMLElement;
@@ -566,7 +566,7 @@ export class MapStudio {
     this.listEl.replaceChildren();
 
     const official = document.createElement("article");
-    official.className = "map-card";
+    official.className = "map-card hud-tac";
     official.innerHTML = `
       <h3>Praça</h3>
       <p>Mapa oficial 80×80.</p>
@@ -592,7 +592,7 @@ export class MapStudio {
     }
     for (const m of maps) {
       const card = document.createElement("article");
-      card.className = "map-card";
+      card.className = "map-card hud-tac";
       const when = new Date(m.updatedAt).toLocaleString("pt-BR");
       const axes = mapAxes(m);
       card.innerHTML = `

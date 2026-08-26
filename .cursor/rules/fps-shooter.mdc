@@ -38,7 +38,7 @@ Config por arma: `WEAPON_CONFIGS` (offset, muzzle, sprint, rotation, targetLengt
 ## Skins de arma
 
 - Catálogo global na tabela Postgres `weapon_skins` (não só JSON). Sem `DATABASE_URL` cai para `server/data/weapon-skins.json`.
-- Estúdio (`Estúdio` no dropdown **Criação**) cria/publica/edita na loja e pode **excluir**. Pode pintar a parte (clique ou dropdown) e/ou aplicar textura do catálogo (mapa ou armamento).
+- Skins de arma (`Skins de Armamentos` no dropdown **Criação**) cria/publica/edita na loja e pode **excluir**. Pode pintar a parte (clique ou dropdown) e/ou aplicar textura do catálogo (mapa ou armamento).
 - Skin **equipada** por arma: `localStorage` `fps.activeWeaponSkins`. Aplicar no `ViewModel` via `setWeaponSkin` ao sacar/trocar arma.
 - Inventário: aba Armas sem 3D + botão “Selecionar skin”; aba Personagem = só o dummy.
 
@@ -48,14 +48,14 @@ Config por arma: `WEAPON_CONFIGS` (offset, muzzle, sprint, rotation, targetLengt
 
 ## Criador de mapas
 
-Rota `/maps`, botão **Criação** (dropdown) na home → **Criação de mapas**. Código: `src/ui/MapStudio.ts` + `src/ui/MapEditor.ts`. Dados: `shared/customMap.ts`.
+Rota `/maps`, botão **Criação** (dropdown) na home → **Mapas**. Código: `src/ui/MapStudio.ts` + `src/ui/MapEditor.ts`. Dados: `shared/customMap.ts`.
 
 - Mapas custom: id `custom:…`. Catálogo **global** na tabela Postgres `custom_maps` (todos os jogadores vêem os mesmos). Sem `localStorage`. Publicar exige conta. GET `/api/maps` é público. A Praça oficial **não** se sobrescreve — editar gera cópia.
 - Geometria = AABBs (`BoxDef`). Escada vira degraus `platform`. Colisão/partida usam `customMapToGeometry` → `mapPayload` no estado da sala (o servidor **não** lê localStorage na partida).
 - Peça pode ter `color` (`#rrggbb` ou `#rrggbbaa` com opacidade) e `texture` (id de `shared/textures.ts`). O mapa também tem `groundColor`/`groundTexture` (chão) e `borderColor`/`borderTexture` (paredes da borda). No editor: botões **Chão** / **Paredes**, ou clique no chão / nas paredes; ao lado da cor há um slider de opacidade. `createScene.applyBoxMap` recebe o look do chão; as bordas vão nos `BoxDef` kind `border`.
 - Spawns: `spawns` = Free-for-All (verde); `spawnsAlpha` = Equipe Alfa / norte (azul); `spawnsEcho` = Equipe Echo / sul (vermelho). São listas **separadas**. Publicar exige ≥1 de cada. Sem spawns de time no JSON, a partida TDM usa fallback norte/sul.
 - Não existe `.hidden` global. Hub/tamanho/editor **precisam** de `#pageMaps .hidden { display: none }`. Sem isso o canvas abre empurrado para baixo. Editor visível: `position: absolute; inset: 0`.
-- Botões da página não herdam estilo do lobby: estilizar via `#pageMaps button` (laranja) / `.secondary` / `.map-tool`.
+- A página de mapas usa o tema militar (`mil-menu`): botões caqui / `.secondary` / `.map-tool`, iguais ao resto do menu.
 
 ## Mata-Mata em equipe (`tdm`)
 

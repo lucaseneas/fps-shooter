@@ -292,10 +292,10 @@
               </button>
               <div class="create-menu-panel hidden" id="createMenuPanel" role="menu">
                 <button type="button" id="mapStudioButton" class="create-menu-item" role="menuitem">
-                  Criação de mapas
+                  Mapas
                 </button>
                 <button type="button" id="skinStudioButton" class="create-menu-item" role="menuitem">
-                  Estúdio
+                  Skins de Armamentos
                 </button>
               </div>
             </div>
@@ -457,12 +457,13 @@
     </div>
 
     <!-- Página /maps — criador de mapas -->
-    <div id="pageMaps" class="app-page hidden">
+    <div id="pageMaps" class="app-page mil-menu hidden">
       <div id="mapStudioToastContainer"></div>
       <div id="mapStudioHub" class="map-studio-hub">
         <header class="home-top">
           <div>
-            <h1>Criação de mapas</h1>
+            <span class="hud-tag">Criação</span>
+            <h1>Mapas</h1>
             <p class="subtitle">Edite um mapa existente ou crie um novo no plano 3D</p>
           </div>
           <div class="home-top-actions">
@@ -475,7 +476,7 @@
       </div>
 
       <div id="mapStudioSize" class="map-studio-size hidden">
-        <div class="map-size-card">
+        <div class="map-size-card hud-tac">
           <h2>Tamanho do mapa</h2>
           <p>Escolha a largura (X) e a profundidade (Z). Você também pode alterar isso depois, durante a edição.</p>
           <div class="map-size-custom">
@@ -893,13 +894,13 @@
       </div>
     </div>
 
-    <!-- Estúdio de Skins — criação e edição de skins de arma -->
+    <!-- Skins de Armamentos — criação e edição de skins de arma -->
     <div id="skinStudioModal" class="mil-menu hidden">
       <div class="modal-card skins-card studio-card hud-tac">
         <header class="skins-header">
           <div>
             <span class="hud-tag">Arsenal</span>
-            <h2>Estúdio de Skins</h2>
+            <h2>Skins de Armamentos</h2>
             <p class="skins-hint">
               Clique na arma ou escolha a parte no menu. Pinte, aplique
               textura e defina nome e preço. Skins já publicadas podem ser
