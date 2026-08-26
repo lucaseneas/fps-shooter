@@ -62,6 +62,7 @@ export type EditorSelection =
   | null;
 
 const SPAWN_MARKER_H = 1.2;
+export const ELEV_STEP = 0.5;
 
 function spawnMarkerY(s: Pick<SpawnPoint, "y">): number {
   return spawnFeetY(s) + SPAWN_MARKER_H / 2;
@@ -381,6 +382,36 @@ export class MapEditor {
     p.yawDeg = yawTo45(p.yawDeg - 45);
     this.rebuildPieces();
     this.markDirty();
+    this.updateSelectBox();
+  }
+
+  nudgeElevation(delta: number): void {
+    if (!this.def || !delta) return;
+    const piece = this.selectedPiece();
+    if (piece) {
+      const cur = pieceElev(piece);
+      const next = clampElev(cur + delta);
+      if (next === cur) return;
+      applyPieceElev(piece, next);
+      this.brush.elev = next;
+      this.rebuildPieces();
+      this.markDirty();
+      this.emitSelect();
+      this.updateSelectBox();
+      return;
+    }
+    if (this.selection?.type !== "spawn") return;
+    const s = this.spawnArray(this.selection.list)[this.selection.index];
+    if (!s) return;
+    const cur = spawnFeetY(s);
+    const next = clampElev(cur + delta);
+    if (next === cur) return;
+    s.y = next;
+    this.clampSpawn(s);
+    this.brush.elev = spawnFeetY(s);
+    this.rebuildSpawns();
+    this.markDirty();
+    this.emitSelect();
     this.updateSelectBox();
   }
 
@@ -1056,6 +1087,16 @@ export class MapEditor {
     if (ev.key.toLowerCase() === "r") {
       ev.preventDefault();
       this.rotateSelected();
+      return;
+    }
+    if (ev.key === "PageUp") {
+      ev.preventDefault();
+      this.nudgeElevation(ELEV_STEP);
+      return;
+    }
+    if (ev.key === "PageDown") {
+      ev.preventDefault();
+      this.nudgeElevation(-ELEV_STEP);
     }
   }
 
@@ -1101,12 +1142,22 @@ export class MapEditor {
 
   private syncGizmo(): void {
     const p = this.selectedPiece();
-    if (!p) {
-      this.onGizmoMove?.(null);
+    if (p) {
+      const world = new Vector3(p.x, p.y + p.h / 2 + 0.55, p.z);
+      this.onGizmoMove?.(this.projectToView(world));
       return;
     }
-    const world = new Vector3(p.x, p.y + p.h / 2 + 0.55, p.z);
-    this.onGizmoMove?.(this.projectToView(world));
+    if (this.selection?.type === "spawn") {
+      const s = this.spawnArray(this.selection.list)[this.selection.index];
+      if (!s) {
+        this.onGizmoMove?.(null);
+        return;
+      }
+      const world = new Vector3(s.x, spawnMarkerY(s) + SPAWN_MARKER_H / 2 + 0.55, s.z);
+      this.onGizmoMove?.(this.projectToView(world));
+      return;
+    }
+    this.onGizmoMove?.(null);
   }
 }
 

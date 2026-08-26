@@ -1,4 +1,4 @@
-import { MapEditor, type EditorTool } from "./MapEditor";
+import { MapEditor, ELEV_STEP, type EditorTool } from "./MapEditor";
 import { TexturePicker } from "./TexturePicker";
 import {
   deleteCustomMap,
@@ -252,6 +252,16 @@ export class MapStudio {
       ev.preventDefault();
       ev.stopPropagation();
       this.editor?.duplicateSelected();
+    });
+    el<HTMLButtonElement>("mapEditorGizmoElevUp").addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.editor?.nudgeElevation(ELEV_STEP);
+    });
+    el<HTMLButtonElement>("mapEditorGizmoElevDown").addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.editor?.nudgeElevation(-ELEV_STEP);
     });
     this.gizmo.addEventListener("pointerdown", (ev) => ev.stopPropagation());
     el<HTMLButtonElement>("mapEditorDelete").addEventListener("click", () => {
@@ -657,7 +667,7 @@ export class MapStudio {
     if (sel?.type === "piece" && def) {
       const p = def.pieces.find((x) => x.id === sel.id);
       this.selLabel.textContent = p
-        ? `${PIECE_PRESETS[p.kind].label} · R gira 45° · Del apaga`
+        ? `${PIECE_PRESETS[p.kind].label} · setas de elevação · R gira 45° · Del apaga`
         : "Peça";
       this.xInput.value = p ? String(p.x) : "0";
       this.zInput.value = p ? String(p.z) : "0";
@@ -749,6 +759,7 @@ export class MapStudio {
     }
     this.gizmo.classList.remove("hidden");
     this.gizmo.setAttribute("aria-hidden", "false");
+    this.gizmo.classList.toggle("map-gizmo-spawn", this.editor?.selected?.type === "spawn");
     this.gizmo.style.left = `${pos.x}px`;
     this.gizmo.style.top = `${pos.y}px`;
   }

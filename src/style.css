@@ -5178,6 +5178,7 @@ kbd {
   position: absolute;
   z-index: 6;
   display: flex;
+  align-items: center;
   gap: 8px;
   pointer-events: none;
   transform: translate(-50%, calc(-100% - 10px));
@@ -5185,6 +5186,12 @@ kbd {
 
 #pageMaps .map-gizmo.hidden {
   display: none !important;
+}
+
+#pageMaps .map-gizmo-elev {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 #pageMaps button.map-gizmo-btn {
@@ -5202,11 +5209,20 @@ kbd {
   filter: none;
 }
 
+#pageMaps .map-gizmo-elev button.map-gizmo-btn {
+  width: 32px;
+  height: 32px;
+}
+
 #pageMaps button.map-gizmo-btn:hover {
   color: #1a1206;
   background: var(--accent);
   border-color: var(--accent);
   filter: none;
+}
+
+#pageMaps .map-gizmo-spawn .map-gizmo-piece-only {
+  display: none;
 }
 
 .map-tools {
