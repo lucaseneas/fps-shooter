@@ -16,6 +16,8 @@ import {
   makeEmptyMap,
   mapAxes,
   pracaToCustomMap,
+  resolveBorderLook,
+  resolveGroundLook,
   type CustomMapDef,
   type EditorPieceKind,
   type MapTextureId,
@@ -181,7 +183,7 @@ export class MapStudio {
     this.texturePicker = new TexturePicker(el("mapEditorTexturePicker"), {
       includeDefault: true,
       includeNone: true,
-      defaultLabel: "Padrão da peça",
+      defaultLabel: "Padrão",
       noneLabel: "Só cor",
       onChange: (id) => {
         this.editor?.setAppearance(this.colorInput.value, id as MapTextureId);
@@ -341,6 +343,17 @@ export class MapStudio {
     };
     this.colorInput.addEventListener("input", applyLook);
     this.colorInput.addEventListener("change", () => this.editor?.commit());
+
+    el<HTMLButtonElement>("mapEditorPickGround").addEventListener("click", () => {
+      this.editor?.selectSurface("ground");
+      this.syncTools();
+      this.syncInspector();
+    });
+    el<HTMLButtonElement>("mapEditorPickBorder").addEventListener("click", () => {
+      this.editor?.selectSurface("border");
+      this.syncTools();
+      this.syncInspector();
+    });
 
     window.addEventListener("resize", () => this.editor?.resize());
   }
@@ -627,6 +640,22 @@ export class MapStudio {
         p?.color ?? (p ? KIND_DEFAULT_HEX[p.kind] : "#888888"),
         p?.texture ?? "default"
       );
+    } else if (sel?.type === "ground" && def) {
+      const look = resolveGroundLook(def);
+      this.selLabel.textContent = "Chão do mapa · escolha cor e textura";
+      this.xInput.value = "";
+      this.zInput.value = "";
+      this.xInput.disabled = true;
+      this.zInput.disabled = true;
+      this.setLookEnabled(true, look.color, look.texture);
+    } else if (sel?.type === "border" && def) {
+      const look = resolveBorderLook(def);
+      this.selLabel.textContent = "Paredes da borda · escolha cor e textura";
+      this.xInput.value = "";
+      this.zInput.value = "";
+      this.xInput.disabled = true;
+      this.zInput.disabled = true;
+      this.setLookEnabled(true, look.color, look.texture);
     } else if (sel?.type === "spawn" && def) {
       const list =
         sel.list === "alpha"
@@ -643,7 +672,7 @@ export class MapStudio {
       this.setLookEnabled(false);
     } else {
       if (tool === "select") {
-        this.selLabel.textContent = "Clique numa peça ou escolha um objeto / spawn";
+        this.selLabel.textContent = "Clique numa peça, no chão ou nas paredes da borda";
       } else if (tool === "spawn") {
         this.selLabel.textContent = "Clique no chão para spawn Free-for-All (verde)";
       } else if (tool === "spawnAlpha") {
@@ -653,7 +682,7 @@ export class MapStudio {
       } else if (isObjectTool(tool)) {
         this.selLabel.textContent = `Clique no chão para colocar ${PIECE_PRESETS[tool].label.toLowerCase()}`;
       } else {
-        this.selLabel.textContent = "Clique numa peça ou escolha um objeto / spawn";
+        this.selLabel.textContent = "Clique numa peça, no chão ou nas paredes da borda";
       }
       this.xInput.value = "";
       this.zInput.value = "";
@@ -665,6 +694,17 @@ export class MapStudio {
         "default"
       );
     }
+    const lookHint = document.getElementById("mapEditorLookHint");
+    if (lookHint) {
+      if (sel?.type === "ground") lookHint.textContent = "Textura do chão";
+      else if (sel?.type === "border") lookHint.textContent = "Textura das paredes da borda";
+      else if (sel?.type === "piece") lookHint.textContent = "Textura da peça selecionada";
+      else lookHint.textContent = "Peça, chão ou paredes da borda";
+    }
+    const groundBtn = document.getElementById("mapEditorPickGround");
+    const borderBtn = document.getElementById("mapEditorPickBorder");
+    groundBtn?.classList.toggle("active", sel?.type === "ground");
+    borderBtn?.classList.toggle("active", sel?.type === "border");
   }
 
   private setLookEnabled(

@@ -49,7 +49,7 @@ export const KIND_DEFAULT_TEXTURE: Record<EditorPieceKind | "border", MapTexture
 };
 
 export const KIND_DEFAULT_HEX: Record<
-  EditorPieceKind | "border" | "spawn" | "spawnAlpha" | "spawnEcho",
+  EditorPieceKind | "border" | "ground" | "spawn" | "spawnAlpha" | "spawnEcho",
   string
 > = {
   wall: "#525f75",
@@ -58,13 +58,14 @@ export const KIND_DEFAULT_HEX: Record<
   platform: "#598c66",
   stair: "#9e9480",
   border: "#383d47",
+  ground: "#cfd2d8",
   spawn: "#40d96b",
   spawnAlpha: "#4d8dff",
   spawnEcho: "#e05545",
 };
 
 export function textureUrlFor(
-  kind: EditorPieceKind | BoxDef["kind"],
+  kind: EditorPieceKind | BoxDef["kind"] | "ground",
   texture?: string
 ): string | null {
   if (texture === "none") return null;
@@ -72,9 +73,29 @@ export function textureUrlFor(
     return textureUrlById(texture);
   }
   if (kind === "building") return null;
+  if (kind === "ground") return textureUrlById("floor");
   const fallback =
     KIND_DEFAULT_TEXTURE[kind === "border" ? "border" : (kind as EditorPieceKind)] ?? "wall";
   return textureUrlById(fallback);
+}
+
+export interface MapSurfaceLook {
+  color: string;
+  texture: MapTextureId;
+}
+
+export function resolveGroundLook(def: CustomMapDef): MapSurfaceLook {
+  return {
+    color: def.groundColor ?? "#cfd2d8",
+    texture: def.groundTexture ?? "floor",
+  };
+}
+
+export function resolveBorderLook(def: CustomMapDef): MapSurfaceLook {
+  return {
+    color: def.borderColor ?? KIND_DEFAULT_HEX.border,
+    texture: def.borderTexture ?? "bg_wall",
+  };
 }
 
 export function sanitizeHexColor(v: unknown): string | undefined {
@@ -123,6 +144,12 @@ export interface CustomMapDef {
   spawnsAlpha: SpawnPoint[];
   /** Spawns da Equipe Echo (Mata-Mata em equipe). */
   spawnsEcho: SpawnPoint[];
+  /** Aparência do chão (opcional; padrão = pedra). */
+  groundColor?: string;
+  groundTexture?: MapTextureId;
+  /** Aparência das paredes da borda (opcional; padrão = concreto escuro). */
+  borderColor?: string;
+  borderTexture?: MapTextureId;
   updatedAt: number;
 }
 
@@ -321,16 +348,23 @@ export function pracaToCustomMap(): CustomMapDef {
   };
 }
 
-export function borderBoxes(sizeX: number, sizeZ: number = sizeX): BoxDef[] {
+export function borderBoxes(
+  sizeX: number,
+  sizeZ: number = sizeX,
+  look?: Pick<BoxDef, "color" | "texture">
+): BoxDef[] {
   const halfX = sizeX / 2;
   const halfZ = sizeZ / 2;
   const t = 1;
   const h = WALL_HEIGHT;
+  const extra: Pick<BoxDef, "color" | "texture"> = {};
+  if (look?.color) extra.color = look.color;
+  if (look?.texture && look.texture !== "default") extra.texture = look.texture;
   return [
-    { x: 0, y: h / 2, z: halfZ, w: sizeX, h, d: t, kind: "border" },
-    { x: 0, y: h / 2, z: -halfZ, w: sizeX, h, d: t, kind: "border" },
-    { x: halfX, y: h / 2, z: 0, w: t, h, d: sizeZ, kind: "border" },
-    { x: -halfX, y: h / 2, z: 0, w: t, h, d: sizeZ, kind: "border" },
+    { x: 0, y: h / 2, z: halfZ, w: sizeX, h, d: t, kind: "border", ...extra },
+    { x: 0, y: h / 2, z: -halfZ, w: sizeX, h, d: t, kind: "border", ...extra },
+    { x: halfX, y: h / 2, z: 0, w: t, h, d: sizeZ, kind: "border", ...extra },
+    { x: -halfX, y: h / 2, z: 0, w: t, h, d: sizeZ, kind: "border", ...extra },
   ];
 }
 
@@ -392,7 +426,11 @@ function pieceToBoxes(p: EditorPiece): BoxDef[] {
 
 export function customMapToBoxes(def: CustomMapDef): BoxDef[] {
   const { sizeX, sizeZ } = mapAxes(def);
-  const boxes = borderBoxes(sizeX, sizeZ);
+  const border = resolveBorderLook(def);
+  const boxes = borderBoxes(sizeX, sizeZ, {
+    color: border.color,
+    texture: border.texture,
+  });
   for (const p of def.pieces) boxes.push(...pieceToBoxes(p));
   return boxes;
 }
@@ -424,6 +462,8 @@ export function customMapToGeometry(def: CustomMapDef): MapGeometry {
     spawns: spawns.map((s) => ({ x: s.x, z: s.z })),
     spawnsAlpha: spawnsAlpha.map((s) => ({ x: s.x, z: s.z })),
     spawnsEcho: spawnsEcho.map((s) => ({ x: s.x, z: s.z })),
+    groundColor: resolveGroundLook(def).color,
+    groundTexture: resolveGroundLook(def).texture,
   };
 }
 
@@ -503,6 +543,12 @@ export function sanitizeCustomMap(raw: unknown): CustomMapDef | null {
     spawns: spawns.slice(0, MAX_SPAWNS),
     spawnsAlpha: sanitizeSpawnList(o.spawnsAlpha, sizeX, sizeZ),
     spawnsEcho: sanitizeSpawnList(o.spawnsEcho, sizeX, sizeZ),
+    groundColor: sanitizeHexColor(o.groundColor),
+    groundTexture:
+      o.groundTexture !== undefined ? sanitizeTextureId(o.groundTexture) : undefined,
+    borderColor: sanitizeHexColor(o.borderColor),
+    borderTexture:
+      o.borderTexture !== undefined ? sanitizeTextureId(o.borderTexture) : undefined,
     updatedAt: num(o.updatedAt, Date.now(), 0, Date.now() + 1e12),
   };
 }
@@ -530,6 +576,10 @@ export function cloneCustomMap(def: CustomMapDef): CustomMapDef {
     spawns: def.spawns.map((s) => ({ ...s })),
     spawnsAlpha: (def.spawnsAlpha ?? []).map((s) => ({ ...s })),
     spawnsEcho: (def.spawnsEcho ?? []).map((s) => ({ ...s })),
+    groundColor: def.groundColor,
+    groundTexture: def.groundTexture,
+    borderColor: def.borderColor,
+    borderTexture: def.borderTexture,
     updatedAt: def.updatedAt,
   };
 }

@@ -72,27 +72,38 @@ export function applyBoxMap(
   scene: Scene,
   boxes: readonly BoxDef[],
   mapSizeX: number,
-  mapSizeZ: number = mapSizeX
+  mapSizeZ: number = mapSizeX,
+  groundLook?: { color?: string; texture?: string }
 ): void {
   disposeMapWorld(scene);
   const fogSize = Math.max(mapSizeX, mapSizeZ);
   scene.fogStart = Math.max(20, fogSize * 0.75);
   scene.fogEnd = Math.max(60, fogSize * 2.1);
-  createGround(scene, mapSizeX, mapSizeZ);
+  createGround(scene, mapSizeX, mapSizeZ, groundLook);
   createMapBoxes(scene, boxes);
 }
 
-function createGround(scene: Scene, mapSizeX: number, mapSizeZ: number): void {
+function createGround(
+  scene: Scene,
+  mapSizeX: number,
+  mapSizeZ: number,
+  look?: { color?: string; texture?: string }
+): void {
   const ground = MeshBuilder.CreateGround(
     "ground",
     { width: mapSizeX, height: mapSizeZ },
     scene
   );
   const mat = new StandardMaterial("groundMat", scene);
-  const floorTex = new Texture("/assets/textures/map/floor.png", scene);
-  floorTex.uScale = mapSizeX / 4;
-  floorTex.vScale = mapSizeZ / 4;
-  mat.diffuseTexture = floorTex;
+  const url = textureUrlFor("ground", look?.texture);
+  if (url) {
+    const floorTex = new Texture(url, scene);
+    floorTex.uScale = mapSizeX / 4;
+    floorTex.vScale = mapSizeZ / 4;
+    mat.diffuseTexture = floorTex;
+  }
+  const tint = look?.color ? hexToColor3(look.color) : null;
+  mat.diffuseColor = tint ?? new Color3(1, 1, 1);
   mat.specularColor = new Color3(0.02, 0.02, 0.02);
   mat.freeze();
   tagMap(mat);

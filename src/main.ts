@@ -859,7 +859,10 @@ function applyClientWorldMap(): void {
         if (def) {
           const geo = customMapToGeometry(def);
           setActiveMapGeometry(geo, def.name);
-          applyBoxMap(scene, geo.boxes, geo.mapSizeX, geo.mapSizeZ);
+          applyBoxMap(scene, geo.boxes, geo.mapSizeX, geo.mapSizeZ, {
+            color: geo.groundColor,
+            texture: geo.groundTexture,
+          });
           minimap.rebuild(geo.boxes, geo.mapSizeX, geo.mapSizeZ);
           return;
         }

@@ -5257,6 +5257,23 @@ kbd {
   gap: 8px;
 }
 
+.map-surface-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+#pageMaps .map-surface-btn {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+#pageMaps .map-surface-btn.active {
+  background: var(--accent);
+  color: #1a1206;
+  border-color: transparent;
+}
+
 #mapEditorColor {
   width: 44px;
   height: 38px;

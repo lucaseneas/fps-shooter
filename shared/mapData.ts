@@ -146,6 +146,8 @@ export interface MapGeometry {
   spawnsAlpha: SpawnPoint[];
   /** Spawns da Equipe Echo (Mata-Mata em equipe). */
   spawnsEcho: SpawnPoint[];
+  groundColor?: string;
+  groundTexture?: string;
 }
 
 /** Praça hardcoded — usada como mapa padrão e como template no editor. */

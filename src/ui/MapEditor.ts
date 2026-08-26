@@ -4,7 +4,7 @@ import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { ArcRotateCameraPointersInput } from "@babylonjs/core/Cameras/Inputs/arcRotateCameraPointersInput";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
-import { Vector3, Color3, Color4 } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3, Color4, Vector4 } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -26,6 +26,8 @@ import {
   mapAxes,
   newPieceId,
   pieceElev,
+  resolveBorderLook,
+  resolveGroundLook,
   snapTo,
   stairToBoxes,
   textureUrlFor,
@@ -53,6 +55,8 @@ export type SpawnListId = "ffa" | "alpha" | "echo";
 export type EditorSelection =
   | { type: "piece"; id: string }
   | { type: "spawn"; list: SpawnListId; index: number }
+  | { type: "ground" }
+  | { type: "border" }
   | null;
 
 const KIND_COLOR: Record<
@@ -128,6 +132,8 @@ export class MapEditor {
   private ghost: Mesh | null = null;
   private selectBox: Mesh | null = null;
   private ground: Mesh | null = null;
+  private gridOverlay: Mesh | null = null;
+  private borderMeshes: Mesh[] = [];
   private readonly mats = new Map<string, StandardMaterial>();
 
   onChange: (() => void) | null = null;
@@ -265,6 +271,21 @@ export class MapEditor {
   }
 
   setAppearance(color: string, texture: MapTextureId): void {
+    if (!this.def) return;
+    if (this.selection?.type === "ground") {
+      this.def.groundColor = color;
+      this.def.groundTexture = texture;
+      this.rebuildGround();
+      this.emitChange();
+      return;
+    }
+    if (this.selection?.type === "border") {
+      this.def.borderColor = color;
+      this.def.borderTexture = texture;
+      this.rebuildBorders();
+      this.emitChange();
+      return;
+    }
     this.brushColor = color;
     this.brushTexture = texture;
     const piece = this.selectedPiece();
@@ -273,6 +294,16 @@ export class MapEditor {
     piece.texture = texture;
     this.rebuildPieces();
     this.emitChange();
+  }
+
+  selectSurface(type: "ground" | "border"): void {
+    const wasBorder = this.selection?.type === "border";
+    this.tool = "select";
+    this.selection = { type };
+    this.emitSelect();
+    this.updateSelectBox();
+    this.updateGhost();
+    if (wasBorder || type === "border") this.rebuildBorders();
   }
 
   commit(): void {
@@ -450,6 +481,10 @@ export class MapEditor {
     this.spawnMeshes = [];
     this.ground?.dispose();
     this.ground = null;
+    this.gridOverlay?.dispose();
+    this.gridOverlay = null;
+    for (const m of this.borderMeshes) m.dispose();
+    this.borderMeshes = [];
     this.ghost?.dispose();
     this.ghost = null;
     this.selectBox?.dispose();
@@ -481,46 +516,116 @@ export class MapEditor {
     return t;
   }
 
+  private getTexScaled(url: string, uScale: number, vScale: number): Texture {
+    const key = `${url}@${uScale}x${vScale}`;
+    let t = this.textures.get(key);
+    if (!t) {
+      t = new Texture(url, this.scene);
+      t.wrapU = Texture.WRAP_ADDRESSMODE;
+      t.wrapV = Texture.WRAP_ADDRESSMODE;
+      t.uScale = uScale;
+      t.vScale = vScale;
+      this.textures.set(key, t);
+    }
+    return t;
+  }
+
   private pieceMat(p: EditorPiece): StandardMaterial {
     const hex = p.color ?? KIND_DEFAULT_HEX[p.kind];
     const url = textureUrlFor(p.kind, p.texture);
     return this.mat(`piece:${p.kind}:${p.texture ?? "default"}:${hex}`, hexToColor3(hex), 1, url);
   }
 
+  private rebuildGround(): void {
+    this.ground?.dispose();
+    this.ground = null;
+    this.gridOverlay?.dispose();
+    this.gridOverlay = null;
+    this.buildGround();
+  }
+
+  private rebuildBorders(): void {
+    for (const m of this.borderMeshes) m.dispose();
+    this.borderMeshes = [];
+    this.buildBorders();
+  }
+
   private buildGround(): void {
     if (!this.def) return;
     const { sizeX, sizeZ } = mapAxes(this.def);
+    const look = resolveGroundLook(this.def);
     const ground = MeshBuilder.CreateGround(
       "ed_ground",
       { width: sizeX, height: sizeZ },
       this.scene
     );
-    const grid = new GridMaterial("ed_grid", this.scene);
-    grid.majorUnitFrequency = 5;
-    grid.minorUnitVisibility = 0.45;
-    grid.gridRatio = 1;
-    grid.mainColor = new Color3(0.16, 0.18, 0.22);
-    grid.lineColor = new Color3(0.32, 0.36, 0.42);
-    grid.opacity = 0.95;
-    ground.material = grid;
+    const url = textureUrlFor("ground", look.texture);
+    const mat = new StandardMaterial("ed_ground_mat", this.scene);
+    mat.diffuseColor = hexToColor3(look.color);
+    mat.specularColor = new Color3(0.03, 0.03, 0.03);
+    if (url) {
+      mat.diffuseTexture = this.getTexScaled(url, sizeX / 4, sizeZ / 4);
+    }
+    ground.material = mat;
     ground.isPickable = true;
     ground.metadata = { editor: "ground" };
     this.ground = ground;
+
+    const gridMesh = MeshBuilder.CreateGround(
+      "ed_grid",
+      { width: sizeX, height: sizeZ },
+      this.scene
+    );
+    gridMesh.position.y = 0.02;
+    const grid = new GridMaterial("ed_grid_mat", this.scene);
+    grid.majorUnitFrequency = 5;
+    grid.minorUnitVisibility = 0.35;
+    grid.gridRatio = 1;
+    grid.mainColor = new Color3(0.16, 0.18, 0.22);
+    grid.lineColor = new Color3(0.42, 0.48, 0.55);
+    grid.opacity = 0.22;
+    gridMesh.material = grid;
+    gridMesh.isPickable = false;
+    gridMesh.metadata = { editor: "grid" };
+    this.gridOverlay = gridMesh;
   }
 
   private buildBorders(): void {
     if (!this.def) return;
     const { sizeX, sizeZ } = mapAxes(this.def);
+    const look = resolveBorderLook(this.def);
+    const url = textureUrlFor("border", look.texture);
+    const selected = this.selection?.type === "border";
+    const tileScale = 4;
     for (const b of borderBoxes(sizeX, sizeZ)) {
+      const wUV = b.w / tileScale;
+      const hUV = b.h / tileScale;
+      const dUV = b.d / tileScale;
+      const faceUV = [
+        new Vector4(0, 0, wUV, hUV),
+        new Vector4(0, 0, wUV, hUV),
+        new Vector4(0, 0, dUV, hUV),
+        new Vector4(0, 0, dUV, hUV),
+        new Vector4(0, 0, wUV, dUV),
+        new Vector4(0, 0, wUV, dUV),
+      ];
       const mesh = MeshBuilder.CreateBox(
         "ed_border",
-        { width: b.w, height: b.h, depth: b.d },
+        { width: b.w, height: b.h, depth: b.d, faceUV, wrap: true },
         this.scene
       );
       mesh.position = new Vector3(b.x, b.y, b.z);
-      mesh.material = this.mat("border", KIND_COLOR.border);
-      mesh.isPickable = false;
+      const mat = this.mat(
+        `border:${look.texture}:${look.color}:${selected ? "sel" : ""}`,
+        hexToColor3(look.color),
+        1,
+        url
+      );
+      if (selected) mat.emissiveColor = new Color3(0.18, 0.1, 0.04);
+      mesh.material = mat;
+      mesh.isPickable = true;
       mesh.metadata = { editor: "border" };
+      this.borderMeshes.push(mesh);
     }
   }
 
@@ -614,7 +719,16 @@ export class MapEditor {
         return meta?.editor === "piece" || meta?.editor === "spawn";
       }
     );
-    return pick?.hit ? pick.pickedMesh : null;
+    if (pick?.hit && pick.pickedMesh) return pick.pickedMesh;
+    const surface = this.scene.pick(
+      this.scene.pointerX,
+      this.scene.pointerY,
+      (m) => {
+        const meta = m.metadata as { editor?: string } | null;
+        return meta?.editor === "border" || meta?.editor === "ground";
+      }
+    );
+    return surface?.hit ? surface.pickedMesh : null;
   }
 
   private onPointerDown(): void {
@@ -625,6 +739,7 @@ export class MapEditor {
         this.selection = null;
         this.emitSelect();
         this.updateSelectBox();
+        this.rebuildBorders();
         return;
       }
       const meta = picked.metadata as {
@@ -633,6 +748,7 @@ export class MapEditor {
         index?: number;
         list?: SpawnListId;
       };
+      const wasBorder = this.selection?.type === "border";
       if (meta.editor === "piece" && meta.id) {
         this.selection = { type: "piece", id: meta.id };
         const p = this.selectedPiece();
@@ -652,9 +768,14 @@ export class MapEditor {
           this.dragMoved = false;
           this.dragOffset = { x: s.x - hit.x, z: s.z - hit.z };
         }
+      } else if (meta.editor === "ground") {
+        this.selection = { type: "ground" };
+      } else if (meta.editor === "border") {
+        this.selection = { type: "border" };
       }
       this.emitSelect();
       this.updateSelectBox();
+      if (wasBorder || this.selection?.type === "border") this.rebuildBorders();
       return;
     }
 
@@ -810,11 +931,25 @@ export class MapEditor {
         d = p.d + 0.12;
         w = p.w + 0.12;
       }
-    } else {
+    } else if (this.selection.type === "spawn") {
       const s = this.spawnArray(this.selection.list)[this.selection.index];
       if (!s) return;
       x = s.x;
       z = s.z;
+    } else if (this.selection.type === "ground") {
+      const { sizeX, sizeZ } = mapAxes(this.def);
+      y = 0.04;
+      h = 0.08;
+      w = sizeX;
+      d = sizeZ;
+    } else if (this.selection.type === "border") {
+      const { sizeX, sizeZ } = mapAxes(this.def);
+      y = 3;
+      h = 6.2;
+      w = sizeX + 1.2;
+      d = sizeZ + 1.2;
+    } else {
+      return;
     }
     const box = MeshBuilder.CreateBox("ed_select", { width: w, height: h, depth: d }, this.scene);
     box.position = new Vector3(x, y, z);

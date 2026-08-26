@@ -541,7 +541,11 @@
         </div>
         <aside id="mapEditorLookPanel" class="map-editor-side map-editor-look-side">
           <p class="studio-label">Aparência</p>
-          <p class="skins-hint">Cor e textura da peça (mapa ou armamento)</p>
+          <div class="map-surface-row">
+            <button type="button" id="mapEditorPickGround" class="secondary map-surface-btn">Chão</button>
+            <button type="button" id="mapEditorPickBorder" class="secondary map-surface-btn">Paredes</button>
+          </div>
+          <p class="skins-hint" id="mapEditorLookHint">Peça, chão ou paredes da borda</p>
           <div id="mapEditorLook" class="map-look">
             <div class="map-look-row">
               <input type="color" id="mapEditorColor" value="#525f75" title="Cor" />
