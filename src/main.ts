@@ -2718,10 +2718,36 @@ function closeSkinStudio(): void {
   resumeProfilePreviewsIfVisible();
 }
 
+const createMenu = document.getElementById("createMenu");
+const createMenuButton = document.getElementById("createMenuButton");
+const createMenuPanel = document.getElementById("createMenuPanel");
+
+function setCreateMenuOpen(open: boolean): void {
+  if (!createMenu || !createMenuButton || !createMenuPanel) return;
+  createMenu.classList.toggle("open", open);
+  createMenuPanel.classList.toggle("hidden", !open);
+  createMenuButton.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+createMenuButton?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  setCreateMenuOpen(!createMenu?.classList.contains("open"));
+});
 document.getElementById("mapStudioButton")?.addEventListener("click", () => {
+  setCreateMenuOpen(false);
   navigate("/maps");
 });
-document.getElementById("skinStudioButton")?.addEventListener("click", openSkinStudio);
+document.getElementById("skinStudioButton")?.addEventListener("click", () => {
+  setCreateMenuOpen(false);
+  openSkinStudio();
+});
+document.addEventListener("click", (e) => {
+  if (!createMenu || createMenu.contains(e.target as Node)) return;
+  setCreateMenuOpen(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setCreateMenuOpen(false);
+});
 skinStudioCancel.addEventListener("click", closeSkinStudio);
 skinStudioModal.addEventListener("click", (e) => {
   if (e.target === skinStudioModal) closeSkinStudio();

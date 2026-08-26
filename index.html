@@ -279,8 +279,26 @@
           </div>
           <div class="home-top-actions">
             <button type="button" id="shopButton" class="social-btn shop-btn">Loja</button>
-            <button type="button" id="mapStudioButton" class="social-btn shop-btn">Criação de mapas</button>
-            <button type="button" id="skinStudioButton" class="social-btn">🎨 Estúdio</button>
+            <div class="create-menu" id="createMenu">
+              <button
+                type="button"
+                id="createMenuButton"
+                class="social-btn shop-btn create-menu-btn"
+                aria-expanded="false"
+                aria-haspopup="true"
+                aria-controls="createMenuPanel"
+              >
+                Criação <span class="create-menu-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div class="create-menu-panel hidden" id="createMenuPanel" role="menu">
+                <button type="button" id="mapStudioButton" class="create-menu-item" role="menuitem">
+                  Criação de mapas
+                </button>
+                <button type="button" id="skinStudioButton" class="create-menu-item" role="menuitem">
+                  Estúdio
+                </button>
+              </div>
+            </div>
             <button type="button" id="socialButton" class="social-btn">
               Social <span class="social-badge hidden" id="socialBadge">0</span>
             </button>

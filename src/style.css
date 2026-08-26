@@ -4389,9 +4389,74 @@ kbd {
 
 .home-top-actions .social-btn,
 .home-top-actions .secondary,
+.home-top-actions .create-menu,
 #logoutButton,
 #lobbyLeaveButton {
   flex-shrink: 0;
+}
+
+.create-menu {
+  position: relative;
+  z-index: 40;
+}
+
+.create-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.create-menu-chevron {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.85;
+  transition: transform 0.15s ease;
+}
+
+.create-menu.open .create-menu-chevron {
+  transform: rotate(180deg);
+}
+
+.create-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(10, 12, 8, 0.96);
+  border: 1px solid var(--hud-khaki-dim);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+
+.create-menu-panel.hidden {
+  display: none;
+}
+
+.create-menu-item {
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  font-family: var(--hud-mono);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--hud-khaki);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.create-menu-item:hover,
+.create-menu-item:focus-visible {
+  color: #1a1608;
+  background: var(--hud-khaki);
+  border-color: #ead889;
+  outline: none;
 }
 
 .social-btn {

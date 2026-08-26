@@ -38,7 +38,7 @@ Config por arma: `WEAPON_CONFIGS` (offset, muzzle, sprint, rotation, targetLengt
 ## Skins de arma
 
 - Catálogo global na tabela Postgres `weapon_skins` (não só JSON). Sem `DATABASE_URL` cai para `server/data/weapon-skins.json`.
-- Estúdio (`🎨 Estúdio`) cria/publica na loja e pode **excluir**. Pode pintar a parte e/ou aplicar textura do catálogo (mapa ou armamento).
+- Estúdio (`Estúdio` no dropdown **Criação**) cria/publica na loja e pode **excluir**. Pode pintar a parte e/ou aplicar textura do catálogo (mapa ou armamento).
 - Skin **equipada** por arma: `localStorage` `fps.activeWeaponSkins`. Aplicar no `ViewModel` via `setWeaponSkin` ao sacar/trocar arma.
 - Inventário: aba Armas sem 3D + botão “Selecionar skin”; aba Personagem = só o dummy.
 
@@ -48,7 +48,7 @@ Config por arma: `WEAPON_CONFIGS` (offset, muzzle, sprint, rotation, targetLengt
 
 ## Criador de mapas
 
-Rota `/maps`, botão **Criação de mapas** na home. Código: `src/ui/MapStudio.ts` + `src/ui/MapEditor.ts`. Dados: `shared/customMap.ts`.
+Rota `/maps`, botão **Criação** (dropdown) na home → **Criação de mapas**. Código: `src/ui/MapStudio.ts` + `src/ui/MapEditor.ts`. Dados: `shared/customMap.ts`.
 
 - Mapas custom: id `custom:…`. Catálogo **global** na tabela Postgres `custom_maps` (todos os jogadores vêem os mesmos). Sem `localStorage`. Publicar exige conta. GET `/api/maps` é público. A Praça oficial **não** se sobrescreve — editar gera cópia.
 - Geometria = AABBs (`BoxDef`). Escada vira degraus `platform`. Colisão/partida usam `customMapToGeometry` → `mapPayload` no estado da sala (o servidor **não** lê localStorage na partida).
