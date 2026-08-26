@@ -239,8 +239,15 @@ function markCatalogTextureOpaque(tex: Texture): void {
 
 function isResourceDisposed(obj: unknown): boolean {
   if (!obj || typeof obj !== "object") return false;
-  const rec = obj as { isDisposed?: boolean; _isDisposed?: boolean };
-  return Boolean(rec.isDisposed ?? rec._isDisposed);
+  const rec = obj as { isDisposed?: boolean | (() => boolean); _isDisposed?: boolean };
+  if (typeof rec.isDisposed === "function") {
+    try {
+      return Boolean(rec.isDisposed.call(obj));
+    } catch {
+      return true;
+    }
+  }
+  return Boolean(rec._isDisposed ?? rec.isDisposed);
 }
 
 function catalogTextureUnusable(tex: Texture): boolean {
@@ -386,7 +393,11 @@ export function clearMeshGameTexture(m: AbstractMesh): void {
 /** Liberta o GLB da arma sem destruir texturas do catálogo (partilhadas com o viewmodel). */
 export function disposeWeaponModelKeepTextures(model: AbstractMesh | null): void {
   if (!model || model.isDisposed()) return;
-  for (const m of model.getChildMeshes()) {
+  const meshes = [model, ...model.getChildMeshes()];
+  const seen = new Set<AbstractMesh>();
+  for (const m of meshes) {
+    if (seen.has(m)) continue;
+    seen.add(m);
     const mat = m.material;
     if (!mat) continue;
     clearMeshGameTexture(m);

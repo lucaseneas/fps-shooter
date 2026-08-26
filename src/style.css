@@ -4146,6 +4146,7 @@ kbd {
 .studio-card {
   width: 980px;
   max-width: calc(100vw - 32px);
+  text-align: left;
 }
 
 .studio-body {
@@ -4231,18 +4232,9 @@ kbd {
   gap: 10px;
 }
 
-.studio-part-name {
+.studio-part-row select {
   flex: 1;
-  font-family: monospace;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(10, 14, 20, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 8px 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
 }
 
 #skinStudioColor {
@@ -4255,12 +4247,19 @@ kbd {
   cursor: pointer;
 }
 
-.studio-part-actions {
+#skinStudioColor:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.studio-part-actions,
+.studio-published-actions {
   display: flex;
   gap: 8px;
 }
 
-.studio-part-actions button {
+.studio-part-actions button,
+.studio-published-actions button {
   flex: 1;
   padding: 7px 10px;
   font-size: 12px;
@@ -5516,6 +5515,36 @@ kbd {
   box-shadow: 0 0 0 1px var(--accent);
 }
 
+#skinStudioModal.mil-menu .tex-picker-tab {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+  color: #9aa37a !important;
+  background: rgba(12, 14, 8, 0.88) !important;
+  border: 1px solid var(--hud-khaki-dim) !important;
+}
+
+#skinStudioModal.mil-menu .tex-picker-tab.active {
+  color: #1a1608 !important;
+  background: var(--hud-khaki) !important;
+  border-color: #ead889 !important;
+}
+
+#skinStudioModal.mil-menu .tex-swatch {
+  border-radius: 0;
+  border-color: var(--hud-khaki-dim) !important;
+  background-color: rgba(12, 14, 8, 0.92) !important;
+}
+
+#skinStudioModal.mil-menu .tex-swatch:hover {
+  border-color: var(--hud-khaki) !important;
+}
+
+#skinStudioModal.mil-menu .tex-swatch.selected {
+  border-color: var(--hud-khaki) !important;
+  box-shadow: 0 0 0 1px var(--hud-khaki);
+}
+
 .tex-swatch-empty {
   background-image: linear-gradient(135deg, #2a3140 25%, #1a2029 25%, #1a2029 50%, #2a3140 50%, #2a3140 75%, #1a2029 75%) !important;
   background-size: 12px 12px !important;
@@ -5915,7 +5944,8 @@ kbd {
 #settingsModal.mil-menu,
 #shopModal.mil-menu,
 #inventoryModal.mil-menu,
-#createRoomModal.mil-menu {
+#createRoomModal.mil-menu,
+#skinStudioModal.mil-menu {
   background: rgba(8, 10, 6, 0.82);
 }
 
@@ -6015,12 +6045,44 @@ kbd {
 }
 
 .mil-menu .skins-3d-view,
-.mil-menu .reticle-preview-box {
+.mil-menu .reticle-preview-box,
+.mil-menu .studio-view {
   border-radius: 0;
   background:
     radial-gradient(ellipse at 50% 78%, rgba(201, 179, 106, 0.12), transparent 62%),
     rgba(10, 14, 8, 0.75);
   border: 1px solid var(--hud-khaki-dim);
+}
+
+.mil-menu .studio-hint {
+  font-family: var(--hud-mono);
+  letter-spacing: 0.6px;
+  color: #9aa37a;
+  border-top-color: var(--hud-khaki-dim);
+}
+
+.mil-menu .studio-label {
+  font-family: var(--hud-mono);
+  letter-spacing: 1.2px;
+  color: #9aa37a;
+}
+
+.mil-menu .studio-side select,
+.mil-menu .studio-side input[type="text"],
+.mil-menu .studio-side input[type="number"],
+.mil-menu #skinStudioColor {
+  border-radius: 0;
+  background: rgba(12, 14, 8, 0.92);
+  border: 1px solid var(--hud-khaki-dim);
+  color: #e6ead8;
+}
+
+.mil-menu .studio-part-actions button,
+.mil-menu .studio-published-actions button {
+  border-radius: 0;
+  font-family: var(--hud-mono);
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 
 .mil-menu .skins-catalog {

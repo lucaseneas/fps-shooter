@@ -199,7 +199,7 @@ const customSkins = new Map<string, WeaponSkinDef>();
 
 const SKIN_ID_MAX = 64;
 const SKIN_NAME_MAX = 32;
-const MAX_PARTS = 64;
+const MAX_PARTS = 256;
 
 function isValidColor(c: unknown): c is [number, number, number] {
   return (

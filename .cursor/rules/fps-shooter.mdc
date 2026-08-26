@@ -38,7 +38,7 @@ Config por arma: `WEAPON_CONFIGS` (offset, muzzle, sprint, rotation, targetLengt
 ## Skins de arma
 
 - Catálogo global na tabela Postgres `weapon_skins` (não só JSON). Sem `DATABASE_URL` cai para `server/data/weapon-skins.json`.
-- Estúdio (`Estúdio` no dropdown **Criação**) cria/publica na loja e pode **excluir**. Pode pintar a parte e/ou aplicar textura do catálogo (mapa ou armamento).
+- Estúdio (`Estúdio` no dropdown **Criação**) cria/publica/edita na loja e pode **excluir**. Pode pintar a parte (clique ou dropdown) e/ou aplicar textura do catálogo (mapa ou armamento).
 - Skin **equipada** por arma: `localStorage` `fps.activeWeaponSkins`. Aplicar no `ViewModel` via `setWeaponSkin` ao sacar/trocar arma.
 - Inventário: aba Armas sem 3D + botão “Selecionar skin”; aba Personagem = só o dummy.
 

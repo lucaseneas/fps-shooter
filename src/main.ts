@@ -2607,7 +2607,7 @@ inventoryWeaponSkinBack?.addEventListener("click", closeWeaponSkinPicker);
 const skinStudioModal = document.getElementById("skinStudioModal") as HTMLDivElement;
 const skinStudioCanvas = document.getElementById("skinStudioCanvas") as HTMLCanvasElement;
 const skinStudioWeapon = document.getElementById("skinStudioWeapon") as HTMLSelectElement;
-const skinStudioPartName = document.getElementById("skinStudioPartName") as HTMLSpanElement;
+const skinStudioPartSelect = document.getElementById("skinStudioPartSelect") as HTMLSelectElement;
 const skinStudioColor = document.getElementById("skinStudioColor") as HTMLInputElement;
 const skinStudioClearPart = document.getElementById("skinStudioClearPart") as HTMLButtonElement;
 const skinStudioClearAll = document.getElementById("skinStudioClearAll") as HTMLButtonElement;
@@ -2615,6 +2615,7 @@ const skinStudioPartsCount = document.getElementById("skinStudioPartsCount") as 
 const skinStudioName = document.getElementById("skinStudioName") as HTMLInputElement;
 const skinStudioPrice = document.getElementById("skinStudioPrice") as HTMLInputElement;
 const skinStudioPublished = document.getElementById("skinStudioPublished") as HTMLSelectElement;
+const skinStudioNew = document.getElementById("skinStudioNew") as HTMLButtonElement;
 const skinStudioDelete = document.getElementById("skinStudioDelete") as HTMLButtonElement;
 const skinStudioSave = document.getElementById("skinStudioSave") as HTMLButtonElement;
 const skinStudioCancel = document.getElementById("skinStudioCancel") as HTMLButtonElement;
@@ -2622,6 +2623,19 @@ const skinStudioCancel = document.getElementById("skinStudioCancel") as HTMLButt
 let skinStudio: WeaponSkinStudio | null = null;
 let skinStudioSaving = false;
 let skinStudioTexPicker: TexturePicker | null = null;
+/** Id da skin em edição (null = nova publicação). */
+let skinStudioEditingId: string | null = null;
+let skinStudioLoadGen = 0;
+
+function formatStudioPartLabel(name: string): string {
+  return name.replace(/^Clone of /i, "").replace(/_/g, " ");
+}
+
+function syncStudioSaveLabel(): void {
+  skinStudioSave.textContent = skinStudioEditingId
+    ? "Salvar alterações"
+    : "Salvar e publicar";
+}
 
 function refreshStudioTexturePicker(): void {
   if (!skinStudioTexPicker || !skinStudio) return;
@@ -2638,20 +2652,51 @@ function refreshStudioPartsCount(): void {
       : `${n} parte${n > 1 ? "s" : ""} pintada${n > 1 ? "s" : ""}.`;
 }
 
+function refreshStudioPartSelect(selected?: string | null): void {
+  if (!skinStudioPartSelect) return;
+  const names = skinStudio?.getPartNames() ?? [];
+  const current = selected ?? skinStudio?.selectedPartName ?? "";
+  skinStudioPartSelect.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = names.length
+    ? "Clique na arma ou escolha aqui"
+    : "Carregando partes…";
+  skinStudioPartSelect.appendChild(empty);
+  for (const name of names) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = formatStudioPartLabel(name);
+    skinStudioPartSelect.appendChild(opt);
+  }
+  skinStudioPartSelect.value =
+    current && names.includes(current) ? current : "";
+  skinStudioColor.disabled = !skinStudioPartSelect.value;
+}
+
+function bindStudioPartUi(part: string | null): void {
+  if (skinStudioPartSelect) {
+    const names = [...skinStudioPartSelect.options].map((o) => o.value);
+    skinStudioPartSelect.value = part && names.includes(part) ? part : "";
+  }
+  if (part && skinStudio) {
+    skinStudioColor.disabled = false;
+    skinStudioColor.value = rgbToHex(skinStudio.getPartColor(part));
+  } else {
+    skinStudioColor.disabled = true;
+  }
+  refreshStudioTexturePicker();
+}
+
 function refreshStudioPublishedList(): void {
   if (!skinStudioPublished) return;
   const skins = allWeaponSkins().filter((s) => s.custom);
-  const prev = skinStudioPublished.value;
+  const prev = skinStudioEditingId ?? skinStudioPublished.value;
   skinStudioPublished.innerHTML = "";
-  if (skins.length === 0) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.disabled = true;
-    opt.selected = true;
-    opt.textContent = "Nenhuma skin publicada";
-    skinStudioPublished.appendChild(opt);
-    return;
-  }
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = skins.length === 0 ? "Nenhuma skin publicada" : "— Nova skin —";
+  skinStudioPublished.appendChild(blank);
   for (const s of skins) {
     const opt = document.createElement("option");
     opt.value = s.id;
@@ -2661,7 +2706,38 @@ function refreshStudioPublishedList(): void {
   }
   if (prev && skins.some((s) => s.id === prev)) {
     skinStudioPublished.value = prev;
+  } else {
+    skinStudioPublished.value = "";
   }
+}
+
+async function resetStudioNewSkin(): Promise<void> {
+  skinStudioEditingId = null;
+  skinStudioName.value = "";
+  skinStudioPrice.value = "500";
+  if (skinStudioPublished) skinStudioPublished.value = "";
+  syncStudioSaveLabel();
+  refreshStudioPartsCount();
+  await skinStudio?.setWeapon(skinStudioWeapon.value as WeaponId);
+}
+
+async function loadStudioSkin(id: string): Promise<void> {
+  const def = getWeaponSkin(id);
+  if (!def || !skinStudio) return;
+  const gen = ++skinStudioLoadGen;
+  skinStudioEditingId = def.id;
+  skinStudioName.value = def.name;
+  skinStudioPrice.value = String(def.price);
+  skinStudioWeapon.value = def.weaponId;
+  if (skinStudioPublished) skinStudioPublished.value = def.id;
+  syncStudioSaveLabel();
+  await skinStudio.setWeapon(def.weaponId, {
+    parts: def.parts,
+    textures: def.textures,
+  });
+  if (gen !== skinStudioLoadGen) return;
+  refreshStudioPartsCount();
+  refreshStudioTexturePicker();
 }
 
 function openSkinStudio(): void {
@@ -2673,8 +2749,11 @@ function openSkinStudio(): void {
   if (!skinStudio) {
     skinStudio = new WeaponSkinStudio(skinStudioCanvas);
     skinStudio.onPartSelected = (part) => {
-      skinStudioPartName.textContent = part ?? "(clique na arma)";
-      if (part) skinStudioColor.value = rgbToHex(skinStudio!.getPartColor(part));
+      bindStudioPartUi(part);
+    };
+    skinStudio.onModelReady = () => {
+      refreshStudioPartSelect();
+      refreshStudioPartsCount();
       refreshStudioTexturePicker();
     };
   }
@@ -2708,8 +2787,7 @@ function openSkinStudio(): void {
   refreshStudioPublishedList();
   skinStudio.start();
   skinStudio.resize();
-  refreshStudioPartsCount();
-  void skinStudio.setWeapon(skinStudioWeapon.value as WeaponId);
+  void resetStudioNewSkin();
 }
 
 function closeSkinStudio(): void {
@@ -2754,10 +2832,28 @@ skinStudioModal.addEventListener("click", (e) => {
 });
 
 skinStudioWeapon.addEventListener("change", () => {
-  skinStudioPartName.textContent = "(clique na arma)";
   refreshStudioPartsCount();
   refreshStudioTexturePicker();
   void skinStudio?.setWeapon(skinStudioWeapon.value as WeaponId);
+});
+
+skinStudioPartSelect.addEventListener("change", () => {
+  const name = skinStudioPartSelect.value || null;
+  skinStudio?.selectPart(name);
+  bindStudioPartUi(name);
+});
+
+skinStudioPublished.addEventListener("change", () => {
+  const id = skinStudioPublished.value;
+  if (!id) {
+    void resetStudioNewSkin();
+    return;
+  }
+  void loadStudioSkin(id);
+});
+
+skinStudioNew.addEventListener("click", () => {
+  void resetStudioNewSkin();
 });
 
 skinStudioColor.addEventListener("input", () => {
@@ -2799,8 +2895,11 @@ skinStudioSave.addEventListener("click", () => {
     return;
   }
 
+  const editingExisting = Boolean(skinStudioEditingId);
   const def = {
-    id: `wskin_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    id:
+      skinStudioEditingId ??
+      `wskin_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     weaponId,
     name,
     price,
@@ -2819,10 +2918,16 @@ skinStudioSave.addEventListener("click", () => {
       }
       const saved = sanitizeWeaponSkin(res.skin);
       if (saved) registerCustomWeaponSkins([saved]);
-      alert(`Skin "${name}" publicada na loja por ${price} Gold!`);
+      skinStudioEditingId = saved?.id ?? def.id;
+      alert(
+        editingExisting
+          ? `Skin "${name}" atualizada na loja (${price} Gold).`
+          : `Skin "${name}" publicada na loja por ${price} Gold!`
+      );
       refreshStudioPublishedList();
       refreshShopAndInventoryUi();
       if (saved) skinStudioPublished.value = saved.id;
+      syncStudioSaveLabel();
     } finally {
       skinStudioSaving = false;
       skinStudioSave.disabled = false;
@@ -2863,6 +2968,9 @@ skinStudioDelete.addEventListener("click", () => {
       if (changed) {
         localStorage.setItem(ACTIVE_WEAPON_SKINS_KEY, JSON.stringify(next));
         syncAllViewModelSkins();
+      }
+      if (skinStudioEditingId === id) {
+        await resetStudioNewSkin();
       }
       refreshStudioPublishedList();
       refreshShopAndInventoryUi();

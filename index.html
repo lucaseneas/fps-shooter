@@ -879,16 +879,17 @@
       </div>
     </div>
 
-    <!-- Estúdio de Skins — criação de skins de arma (pintar partes do modelo) -->
-    <div id="skinStudioModal" class="hidden">
-      <div class="modal-card skins-card studio-card">
+    <!-- Estúdio de Skins — criação e edição de skins de arma -->
+    <div id="skinStudioModal" class="mil-menu hidden">
+      <div class="modal-card skins-card studio-card hud-tac">
         <header class="skins-header">
           <div>
-            <h2>🎨 Estúdio de Skins</h2>
+            <span class="hud-tag">Arsenal</span>
+            <h2>Estúdio de Skins</h2>
             <p class="skins-hint">
-              Escolha a arma, clique numa parte do modelo e pinte ou aplique
-              uma textura (de mapa ou de armamento). Ao salvar, a skin é
-              publicada na loja com o preço definido.
+              Clique na arma ou escolha a parte no menu. Pinte, aplique
+              textura e defina nome e preço. Skins já publicadas podem ser
+              editadas pela lista abaixo.
             </p>
           </div>
         </header>
@@ -903,10 +904,12 @@
             <label class="studio-label" for="skinStudioWeapon">Arma</label>
             <select id="skinStudioWeapon"></select>
 
-            <label class="studio-label">Parte selecionada</label>
+            <label class="studio-label" for="skinStudioPartSelect">Parte selecionada</label>
             <div class="studio-part-row">
-              <span id="skinStudioPartName" class="studio-part-name">(clique na arma)</span>
-              <input type="color" id="skinStudioColor" value="#c0392b" />
+              <select id="skinStudioPartSelect">
+                <option value="">Clique na arma ou escolha aqui</option>
+              </select>
+              <input type="color" id="skinStudioColor" value="#c0392b" disabled />
             </div>
             <div class="studio-part-actions">
               <button type="button" id="skinStudioClearPart" class="secondary">Limpar parte</button>
@@ -924,9 +927,12 @@
 
             <label class="studio-label" for="skinStudioPublished">Skins publicadas</label>
             <select id="skinStudioPublished" size="5" class="studio-published">
-              <option value="" disabled>Nenhuma skin publicada</option>
+              <option value="">— Nova skin —</option>
             </select>
-            <button type="button" id="skinStudioDelete" class="secondary">Excluir selecionada</button>
+            <div class="studio-published-actions">
+              <button type="button" id="skinStudioNew" class="secondary">Nova skin</button>
+              <button type="button" id="skinStudioDelete" class="secondary">Excluir selecionada</button>
+            </div>
           </div>
         </div>
 
