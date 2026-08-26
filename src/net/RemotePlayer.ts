@@ -327,23 +327,25 @@ export class RemotePlayer {
 
   setWeaponSkin(
     skinId: string,
-    parts?: Record<string, [number, number, number]> | null
+    parts?: Record<string, [number, number, number]> | null,
+    textures?: Record<string, string> | null
   ): void {
-    this.visual.setWeaponSkin(skinId || "", parts);
+    this.visual.setWeaponSkin(skinId || "", parts, textures);
   }
 
   setWeaponAppearance(
     weaponId: string,
     skinId: string,
-    parts: Record<string, [number, number, number]> | null
+    parts: Record<string, [number, number, number]> | null,
+    textures?: Record<string, string> | null
   ): void {
     const id = weaponId || "m4a1";
     const skin = skinId || "";
-    const key = `${id}\0${skin}\0${parts ? JSON.stringify(parts) : ""}`;
+    const key = `${id}\0${skin}\0${parts ? JSON.stringify(parts) : ""}\0${textures ? JSON.stringify(textures) : ""}`;
     if (key === this.lastWeaponVisualKey) return;
     this.lastWeaponVisualKey = key;
     this.visual.setWeapon(id);
-    this.visual.setWeaponSkin(skin, parts);
+    this.visual.setWeaponSkin(skin, parts, textures);
   }
 
   setPredator(on: boolean): void {

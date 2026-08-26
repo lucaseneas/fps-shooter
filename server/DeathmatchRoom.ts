@@ -22,7 +22,7 @@ import {
 import {
   encodeWeaponSkinParts,
   getWeaponSkin,
-  sanitizeWeaponSkinParts,
+  decodeWeaponSkinLooks,
 } from "../shared/weaponSkins";
 import {
   BodyState,
@@ -1098,14 +1098,14 @@ export class DeathmatchRoom extends Room<MatchState> {
     const catalog = getWeaponSkin(skinId);
     if (catalog && catalog.weaponId === p.weaponId) {
       p.weaponSkinId = catalog.id;
-      p.weaponSkinParts = encodeWeaponSkinParts(catalog.parts);
+      p.weaponSkinParts = encodeWeaponSkinParts(catalog.parts, catalog.textures);
       return;
     }
 
-    const parts = sanitizeWeaponSkinParts(partsRaw);
-    if (parts) {
+    const looks = decodeWeaponSkinLooks(partsRaw);
+    if (looks) {
       p.weaponSkinId = skinId;
-      p.weaponSkinParts = encodeWeaponSkinParts(parts);
+      p.weaponSkinParts = encodeWeaponSkinParts(looks.parts, looks.textures);
       return;
     }
 

@@ -9,7 +9,7 @@ import { Material } from "@babylonjs/core/Materials/material";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 
-import { WEAPON_ASSETS, weaponModelTransform, applyWeaponAppearance } from "./ViewModel";
+import { WEAPON_ASSETS, weaponModelTransform, applyWeaponAppearance, clearMeshGameTexture } from "./ViewModel";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { getWeaponSkin } from "../../shared/weaponSkins";
 import { MuzzleFlash } from "../game/effects";
@@ -64,6 +64,7 @@ export class PlayerVisual {
   private currentWeaponSkinId = "";
   private pendingWeaponSkinId = "";
   private pendingWeaponSkinParts: Record<string, [number, number, number]> | null = null;
+  private pendingWeaponSkinTextures: Record<string, string> | null = null;
   private loadingWeaponId = "";
   private originalColors = new Map<string, Map<string, Color3>>();
 
@@ -221,17 +222,24 @@ export class PlayerVisual {
    */
   setWeaponSkin(
     skinId: string,
-    parts?: Record<string, [number, number, number]> | null
+    parts?: Record<string, [number, number, number]> | null,
+    textures?: Record<string, string> | null
   ): void {
     const next = skinId || "";
     const nextParts = parts === undefined ? this.pendingWeaponSkinParts : parts;
-    if (next === this.currentWeaponSkinId && nextParts === this.pendingWeaponSkinParts) {
+    const nextTex = textures === undefined ? this.pendingWeaponSkinTextures : textures;
+    if (
+      next === this.currentWeaponSkinId &&
+      nextParts === this.pendingWeaponSkinParts &&
+      nextTex === this.pendingWeaponSkinTextures
+    ) {
       this.applyStoredWeaponSkin();
       return;
     }
     this.currentWeaponSkinId = next;
     this.pendingWeaponSkinId = next;
     this.pendingWeaponSkinParts = nextParts;
+    this.pendingWeaponSkinTextures = nextTex;
     this.applyStoredWeaponSkin();
   }
 
@@ -248,6 +256,7 @@ export class PlayerVisual {
     const originals = this.originalColors.get(weaponId);
     if (!model || !originals || weaponId !== this.currentWeaponId) return;
     for (const m of model.getChildMeshes()) {
+      clearMeshGameTexture(m);
       const c = originals.get(m.name);
       if (!c) continue;
       const mat = m.material as unknown as {
@@ -267,11 +276,15 @@ export class PlayerVisual {
     this.restoreOriginalColors(weaponId);
     const skinId = this.pendingWeaponSkinId;
     const fromNet = this.pendingWeaponSkinParts;
+    const fromNetTex = this.pendingWeaponSkinTextures;
     const skin = !fromNet && skinId ? getWeaponSkin(skinId) : undefined;
     const overlay =
       fromNet ??
       (skin && skin.weaponId === weaponId ? skin.parts : null);
-    applyWeaponAppearance(this.root.getScene(), model, weaponId, overlay);
+    const overlayTex =
+      fromNetTex ??
+      (skin && skin.weaponId === weaponId ? skin.textures ?? null : null);
+    applyWeaponAppearance(this.root.getScene(), model, weaponId, overlay, overlayTex);
   }
 
   triggerShoot(): void {

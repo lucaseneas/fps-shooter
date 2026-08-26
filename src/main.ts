@@ -71,11 +71,12 @@ import {
   getWeaponSkin,
   registerCustomWeaponSkins,
   sanitizeWeaponSkin,
-  sanitizeWeaponSkinParts,
+  decodeWeaponSkinLooks,
   unregisterCustomWeaponSkin,
   weaponSkinsFor,
 } from "../shared/weaponSkins";
 import { WeaponSkinStudio, hexToRgb, rgbToHex } from "./ui/WeaponSkinStudio";
+import { TexturePicker } from "./ui/TexturePicker";
 import { MapStudio } from "./ui/MapStudio";
 import { getCustomMap, playableMapOptions, refreshCustomMaps } from "./ui/mapStorage";
 import {
@@ -1851,12 +1852,13 @@ function getEquippedWeaponSkinId(weaponId: WeaponId): string | null {
 function getVisualWeaponSkin(weaponId: WeaponId): {
   id: string;
   parts: Record<string, [number, number, number]> | null;
+  textures: Record<string, string> | null;
 } {
   const id =
     getEquippedWeaponSkinId(weaponId) ?? loadEquippedWeaponSkins()[weaponId] ?? "";
   const def = id ? getWeaponSkin(id) : undefined;
-  if (!def || def.weaponId !== weaponId) return { id: "", parts: null };
-  return { id: def.id, parts: def.parts };
+  if (!def || def.weaponId !== weaponId) return { id: "", parts: null, textures: null };
+  return { id: def.id, parts: def.parts, textures: def.textures ?? null };
 }
 
 /** Informa arma + skin equipada para os outros jogadores verem. */
@@ -1867,7 +1869,7 @@ function syncVisualToServer(): void {
   room.send("sync_visual", {
     weaponId,
     weaponSkinId: skin.id,
-    weaponSkinParts: encodeWeaponSkinParts(skin.parts),
+    weaponSkinParts: encodeWeaponSkinParts(skin.parts, skin.textures),
   });
 }
 
@@ -1883,7 +1885,7 @@ function setEquippedWeaponSkin(weaponId: WeaponId, skinId: string | null): void 
 function applyEquippedSkinToViewModel(weaponId: WeaponId): void {
   const id = getEquippedWeaponSkinId(weaponId);
   const skin = id ? getWeaponSkin(id) : undefined;
-  viewModel.setWeaponSkin(weaponId, skin?.parts ?? null);
+  viewModel.setWeaponSkin(weaponId, skin?.parts ?? null, skin?.textures ?? null);
 }
 
 function syncAllViewModelSkins(): void {
@@ -2477,6 +2479,14 @@ const skinStudioCancel = document.getElementById("skinStudioCancel") as HTMLButt
 
 let skinStudio: WeaponSkinStudio | null = null;
 let skinStudioSaving = false;
+let skinStudioTexPicker: TexturePicker | null = null;
+
+function refreshStudioTexturePicker(): void {
+  if (!skinStudioTexPicker || !skinStudio) return;
+  const part = skinStudio.selectedPartName;
+  skinStudioTexPicker.setDisabled(!part);
+  skinStudioTexPicker.setValue(part ? skinStudio.getPartTexture(part) ?? "none" : "none");
+}
 
 function refreshStudioPartsCount(): void {
   const n = skinStudio?.paintedCount ?? 0;
@@ -2523,7 +2533,25 @@ function openSkinStudio(): void {
     skinStudio.onPartSelected = (part) => {
       skinStudioPartName.textContent = part ?? "(clique na arma)";
       if (part) skinStudioColor.value = rgbToHex(skinStudio!.getPartColor(part));
+      refreshStudioTexturePicker();
     };
+  }
+  const texRoot = document.getElementById("skinStudioTexturePicker");
+  if (texRoot && !skinStudioTexPicker) {
+    skinStudioTexPicker = new TexturePicker(texRoot, {
+      includeNone: true,
+      noneLabel: "Sem textura",
+      onChange: (id) => {
+        const part = skinStudio?.selectedPartName;
+        if (!part || !skinStudio) return;
+        skinStudio.setPartTexture(part, id);
+        if (id !== "none") {
+          skinStudioColor.value = rgbToHex(skinStudio.getPartColor(part));
+        }
+        refreshStudioPartsCount();
+      },
+    });
+    skinStudioTexPicker.setDisabled(true);
   }
   // Popula o seletor de armas uma vez.
   if (skinStudioWeapon.options.length === 0) {
@@ -2560,6 +2588,7 @@ skinStudioModal.addEventListener("click", (e) => {
 skinStudioWeapon.addEventListener("change", () => {
   skinStudioPartName.textContent = "(clique na arma)";
   refreshStudioPartsCount();
+  refreshStudioTexturePicker();
   void skinStudio?.setWeapon(skinStudioWeapon.value as WeaponId);
 });
 
@@ -2575,11 +2604,13 @@ skinStudioClearPart.addEventListener("click", () => {
   if (!part) return;
   skinStudio!.clearPart(part);
   refreshStudioPartsCount();
+  refreshStudioTexturePicker();
 });
 
 skinStudioClearAll.addEventListener("click", () => {
   skinStudio?.clearAllParts();
   refreshStudioPartsCount();
+  refreshStudioTexturePicker();
 });
 
 skinStudioSave.addEventListener("click", () => {
@@ -2588,6 +2619,7 @@ skinStudioSave.addEventListener("click", () => {
   const name = skinStudioName.value.trim();
   const price = Math.max(0, Math.round(Number(skinStudioPrice.value) || 0));
   const parts = skinStudio.getParts();
+  const textures = skinStudio.getTextures();
   const weaponId = skinStudioWeapon.value as WeaponId;
 
   if (!name) {
@@ -2595,7 +2627,7 @@ skinStudioSave.addEventListener("click", () => {
     return;
   }
   if (Object.keys(parts).length === 0) {
-    alert("Pinte pelo menos uma parte da arma antes de salvar.");
+    alert("Pinte ou aplique textura em pelo menos uma parte da arma antes de salvar.");
     return;
   }
 
@@ -2605,6 +2637,7 @@ skinStudioSave.addEventListener("click", () => {
     name,
     price,
     parts,
+    textures: Object.keys(textures).length > 0 ? textures : undefined,
   };
 
   skinStudioSaving = true;
@@ -3755,12 +3788,13 @@ function reconcile(r: Room): void {
     }
     rp.setSkin(p.skinId || "skin_default");
     const remoteWeapon = p.weaponId || "m4a1";
-    const fromState = sanitizeWeaponSkinParts(p.weaponSkinParts);
+    const fromState = decodeWeaponSkinLooks(p.weaponSkinParts);
     const catalog = !fromState && p.weaponSkinId ? getWeaponSkin(p.weaponSkinId) : undefined;
     rp.setWeaponAppearance(
       remoteWeapon,
       p.weaponSkinId || "",
-      fromState ?? (catalog && catalog.weaponId === remoteWeapon ? catalog.parts : null)
+      fromState?.parts ?? (catalog && catalog.weaponId === remoteWeapon ? catalog.parts : null),
+      fromState?.textures ?? (catalog && catalog.weaponId === remoteWeapon ? catalog.textures ?? null : null)
     );
     rp.setPredator(isPredatorStreak(p.activeStreak));
     rp.setParachuting(p.parachuting === true);
@@ -4036,7 +4070,7 @@ weapons.onFire = (data) => {
   room.send("fire", {
     weaponId,
     weaponSkinId: skin.id,
-    weaponSkinParts: encodeWeaponSkinParts(skin.parts),
+    weaponSkinParts: encodeWeaponSkinParts(skin.parts, skin.textures),
     ox: data.origin.x,
     oy: data.origin.y,
     oz: data.origin.z,

@@ -1,4 +1,5 @@
 import { MapEditor, type EditorTool } from "./MapEditor";
+import { TexturePicker } from "./TexturePicker";
 import {
   deleteCustomMap,
   listCustomMaps,
@@ -8,7 +9,6 @@ import {
 import {
   KIND_DEFAULT_HEX,
   MAP_SIZE_OPTIONS,
-  MAP_TEXTURES,
   MIN_MAP_AXIS,
   MAX_MAP_AXIS,
   clampMapAxis,
@@ -147,7 +147,7 @@ export class MapStudio {
   private readonly xInput: HTMLInputElement;
   private readonly zInput: HTMLInputElement;
   private readonly colorInput: HTMLInputElement;
-  private readonly textureSelect: HTMLSelectElement;
+  private readonly texturePicker: TexturePicker;
   private readonly canvas: HTMLCanvasElement;
   private readonly toastContainer: HTMLElement;
   private readonly objectSelect: HTMLSelectElement;
@@ -178,7 +178,16 @@ export class MapStudio {
     this.xInput = el("mapEditorX");
     this.zInput = el("mapEditorZ");
     this.colorInput = el("mapEditorColor");
-    this.textureSelect = el("mapEditorTexture");
+    this.texturePicker = new TexturePicker(el("mapEditorTexturePicker"), {
+      includeDefault: true,
+      includeNone: true,
+      defaultLabel: "Padrão da peça",
+      noneLabel: "Só cor",
+      onChange: (id) => {
+        this.editor?.setAppearance(this.colorInput.value, id as MapTextureId);
+        this.editor?.commit();
+      },
+    });
     this.canvas = el("mapEditorCanvas");
     this.toastContainer = el("mapStudioToastContainer");
     this.objectSelect = el("mapEditorObject");
@@ -323,24 +332,14 @@ export class MapStudio {
     this.xInput.addEventListener("change", posHandler);
     this.zInput.addEventListener("change", posHandler);
 
-    this.textureSelect.replaceChildren();
-    for (const t of MAP_TEXTURES) {
-      const opt = document.createElement("option");
-      opt.value = t.id;
-      opt.textContent = t.label;
-      this.textureSelect.appendChild(opt);
-    }
+    this.texturePicker.setValue("default");
     const applyLook = () => {
       this.editor?.setAppearance(
         this.colorInput.value,
-        this.textureSelect.value as MapTextureId
+        this.texturePicker.getValue() as MapTextureId
       );
     };
     this.colorInput.addEventListener("input", applyLook);
-    this.textureSelect.addEventListener("change", () => {
-      applyLook();
-      this.editor?.commit();
-    });
     this.colorInput.addEventListener("change", () => this.editor?.commit());
 
     window.addEventListener("resize", () => this.editor?.resize());
@@ -674,9 +673,9 @@ export class MapStudio {
     texture?: MapTextureId
   ): void {
     this.colorInput.disabled = !on;
-    this.textureSelect.disabled = !on;
+    this.texturePicker.setDisabled(!on);
     if (color) this.colorInput.value = color;
-    if (texture) this.textureSelect.value = texture;
+    if (texture) this.texturePicker.setValue(texture);
   }
 
   private syncStatus(): void {

@@ -3,13 +3,16 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { Vector3, Color3, Quaternion } from "@babylonjs/core/Maths/math";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 
 import { resolveWeaponId, WeaponDef } from "../../shared/weapons";
 import { defaultWeaponSkinParts } from "../../shared/weaponSkins";
+import { getGameTexture, textureUrlById } from "../../shared/textures";
 import { MuzzleFlash } from "../game/effects";
 
 function easeOutCubic(t: number): number {
@@ -199,31 +202,196 @@ export function applyWeaponTint(
   applyWeaponSkinParts(scene, model, { "*": rgb });
 }
 
+function resolvePartKey<T>(meshName: string, map: Record<string, T>): T | undefined {
+  const direct = map[meshName];
+  if (direct !== undefined) return direct;
+  const stripped = meshName.replace(/^Clone of /i, "");
+  if (stripped !== meshName && map[stripped] !== undefined) return map[stripped];
+  const prefixed = map[`Clone of ${stripped}`];
+  if (prefixed !== undefined) return prefixed;
+  return map["*"];
+}
+
 function resolvePartColor(
   meshName: string,
   parts: Record<string, [number, number, number]>
 ): [number, number, number] | undefined {
-  const direct = parts[meshName];
-  if (direct) return direct;
-  const stripped = meshName.replace(/^Clone of /i, "");
-  if (stripped !== meshName && parts[stripped]) return parts[stripped];
-  const prefixed = parts[`Clone of ${stripped}`];
-  if (prefixed) return prefixed;
-  return parts["*"];
+  return resolvePartKey(meshName, parts);
+}
+
+const sceneTexCache = new WeakMap<Scene, Map<string, Texture>>();
+
+function cachedTexture(scene: Scene, url: string, scale: number): Texture {
+  let map = sceneTexCache.get(scene);
+  if (!map) {
+    map = new Map();
+    sceneTexCache.set(scene, map);
+  }
+  const key = `${url}@${scale}`;
+  let tex = map.get(key);
+  if (!tex) {
+    tex = new Texture(url, scene);
+    tex.wrapU = Texture.WRAP_ADDRESSMODE;
+    tex.wrapV = Texture.WRAP_ADDRESSMODE;
+    tex.uScale = scale;
+    tex.vScale = scale;
+    map.set(key, tex);
+  }
+  return tex;
+}
+
+type TintMat = {
+  albedoColor?: Color3;
+  diffuseColor?: Color3;
+  albedoTexture?: Texture | null;
+  diffuseTexture?: Texture | null;
+  metallic?: number;
+  roughness?: number;
+  specularColor?: Color3;
+};
+
+function uvsAreUsable(uvs: ArrayLike<number> | null | undefined): boolean {
+  if (!uvs || uvs.length < 2) return false;
+  let minU = Infinity,
+    maxU = -Infinity,
+    minV = Infinity,
+    maxV = -Infinity;
+  for (let i = 0; i < uvs.length; i += 2) {
+    minU = Math.min(minU, uvs[i]);
+    maxU = Math.max(maxU, uvs[i]);
+    minV = Math.min(minV, uvs[i + 1]);
+    maxV = Math.max(maxV, uvs[i + 1]);
+  }
+  return maxU - minU > 0.05 || maxV - minV > 0.05;
+}
+
+/**
+ * A maior parte dos GLBs de arma (_v1) só tem POSITION/NORMAL — sem UV.
+ * Sem UV a textura amostra um único pixel e parece uma cor sólida.
+ * Gera UV por projeção em caixa no espaço local da mesh.
+ */
+export function ensureWeaponMeshUVs(mesh: AbstractMesh): void {
+  if (mesh.metadata?.weaponBoxUv) return;
+  if (uvsAreUsable(mesh.getVerticesData(VertexBuffer.UVKind))) return;
+
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+  if (!positions || positions.length < 3) return;
+
+  try {
+    const asMesh = mesh as Mesh;
+    if (typeof asMesh.makeGeometryUnique === "function") asMesh.makeGeometryUnique();
+  } catch {
+    /* geometria já única */
+  }
+
+  const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
+  let minX = Infinity,
+    minY = Infinity,
+    minZ = Infinity;
+  let maxX = -Infinity,
+    maxY = -Infinity,
+    maxZ = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    minX = Math.min(minX, positions[i]);
+    maxX = Math.max(maxX, positions[i]);
+    minY = Math.min(minY, positions[i + 1]);
+    maxY = Math.max(maxY, positions[i + 1]);
+    minZ = Math.min(minZ, positions[i + 2]);
+    maxZ = Math.max(maxZ, positions[i + 2]);
+  }
+  const dx = Math.max(1e-4, maxX - minX);
+  const dy = Math.max(1e-4, maxY - minY);
+  const dz = Math.max(1e-4, maxZ - minZ);
+  const s = 1 / Math.max(dx, dy, dz);
+  const cx = (minX + maxX) * 0.5;
+  const cy = (minY + maxY) * 0.5;
+  const cz = (minZ + maxZ) * 0.5;
+
+  const uvs = new Float32Array((positions.length / 3) * 2);
+  for (let i = 0, v = 0; i < positions.length; i += 3, v += 2) {
+    const x = positions[i];
+    const y = positions[i + 1];
+    const z = positions[i + 2];
+    let ax: number;
+    let ay: number;
+    let az: number;
+    if (normals) {
+      ax = Math.abs(normals[i]);
+      ay = Math.abs(normals[i + 1]);
+      az = Math.abs(normals[i + 2]);
+    } else {
+      ax = Math.abs(x - cx);
+      ay = Math.abs(y - cy);
+      az = Math.abs(z - cz);
+    }
+    if (az >= ax && az >= ay) {
+      uvs[v] = (x - minX) * s;
+      uvs[v + 1] = (y - minY) * s;
+    } else if (ax >= ay) {
+      uvs[v] = (z - minZ) * s;
+      uvs[v + 1] = (y - minY) * s;
+    } else {
+      uvs[v] = (x - minX) * s;
+      uvs[v + 1] = (z - minZ) * s;
+    }
+  }
+  mesh.setVerticesData(VertexBuffer.UVKind, uvs, true);
+  mesh.metadata = { ...mesh.metadata, weaponBoxUv: true };
+}
+
+function bindMeshTexture(mat: TintMat, tex: Texture | null): void {
+  if ("albedoTexture" in mat) mat.albedoTexture = tex;
+  if ("diffuseTexture" in mat) mat.diffuseTexture = tex;
+}
+
+export function clearMeshGameTexture(m: AbstractMesh): void {
+  const mat = m.material as unknown as TintMat | null;
+  if (!mat) return;
+  bindMeshTexture(mat, null);
+}
+
+/** Aplica (ou limpa) uma textura do catálogo numa parte da arma. */
+export function applyWeaponMeshTexture(
+  scene: Scene,
+  m: AbstractMesh,
+  textureId: string | null | undefined
+): void {
+  const mat = m.material as unknown as TintMat | null;
+  if (!mat) return;
+  const url = textureId ? textureUrlById(textureId) : null;
+  if (!url) {
+    clearMeshGameTexture(m);
+    return;
+  }
+  ensureWeaponMeshUVs(m);
+  const scale = getGameTexture(textureId!)?.uvScale ?? 2;
+  const tex = cachedTexture(scene, url, scale);
+  bindMeshTexture(mat, tex);
+  if (mat.metallic !== undefined) {
+    mat.metallic = Math.min(mat.metallic, 0.35);
+    if (mat.roughness !== undefined) mat.roughness = Math.max(mat.roughness, 0.4);
+  }
+  if (mat.specularColor) mat.specularColor = new Color3(0.08, 0.08, 0.08);
+}
+
+function applyMeshGameTexture(
+  scene: Scene,
+  m: AbstractMesh,
+  textureId: string | undefined
+): void {
+  applyWeaponMeshTexture(scene, m, textureId);
 }
 
 /** Aplica cores por nome de mesh. Chave `"*"` pinta todas as partes. */
 export function applyWeaponSkinParts(
   scene: Scene,
   model: Mesh,
-  parts: Record<string, [number, number, number]>
+  parts: Record<string, [number, number, number]>,
+  textures?: Record<string, string> | null
 ): void {
   const tintMesh = (m: AbstractMesh, rgb: [number, number, number]) => {
     const color = new Color3(rgb[0], rgb[1], rgb[2]);
-    const mat = m.material as unknown as {
-      albedoColor?: Color3;
-      diffuseColor?: Color3;
-    } | null;
+    const mat = m.material as unknown as TintMat | null;
     if (mat && mat.albedoColor !== undefined) {
       mat.albedoColor = color;
     } else if (mat && mat.diffuseColor !== undefined) {
@@ -239,6 +407,10 @@ export function applyWeaponSkinParts(
   for (const m of model.getChildMeshes()) {
     const rgb = resolvePartColor(m.name, parts);
     if (rgb) tintMesh(m, rgb);
+    if (textures) {
+      const texId = resolvePartKey(m.name, textures);
+      if (texId) applyMeshGameTexture(scene, m, texId);
+    }
   }
 }
 
@@ -250,11 +422,12 @@ export function applyWeaponAppearance(
   scene: Scene,
   model: Mesh,
   weaponId: string,
-  overlay: Record<string, [number, number, number]> | null | undefined
+  overlay: Record<string, [number, number, number]> | null | undefined,
+  overlayTextures?: Record<string, string> | null
 ): void {
   const id = resolveWeaponId(weaponId);
   if (id) applyWeaponSkinParts(scene, model, defaultWeaponSkinParts(id));
-  if (overlay) applyWeaponSkinParts(scene, model, overlay);
+  if (overlay) applyWeaponSkinParts(scene, model, overlay, overlayTextures);
 }
 
 export const WEAPON_ASSETS: Record<string, string> = {
@@ -280,6 +453,7 @@ export class ViewModel {
   private readonly originalColors = new Map<string, Map<string, Color3>>();
   /** Skin equipada por arma (null = cores originais / tint padrão). */
   private readonly equippedParts = new Map<string, Record<string, [number, number, number]> | null>();
+  private readonly equippedTextures = new Map<string, Record<string, string> | null>();
   private readonly loadingWeapons = new Set<string>();
 
   private readonly bodyMat: StandardMaterial;
@@ -564,9 +738,11 @@ export class ViewModel {
    */
   setWeaponSkin(
     weaponId: string,
-    parts: Record<string, [number, number, number]> | null
+    parts: Record<string, [number, number, number]> | null,
+    textures?: Record<string, string> | null
   ): void {
     this.equippedParts.set(weaponId, parts);
+    this.equippedTextures.set(weaponId, textures ?? null);
     this.applyStoredSkin(weaponId);
   }
 
@@ -574,7 +750,13 @@ export class ViewModel {
     const model = this.weaponModels.get(weaponId);
     if (!model) return;
     this.restoreOriginalColors(weaponId);
-    applyWeaponAppearance(this.scene, model, weaponId, this.equippedParts.get(weaponId));
+    applyWeaponAppearance(
+      this.scene,
+      model,
+      weaponId,
+      this.equippedParts.get(weaponId),
+      this.equippedTextures.get(weaponId)
+    );
   }
 
   private readMeshColor(m: AbstractMesh): Color3 {
@@ -590,6 +772,7 @@ export class ViewModel {
     const originals = this.originalColors.get(weaponId);
     if (!model || !originals) return;
     for (const m of model.getChildMeshes()) {
+      clearMeshGameTexture(m);
       const c = originals.get(m.name);
       if (!c) continue;
       const mat = m.material as unknown as {

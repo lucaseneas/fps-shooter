@@ -12,7 +12,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import "@babylonjs/loaders/glTF";
 
-import { WEAPON_ASSETS, weaponModelTransform, applyWeaponAppearance } from "../player/ViewModel";
+import { WEAPON_ASSETS, weaponModelTransform, applyWeaponAppearance, applyWeaponMeshTexture } from "../player/ViewModel";
 import type { WeaponId } from "../../shared/weapons";
 
 export type RgbColor = [number, number, number];
@@ -52,6 +52,8 @@ export class WeaponSkinStudio {
   private readonly originalColors = new Map<string, RgbColor>();
   /** Partes pintadas nesta sessão: meshName → cor. */
   private readonly parts = new Map<string, RgbColor>();
+  /** Textura por parte (id do catálogo). */
+  private readonly partTextures = new Map<string, string>();
   private selectedPart: string | null = null;
   private isRunning = false;
   private loadToken = 0;
@@ -103,6 +105,7 @@ export class WeaponSkinStudio {
     const token = ++this.loadToken;
     this.clearModel();
     this.parts.clear();
+    this.partTextures.clear();
     this.selectPart(null);
 
     try {
@@ -202,6 +205,23 @@ export class WeaponSkinStudio {
     this.parts.set(name, color);
   }
 
+  setPartTexture(name: string, textureId: string | null): void {
+    const mesh = this.partMeshes.get(name);
+    if (!mesh) return;
+    if (!textureId || textureId === "none") {
+      this.partTextures.delete(name);
+      applyWeaponMeshTexture(this.scene, mesh, null);
+      return;
+    }
+    if (!this.parts.has(name)) this.setPartColor(name, [1, 1, 1]);
+    this.partTextures.set(name, textureId);
+    applyWeaponMeshTexture(this.scene, mesh, textureId);
+  }
+
+  getPartTexture(name: string): string | null {
+    return this.partTextures.get(name) ?? null;
+  }
+
   /** Volta a parte à cor original do modelo. */
   clearPart(name: string): void {
     const mesh = this.partMeshes.get(name);
@@ -214,7 +234,9 @@ export class WeaponSkinStudio {
     const c = new Color3(original[0], original[1], original[2]);
     if (mat.albedoColor !== undefined) mat.albedoColor = c;
     else if (mat.diffuseColor !== undefined) mat.diffuseColor = c;
+    applyWeaponMeshTexture(this.scene, mesh, null);
     this.parts.delete(name);
+    this.partTextures.delete(name);
   }
 
   clearAllParts(): void {
@@ -223,7 +245,15 @@ export class WeaponSkinStudio {
 
   /** Partes pintadas no formato da skin (meshName → RGB). */
   getParts(): Record<string, RgbColor> {
-    return Object.fromEntries(this.parts);
+    const parts = Object.fromEntries(this.parts);
+    for (const mesh of this.partTextures.keys()) {
+      if (!parts[mesh]) parts[mesh] = [1, 1, 1];
+    }
+    return parts;
+  }
+
+  getTextures(): Record<string, string> {
+    return Object.fromEntries(this.partTextures);
   }
 
   /** Cor atual de uma parte (pintada ou original) — para o color picker. */
@@ -235,7 +265,8 @@ export class WeaponSkinStudio {
   }
 
   get paintedCount(): number {
-    return this.parts.size;
+    const keys = new Set([...this.parts.keys(), ...this.partTextures.keys()]);
+    return keys.size;
   }
 
   private clearModel(): void {
@@ -245,6 +276,7 @@ export class WeaponSkinStudio {
     }
     this.partMeshes.clear();
     this.originalColors.clear();
+    this.partTextures.clear();
   }
 
   start(): void {

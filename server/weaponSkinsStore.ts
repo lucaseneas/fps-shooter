@@ -11,6 +11,7 @@ import {
   registerCustomWeaponSkins,
   unregisterCustomWeaponSkin,
   sanitizeWeaponSkin,
+  packWeaponSkinParts,
   type WeaponSkinDef,
 } from "../shared/weaponSkins";
 
@@ -87,7 +88,7 @@ async function migrateJsonFileIntoDb(): Promise<void> {
       `INSERT INTO weapon_skins (id, weapon_id, name, price, parts)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (id) DO NOTHING`,
-      [def.id, def.weaponId, def.name, def.price, JSON.stringify(def.parts)]
+      [def.id, def.weaponId, def.name, def.price, JSON.stringify(packWeaponSkinParts(def.parts, def.textures))]
     );
   }
   console.log(`[weapon-skins] ${fromFile.length} skin(s) migradas do JSON para o DB`);
@@ -132,7 +133,7 @@ export async function saveCustomWeaponSkin(
            name = EXCLUDED.name,
            price = EXCLUDED.price,
            parts = EXCLUDED.parts`,
-        [def.id, def.weaponId, def.name, def.price, JSON.stringify(def.parts)]
+        [def.id, def.weaponId, def.name, def.price, JSON.stringify(packWeaponSkinParts(def.parts, def.textures))]
       );
     } catch (err) {
       console.error("[weapon-skins] falha ao salvar no DB:", err);

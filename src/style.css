@@ -4144,7 +4144,8 @@ kbd {
 /* --- Estúdio de Skins --- */
 
 .studio-card {
-  width: 860px;
+  width: 980px;
+  max-width: calc(100vw - 32px);
 }
 
 .studio-body {
@@ -4184,10 +4185,13 @@ kbd {
 }
 
 .studio-side {
-  flex: 0 0 240px;
+  flex: 0 0 280px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 560px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .studio-label {
@@ -5065,7 +5069,7 @@ kbd {
 }
 
 .map-editor-look-side {
-  width: 260px;
+  width: 300px;
   border-right: none;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -5268,21 +5272,111 @@ kbd {
   cursor: default;
 }
 
-#mapEditorTexture {
-  flex: 1;
-  min-width: 0;
-  font-family: inherit;
-  background: rgba(10, 14, 20, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  color: #e8ecf1;
-  padding: 9px 10px;
-  font-size: 13px;
-  outline: none;
+.tex-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-#mapEditorTexture:disabled {
+.tex-picker.is-disabled {
   opacity: 0.45;
+  pointer-events: none;
+}
+
+#pageMaps .tex-picker button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.tex-picker-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.tex-picker-tab,
+#pageMaps .tex-picker-tab,
+#skinStudioModal .tex-picker-tab {
+  font-family: inherit;
+  padding: 6px 8px !important;
+  font-size: 11px !important;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #c3ccd6 !important;
+  background: #222a35 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 7px;
+  cursor: pointer;
+  filter: none !important;
+}
+
+.tex-picker-tab.active,
+#pageMaps .tex-picker-tab.active,
+#skinStudioModal .tex-picker-tab.active {
+  color: #1a1206 !important;
+  background: var(--accent) !important;
+  border-color: transparent !important;
+}
+
+.tex-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.tex-swatch,
+#pageMaps .tex-swatch,
+#skinStudioModal .tex-swatch {
+  position: relative;
+  height: 64px;
+  padding: 0 !important;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.12) !important;
+  background-color: #1a2029 !important;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  overflow: hidden;
+  filter: none !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+}
+
+.tex-swatch:hover,
+#pageMaps .tex-swatch:hover,
+#skinStudioModal .tex-swatch:hover {
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  filter: none !important;
+}
+
+.tex-swatch.selected,
+#pageMaps .tex-swatch.selected,
+#skinStudioModal .tex-swatch.selected {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.tex-swatch-empty {
+  background-image: linear-gradient(135deg, #2a3140 25%, #1a2029 25%, #1a2029 50%, #2a3140 50%, #2a3140 75%, #1a2029 75%) !important;
+  background-size: 12px 12px !important;
+}
+
+.tex-swatch-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4px 5px 5px;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
+  color: #f2f5f8;
+  pointer-events: none;
 }
 
 /* ========== Menu militar (login / home / lobby) ========== */

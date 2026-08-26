@@ -89,7 +89,7 @@ function createGround(scene: Scene, mapSizeX: number, mapSizeZ: number): void {
     scene
   );
   const mat = new StandardMaterial("groundMat", scene);
-  const floorTex = new Texture("/assets/textures/texture_floor.png", scene);
+  const floorTex = new Texture("/assets/textures/map/floor.png", scene);
   floorTex.uScale = mapSizeX / 4;
   floorTex.vScale = mapSizeZ / 4;
   mat.diffuseTexture = floorTex;

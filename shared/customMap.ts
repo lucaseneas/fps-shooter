@@ -8,6 +8,7 @@ import {
   type SpawnPoint,
 } from "./mapData";
 import { SPAWN_POINTS, SPAWN_POINTS_ALPHA, SPAWN_POINTS_ECHO } from "./spawnPoints";
+import { GAME_TEXTURES, isGameTextureId, textureUrlById } from "./textures";
 
 export const CUSTOM_MAP_PREFIX = "custom:";
 export const MAP_SIZE_OPTIONS = [40, 60, 80, 100, 120] as const;
@@ -23,14 +24,8 @@ export const MAX_CUSTOM_MAPS = 80;
 
 export type EditorPieceKind = "wall" | "box" | "pillar" | "platform" | "stair";
 
-export type MapTextureId =
-  | "default"
-  | "none"
-  | "wall"
-  | "bg_wall"
-  | "floor"
-  | "crate"
-  | "post";
+/** `default` / `none` ou qualquer id de `GAME_TEXTURES` (mapa ou armamento). */
+export type MapTextureId = "default" | "none" | string;
 
 export const MAP_TEXTURES: ReadonlyArray<{
   id: MapTextureId;
@@ -39,14 +34,10 @@ export const MAP_TEXTURES: ReadonlyArray<{
 }> = [
   { id: "default", label: "Padrão da peça", url: null },
   { id: "none", label: "Só cor", url: null },
-  { id: "wall", label: "Parede", url: "/assets/textures/texture_wall.png" },
-  { id: "bg_wall", label: "Parede fundo", url: "/assets/textures/texture_bg_wall.png" },
-  { id: "floor", label: "Chão", url: "/assets/textures/texture_floor.png" },
-  { id: "crate", label: "Caixa", url: "/assets/textures/texture_crate.png" },
-  { id: "post", label: "Pilar", url: "/assets/textures/texture_post.png" },
+  ...GAME_TEXTURES.map((t) => ({ id: t.id, label: t.label, url: t.url })),
 ];
 
-const TEXTURE_IDS = new Set<string>(MAP_TEXTURES.map((t) => t.id));
+const TEXTURE_IDS = new Set<string>(["default", "none", ...GAME_TEXTURES.map((t) => t.id)]);
 
 export const KIND_DEFAULT_TEXTURE: Record<EditorPieceKind | "border", MapTextureId> = {
   wall: "wall",
@@ -77,14 +68,13 @@ export function textureUrlFor(
   texture?: string
 ): string | null {
   if (texture === "none") return null;
-  const id =
-    texture && texture !== "default" && TEXTURE_IDS.has(texture)
-      ? (texture as MapTextureId)
-      : kind === "building"
-        ? "none"
-        : KIND_DEFAULT_TEXTURE[kind === "border" ? "border" : (kind as EditorPieceKind)] ??
-          "wall";
-  return MAP_TEXTURES.find((t) => t.id === id)?.url ?? null;
+  if (texture && texture !== "default" && isGameTextureId(texture)) {
+    return textureUrlById(texture);
+  }
+  if (kind === "building") return null;
+  const fallback =
+    KIND_DEFAULT_TEXTURE[kind === "border" ? "border" : (kind as EditorPieceKind)] ?? "wall";
+  return textureUrlById(fallback);
 }
 
 export function sanitizeHexColor(v: unknown): string | undefined {
@@ -94,7 +84,7 @@ export function sanitizeHexColor(v: unknown): string | undefined {
 }
 
 export function sanitizeTextureId(v: unknown): MapTextureId {
-  return typeof v === "string" && TEXTURE_IDS.has(v) ? (v as MapTextureId) : "default";
+  return typeof v === "string" && TEXTURE_IDS.has(v) ? v : "default";
 }
 
 export const MIN_PIECE_ELEV = 0;

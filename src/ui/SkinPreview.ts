@@ -19,6 +19,7 @@ import {
   WEAPON_ASSETS,
   weaponModelTransform,
   applyWeaponAppearance,
+  clearMeshGameTexture,
 } from "../player/ViewModel";
 import {
   THIRD_PERSON_WEAPON_SCALE,
@@ -241,7 +242,8 @@ export class SkinPreview {
     if (!model) return;
     this.restoreOriginalColors(id);
     const overlay = skin && skin.weaponId === id ? skin.parts : null;
-    applyWeaponAppearance(this.scene, model, id, overlay);
+    const overlayTex = skin && skin.weaponId === id ? skin.textures ?? null : null;
+    applyWeaponAppearance(this.scene, model, id, overlay, overlayTex);
   }
 
   private loadWeaponModel(id: string, url: string) {
@@ -283,7 +285,11 @@ export class SkinPreview {
           this.pendingSkin && this.pendingSkin.weaponId === id
             ? this.pendingSkin.parts
             : null;
-        applyWeaponAppearance(this.scene, model, id, overlay);
+        const overlayTex =
+          this.pendingSkin && this.pendingSkin.weaponId === id
+            ? this.pendingSkin.textures ?? null
+            : null;
+        applyWeaponAppearance(this.scene, model, id, overlay, overlayTex);
       })
       .catch((err) => {
         console.warn(`[SkinPreview] Falha ao carregar arma ${id}:`, err);
@@ -304,6 +310,7 @@ export class SkinPreview {
     const originals = this.originalColors.get(weaponId);
     if (!model || !originals) return;
     for (const m of model.getChildMeshes()) {
+      clearMeshGameTexture(m);
       const c = originals.get(m.name);
       if (!c) continue;
       const mat = m.material as unknown as {

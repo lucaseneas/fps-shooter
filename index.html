@@ -541,12 +541,12 @@
         </div>
         <aside id="mapEditorLookPanel" class="map-editor-side map-editor-look-side">
           <p class="studio-label">Aparência</p>
-          <p class="skins-hint">Cor e textura da peça</p>
+          <p class="skins-hint">Cor e textura da peça (mapa ou armamento)</p>
           <div id="mapEditorLook" class="map-look">
             <div class="map-look-row">
               <input type="color" id="mapEditorColor" value="#525f75" title="Cor" />
-              <select id="mapEditorTexture"></select>
             </div>
+            <div id="mapEditorTexturePicker"></div>
           </div>
         </aside>
       </div>
@@ -845,8 +845,9 @@
           <div>
             <h2>🎨 Estúdio de Skins</h2>
             <p class="skins-hint">
-              Escolha a arma, clique numa parte do modelo e pinte. Ao salvar,
-              a skin é publicada na loja com o preço definido.
+              Escolha a arma, clique numa parte do modelo e pinte ou aplique
+              uma textura (de mapa ou de armamento). Ao salvar, a skin é
+              publicada na loja com o preço definido.
             </p>
           </div>
         </header>
@@ -870,6 +871,8 @@
               <button type="button" id="skinStudioClearPart" class="secondary">Limpar parte</button>
               <button type="button" id="skinStudioClearAll" class="secondary">Limpar tudo</button>
             </div>
+            <label class="studio-label">Textura da parte</label>
+            <div id="skinStudioTexturePicker"></div>
             <p id="skinStudioPartsCount" class="skins-hint">Nenhuma parte pintada.</p>
 
             <label class="studio-label" for="skinStudioName">Nome da skin</label>

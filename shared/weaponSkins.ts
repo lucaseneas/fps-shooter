@@ -2,11 +2,13 @@
  * Skins de arma — compartilhado entre cliente (Loja/Inventário/studio) e
  * servidor (persistência + validação de compra).
  *
- * Uma skin é um mapa de nome de mesh do GLB → cor RGB (0–1). Os nomes vêm
- * dos meshes do modelo (ex.: MP5 tem "Cube", "Cylinder"...). O tint é
- * aplicado no carregamento do modelo (ViewModel.applyWeaponSkinParts).
+ * Uma skin é um mapa de nome de mesh do GLB → cor RGB (0–1) e, opcionalmente,
+ * um id de textura do catálogo (`shared/textures.ts`). Os nomes vêm dos
+ * meshes do modelo. O visual é aplicado no carregamento
+ * (ViewModel.applyWeaponAppearance).
  */
 import { resolveWeaponId, type WeaponId } from "./weapons";
+import { sanitizeGameTextureId } from "./textures";
 
 export interface WeaponSkinDef {
   id: string;
@@ -16,8 +18,15 @@ export interface WeaponSkinDef {
   price: number;
   /** meshName → cor RGB 0–1. Meshes não listados ficam na skin padrão. */
   parts: Record<string, [number, number, number]>;
+  /** meshName → id de `GAME_TEXTURES` (mapa ou armamento). */
+  textures?: Record<string, string>;
   /** Criada pela ferramenta in-game (persistida no servidor), não em código. */
   custom?: boolean;
+}
+
+export interface WeaponSkinLooks {
+  parts: Record<string, [number, number, number]>;
+  textures: Record<string, string>;
 }
 
 type Rgb = [number, number, number];
@@ -200,12 +209,75 @@ function isValidColor(c: unknown): c is [number, number, number] {
   );
 }
 
-const WEAPON_SKIN_PARTS_JSON_MAX = 8192;
+const WEAPON_SKIN_PARTS_JSON_MAX = 16384;
+const WHITE: [number, number, number] = [1, 1, 1];
 
-/** Valida o mapa mesh → RGB vindo da rede (objeto ou JSON). */
+function parsePartEntry(
+  val: unknown
+): { color: [number, number, number]; texture?: string } | null {
+  if (isValidColor(val)) return { color: [val[0], val[1], val[2]] };
+  if (!val || typeof val !== "object") return null;
+  const o = val as Record<string, unknown>;
+  const color = isValidColor(o.color) ? o.color : WHITE;
+  const texture = sanitizeGameTextureId(o.texture);
+  if (!isValidColor(o.color) && !texture) return null;
+  return texture ? { color, texture } : { color };
+}
+
+function unpackLooks(
+  partsRaw: unknown,
+  texturesRaw?: unknown
+): WeaponSkinLooks | null {
+  if (!partsRaw || typeof partsRaw !== "object") return null;
+  const parts: Record<string, [number, number, number]> = {};
+  const textures: Record<string, string> = {};
+  for (const [mesh, val] of Object.entries(partsRaw as Record<string, unknown>)) {
+    if (Object.keys(parts).length >= MAX_PARTS) break;
+    if (!mesh || mesh.length > 64) continue;
+    const parsed = parsePartEntry(val);
+    if (!parsed) continue;
+    parts[mesh] = parsed.color;
+    if (parsed.texture) textures[mesh] = parsed.texture;
+  }
+  if (texturesRaw && typeof texturesRaw === "object") {
+    for (const [mesh, id] of Object.entries(texturesRaw as Record<string, unknown>)) {
+      if (Object.keys(textures).length >= MAX_PARTS) break;
+      if (!mesh || mesh.length > 64) continue;
+      const tex = sanitizeGameTextureId(id);
+      if (!tex) continue;
+      textures[mesh] = tex;
+      if (!parts[mesh]) parts[mesh] = WHITE;
+    }
+  }
+  return Object.keys(parts).length > 0 ? { parts, textures } : null;
+}
+
+/** Empacota cores+texturas no JSONB `parts` (sem coluna extra no Postgres). */
+export function packWeaponSkinParts(
+  parts: Record<string, [number, number, number]>,
+  textures?: Record<string, string>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const meshes = new Set([
+    ...Object.keys(parts),
+    ...Object.keys(textures ?? {}),
+  ]);
+  for (const mesh of meshes) {
+    const color = parts[mesh] ?? WHITE;
+    const texture = textures?.[mesh];
+    out[mesh] = texture ? { color, texture } : color;
+  }
+  return out;
+}
+
+/** Valida o mapa mesh → RGB (e v2 com texturas) vindo da rede. */
 export function sanitizeWeaponSkinParts(
   raw: unknown
 ): Record<string, [number, number, number]> | null {
+  return decodeWeaponSkinLooks(raw)?.parts ?? null;
+}
+
+export function decodeWeaponSkinLooks(raw: unknown): WeaponSkinLooks | null {
   let value: unknown = raw;
   if (typeof raw === "string") {
     if (!raw || raw.length > WEAPON_SKIN_PARTS_JSON_MAX) return null;
@@ -216,21 +288,22 @@ export function sanitizeWeaponSkinParts(
     }
   }
   if (!value || typeof value !== "object") return null;
-  const parts: Record<string, [number, number, number]> = {};
-  for (const [mesh, color] of Object.entries(value as Record<string, unknown>)) {
-    if (Object.keys(parts).length >= MAX_PARTS) break;
-    if (!mesh || mesh.length > 64 || !isValidColor(color)) continue;
-    parts[mesh] = [color[0], color[1], color[2]];
+  const o = value as Record<string, unknown>;
+  if (o.v === 2 && o.p && typeof o.p === "object") {
+    return unpackLooks(o.p, o.t);
   }
-  return Object.keys(parts).length > 0 ? parts : null;
+  return unpackLooks(value);
 }
 
 export function encodeWeaponSkinParts(
-  parts: Record<string, [number, number, number]> | null | undefined
+  parts: Record<string, [number, number, number]> | null | undefined,
+  textures?: Record<string, string> | null
 ): string {
   if (!parts || Object.keys(parts).length === 0) return "";
+  const tex = textures && Object.keys(textures).length > 0 ? textures : undefined;
   try {
-    const json = JSON.stringify(parts);
+    const payload = tex ? { v: 2, p: parts, t: tex } : parts;
+    const json = JSON.stringify(payload);
     return json.length > WEAPON_SKIN_PARTS_JSON_MAX ? "" : json;
   } catch {
     return "";
@@ -252,10 +325,18 @@ export function sanitizeWeaponSkin(raw: unknown): WeaponSkinDef | null {
   if (!id || !name || price < 0) return null;
   if (!weaponId) return null;
 
-  const parts = sanitizeWeaponSkinParts(o.parts);
-  if (!parts) return null;
+  const looks = unpackLooks(o.parts, o.textures);
+  if (!looks) return null;
 
-  return { id, weaponId, name, price, parts, custom: true };
+  return {
+    id,
+    weaponId,
+    name,
+    price,
+    parts: looks.parts,
+    textures: Object.keys(looks.textures).length > 0 ? looks.textures : undefined,
+    custom: true,
+  };
 }
 
 /**
