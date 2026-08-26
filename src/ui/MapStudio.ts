@@ -650,6 +650,7 @@ export class MapStudio {
       this.zInput.value = p ? String(p.z) : "0";
       this.xInput.disabled = !p;
       this.zInput.disabled = !p;
+      this.setSizeInputs(true, true);
       this.setLookEnabled(
         Boolean(p),
         p?.color ?? (p ? KIND_DEFAULT_HEX[p.kind] : "#888888"),
@@ -662,6 +663,7 @@ export class MapStudio {
       this.zInput.value = "";
       this.xInput.disabled = true;
       this.zInput.disabled = true;
+      this.setSizeInputs(false, false);
       this.setLookEnabled(true, look.color, look.texture);
     } else if (sel?.type === "border" && def) {
       const look = resolveBorderLook(def);
@@ -670,6 +672,7 @@ export class MapStudio {
       this.zInput.value = "";
       this.xInput.disabled = true;
       this.zInput.disabled = true;
+      this.setSizeInputs(false, false);
       this.setLookEnabled(true, look.color, look.texture);
     } else if (sel?.type === "spawn" && def) {
       const list =
@@ -679,21 +682,23 @@ export class MapStudio {
             ? def.spawnsEcho
             : def.spawns;
       const s = list[sel.index];
-      this.selLabel.textContent = `Spawn ${SPAWN_LABEL[sel.list]} ${sel.index + 1} · Del apaga`;
+      this.selLabel.textContent = `Spawn ${SPAWN_LABEL[sel.list]} ${sel.index + 1} · Elevação · Del apaga`;
       this.xInput.value = s ? String(s.x) : "0";
       this.zInput.value = s ? String(s.z) : "0";
+      this.elevInput.value = String(s?.y ?? 0);
       this.xInput.disabled = !s;
       this.zInput.disabled = !s;
+      this.setSizeInputs(false, Boolean(s));
       this.setLookEnabled(false);
     } else {
       if (tool === "select") {
         this.selLabel.textContent = "Clique numa peça, no chão ou nas paredes da borda";
       } else if (tool === "spawn") {
-        this.selLabel.textContent = "Clique no chão para spawn Free-for-All (verde)";
+        this.selLabel.textContent = "Clique no chão para spawn Free-for-All (verde). Use Elevação para pôr em cima de objetos.";
       } else if (tool === "spawnAlpha") {
-        this.selLabel.textContent = "Clique no chão para spawn da Equipe Alfa (azul, norte)";
+        this.selLabel.textContent = "Clique no chão para spawn da Equipe Alfa (azul, norte). Use Elevação para pôr em cima de objetos.";
       } else if (tool === "spawnEcho") {
-        this.selLabel.textContent = "Clique no chão para spawn da Equipe Echo (vermelho, sul)";
+        this.selLabel.textContent = "Clique no chão para spawn da Equipe Echo (vermelho, sul). Use Elevação para pôr em cima de objetos.";
       } else if (isObjectTool(tool)) {
         this.selLabel.textContent = `Clique no chão para colocar ${PIECE_PRESETS[tool].label.toLowerCase()}`;
       } else {
@@ -703,6 +708,7 @@ export class MapStudio {
       this.zInput.value = "";
       this.xInput.disabled = true;
       this.zInput.disabled = true;
+      this.setSizeInputs(placing, placing || isSpawnTool(tool));
       this.setLookEnabled(
         placing,
         placing ? KIND_DEFAULT_HEX[tool] : "#888888",
@@ -732,6 +738,13 @@ export class MapStudio {
     this.gizmo.setAttribute("aria-hidden", "false");
     this.gizmo.style.left = `${pos.x}px`;
     this.gizmo.style.top = `${pos.y}px`;
+  }
+
+  private setSizeInputs(sizeOn: boolean, elevOn: boolean): void {
+    this.wInput.disabled = !sizeOn;
+    this.hInput.disabled = !sizeOn;
+    this.dInput.disabled = !sizeOn;
+    this.elevInput.disabled = !elevOn;
   }
 
   private setLookEnabled(

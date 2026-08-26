@@ -38,7 +38,7 @@ import {
   type EditorPieceKind,
   type MapTextureId,
 } from "../../shared/customMap";
-import type { SpawnPoint } from "../../shared/mapData";
+import { spawnFeetY, type SpawnPoint } from "../../shared/mapData";
 
 export type EditorTool =
   | "select"
@@ -59,6 +59,12 @@ export type EditorSelection =
   | { type: "ground" }
   | { type: "border" }
   | null;
+
+const SPAWN_MARKER_H = 1.2;
+
+function spawnMarkerY(s: Pick<SpawnPoint, "y">): number {
+  return spawnFeetY(s) + SPAWN_MARKER_H / 2;
+}
 
 const KIND_COLOR: Record<
   EditorPieceKind | "border" | "spawn" | "spawnAlpha" | "spawnEcho",
@@ -272,6 +278,15 @@ export class MapEditor {
       applyPieceElev(piece, this.brush.elev);
       this.rebuildPieces();
       this.emitChange();
+    } else if (this.selection?.type === "spawn") {
+      const s = this.spawnArray(this.selection.list)[this.selection.index];
+      if (s) {
+        s.y = this.brush.elev;
+        this.clampSpawn(s);
+        this.rebuildSpawns();
+        this.updateSelectBox();
+        this.emitChange();
+      }
     }
     this.updateGhost();
   }
@@ -722,10 +737,10 @@ export class MapEditor {
     const key = this.spawnColorKey(list);
     const mesh = MeshBuilder.CreateCylinder(
       `ed_spawn_${list}_${i}`,
-      { height: 1.2, diameter: 1.1, tessellation: 10 },
+      { height: SPAWN_MARKER_H, diameter: 1.1, tessellation: 10 },
       this.scene
     );
-    mesh.position = new Vector3(s.x, 0.6, s.z);
+    mesh.position = new Vector3(s.x, spawnMarkerY(s), s.z);
     mesh.material = this.mat(key, KIND_COLOR[key]);
     mesh.isPickable = true;
     mesh.metadata = { editor: "spawn", list, index: i };
@@ -828,7 +843,7 @@ export class MapEditor {
       const list = toolToSpawnList(this.tool);
       const arr = this.spawnArray(list);
       if (arr.length >= 24) return;
-      arr.push({ x, z });
+      arr.push({ x, z, y: clampElev(this.brush.elev) });
       this.clampSpawn(arr[arr.length - 1]);
       this.rebuildSpawns();
       this.markDirty();
@@ -912,6 +927,9 @@ export class MapEditor {
     const boundZ = Math.max(0, sizeZ / 2 - 3);
     s.x = Math.max(-boundX, Math.min(boundX, s.x));
     s.z = Math.max(-boundZ, Math.min(boundZ, s.z));
+    const y = clampElev(s.y ?? 0);
+    if (y > 0) s.y = y;
+    else delete s.y;
   }
 
   private updateGhost(): void {
@@ -926,10 +944,10 @@ export class MapEditor {
       const key = this.spawnColorKey(toolToSpawnList(this.tool));
       const mesh = MeshBuilder.CreateCylinder(
         "ed_ghost",
-        { height: 1.2, diameter: 1.1, tessellation: 10 },
+        { height: SPAWN_MARKER_H, diameter: 1.1, tessellation: 10 },
         this.scene
       );
-      mesh.position = new Vector3(x, 0.6, z);
+      mesh.position = new Vector3(x, spawnMarkerY({ y: this.brush.elev }), z);
       mesh.material = this.mat(`ghost_${key}`, KIND_COLOR[key], 0.4);
       mesh.isPickable = false;
       this.ghost = mesh;
@@ -975,6 +993,7 @@ export class MapEditor {
       if (!s) return;
       x = s.x;
       z = s.z;
+      y = spawnMarkerY(s);
     } else if (this.selection.type === "ground") {
       const { sizeX, sizeZ } = mapAxes(this.def);
       y = 0.04;
@@ -1035,6 +1054,9 @@ export class MapEditor {
       this.brush = { w: p.w, h: p.h, d: p.d, elev: pieceElev(p) };
       this.brushColor = p.color;
       this.brushTexture = p.texture ?? "default";
+    } else if (this.selection?.type === "spawn") {
+      const s = this.spawnArray(this.selection.list)[this.selection.index];
+      if (s) this.brush.elev = spawnFeetY(s);
     }
     this.onSelect?.(this.selection);
   }

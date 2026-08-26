@@ -3555,7 +3555,7 @@ function setupRoom(r: Room): void {
     setLocalParachute(false);
   });
 
-  r.onMessage("respawn", (e: { x: number; z: number }) => {
+  r.onMessage("respawn", (e: { x: number; z: number; y?: number }) => {
     if (!inGame) return;
     const wasPreSpawn = awaitingSpawn;
     if (wasPreSpawn) {
@@ -3567,7 +3567,7 @@ function setupRoom(r: Room): void {
       exitPreSpawn();
     }
 
-    player.teleport(new Vector3(e.x, 0, e.z));
+    player.teleport(new Vector3(e.x, e.y ?? 0, e.z));
     ownInitialized = true;
     weapons.refillAll();
     weapons.setEnabled(true);

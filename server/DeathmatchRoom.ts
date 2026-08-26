@@ -840,7 +840,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     );
     p.x = spawn.x;
     p.z = spawn.z;
-    p.y = 0;
+    p.y = spawn.y ?? 0;
     p.vy = 0;
     p.grounded = true;
     p.health = CONFIG.playerMaxHealth;
@@ -857,11 +857,11 @@ export class DeathmatchRoom extends Room<MatchState> {
       return;
     }
 
-    this.bodies.set(id, createBody(spawn.x, spawn.z));
+    this.bodies.set(id, createBody(spawn.x, spawn.z, spawn.y ?? 0));
     this.pendingInputs.get(id)?.splice(0);
     this.history.set(id, []);
     const client = this.clients.find((c) => c.sessionId === id);
-    client?.send("respawn", { x: spawn.x, z: spawn.z });
+    client?.send("respawn", { x: spawn.x, z: spawn.z, y: spawn.y ?? 0 });
   }
 
   /** Fim de partida: placar zera e todos os humanos voltam ao pré-lobby. */
@@ -905,7 +905,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         const spawn = randomSpawn(this.spawnPointsFor(p));
         p.x = spawn.x;
         p.z = spawn.z;
-        p.y = 0;
+        p.y = spawn.y ?? 0;
         p.vy = 0;
         this.bots.get(id)?.reset();
       } else {
@@ -1513,6 +1513,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     const spawn = randomSpawn(this.spawnPointsFor(p));
     p.x = spawn.x;
     p.z = spawn.z;
+    p.y = spawn.y ?? 0;
     this.state.players.set(id, p);
     this.history.set(id, []);
 
@@ -1560,11 +1561,11 @@ export class DeathmatchRoom extends Room<MatchState> {
     return this.teamCount("alpha") <= this.teamCount("echo") ? "alpha" : "echo";
   }
 
-  private spawnPointsFor(p: PlayerState): readonly { x: number; z: number }[] {
+  private spawnPointsFor(p: PlayerState): readonly { x: number; z: number; y?: number }[] {
     return this.spawnPointsForTeam(p.team);
   }
 
-  private spawnPointsForTeam(team: string): readonly { x: number; z: number }[] {
+  private spawnPointsForTeam(team: string): readonly { x: number; z: number; y?: number }[] {
     return spawnsForTeam(team, this.roomMap);
   }
 
@@ -1628,7 +1629,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         const spawn = randomSpawn(this.spawnPointsFor(p));
         p.x = spawn.x;
         p.z = spawn.z;
-        p.y = 0;
+        p.y = spawn.y ?? 0;
       }
     });
   }

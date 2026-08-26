@@ -60,8 +60,8 @@ export interface BodyState {
   grounded: boolean;
 }
 
-export function createBody(x: number, z: number): BodyState {
-  return { x, y: 0, z, vy: 0, grounded: true };
+export function createBody(x: number, z: number, y = 0): BodyState {
+  return { x, y, z, vy: 0, grounded: true };
 }
 
 export function copyBody(from: BodyState, to: BodyState): void {

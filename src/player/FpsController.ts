@@ -215,8 +215,8 @@ export class FpsController {
     this.canvas = canvas;
 
     const spawn = options.spawnPosition ?? new Vector3(0, 0, -18);
-    this.sim = createBody(spawn.x, spawn.z);
-    this.prevSim = createBody(spawn.x, spawn.z);
+    this.sim = createBody(spawn.x, spawn.z, spawn.y);
+    this.prevSim = createBody(spawn.x, spawn.z, spawn.y);
 
     this.body = MeshBuilder.CreateBox(
       "playerBody",

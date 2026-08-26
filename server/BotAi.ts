@@ -95,8 +95,7 @@ export class BotAi {
     this.id = id;
     this.state = state;
     this.world = world;
-    this.body = createBody(state.x, state.z);
-    this.body.y = state.y;
+    this.body = createBody(state.x, state.z, state.y);
     this.patrolTarget = randomSpawn(world.getSpawns(state.team));
     this.lastX = state.x;
     this.lastZ = state.z;
@@ -147,8 +146,7 @@ export class BotAi {
     this.physAcc = 0;
     this.crouchHold = 0;
     this.burstLeft = BURST_SIZE;
-    this.body = createBody(this.state.x, this.state.z);
-    this.body.y = this.state.y;
+    this.body = createBody(this.state.x, this.state.z, this.state.y);
     this.state.crouch = false;
     this.lastX = this.state.x;
     this.lastZ = this.state.z;

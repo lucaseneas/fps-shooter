@@ -143,6 +143,17 @@ export interface RampDef {
 export interface SpawnPoint {
   x: number;
   z: number;
+  /** Altura dos pés (0 = chão). Mesmo eixo Y da física do jogador. */
+  y?: number;
+}
+
+/** Elevação dos pés no spawn (0–40). Mapas antigos sem `y` ficam no chão. */
+export function spawnFeetY(s: Pick<SpawnPoint, "y">): number {
+  const y = s.y;
+  if (typeof y !== "number" || !Number.isFinite(y)) return 0;
+  if (y < 0) return 0;
+  if (y > 40) return 40;
+  return y;
 }
 
 /** Geometria de colisão de um mapa (caixas + OBB + rampas). */

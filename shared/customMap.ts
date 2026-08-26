@@ -4,6 +4,7 @@ import {
   WALL_HEIGHT,
   buildPracaGeometry,
   boxCollisionSize,
+  spawnFeetY,
   type BoxDef,
   type MapGeometry,
   type SpawnPoint,
@@ -467,9 +468,9 @@ export function customMapToGeometry(def: CustomMapDef): MapGeometry {
     mapSizeX: sizeX,
     mapSizeZ: sizeZ,
     mapSize: Math.max(sizeX, sizeZ),
-    spawns: spawns.map((s) => ({ x: s.x, z: s.z })),
-    spawnsAlpha: spawnsAlpha.map((s) => ({ x: s.x, z: s.z })),
-    spawnsEcho: spawnsEcho.map((s) => ({ x: s.x, z: s.z })),
+    spawns: spawns.map(copySpawnPoint),
+    spawnsAlpha: spawnsAlpha.map(copySpawnPoint),
+    spawnsEcho: spawnsEcho.map(copySpawnPoint),
     groundColor: resolveGroundLook(def).color,
     groundTexture: resolveGroundLook(def).texture,
   };
@@ -504,14 +505,22 @@ function sanitizePiece(raw: unknown): EditorPiece | null {
   };
 }
 
+function copySpawnPoint(s: SpawnPoint): SpawnPoint {
+  const y = spawnFeetY(s);
+  return y > 0 ? { x: s.x, z: s.z, y } : { x: s.x, z: s.z };
+}
+
 function sanitizeSpawn(raw: unknown, sizeX: number, sizeZ: number): SpawnPoint | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
   const boundX = sizeX / 2 - 2;
   const boundZ = sizeZ / 2 - 2;
+  const yRaw = o.y !== undefined ? o.y : o.elev;
+  const y = spawnFeetY({ y: num(yRaw, 0, MIN_PIECE_ELEV, MAX_PIECE_ELEV) });
   return {
     x: num(o.x, 0, -boundX, boundX),
     z: num(o.z, 0, -boundZ, boundZ),
+    ...(y > 0 ? { y } : {}),
   };
 }
 
