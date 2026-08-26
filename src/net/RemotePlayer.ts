@@ -721,20 +721,20 @@ export class RemotePlayer {
   }
 
   private applyInvincibilityAlpha(): void {
+    const vis = this.invincible ? 0.6 : 1;
     const alpha = this.invincible ? 0.6 : 1;
     const mode = this.invincible
       ? Material.MATERIAL_ALPHABLEND
       : Material.MATERIAL_OPAQUE;
-    for (const mesh of [
-      this.bodyMesh,
-      this.headMesh,
-      this.gun,
-      ...this.gun.getChildMeshes(),
-    ]) {
+    for (const mesh of [this.bodyMesh, this.headMesh]) {
       const mat = mesh.material as StandardMaterial | null;
       if (!mat) continue;
       mat.alpha = alpha;
       mat.transparencyMode = mode;
+    }
+    this.gun.visibility = vis;
+    for (const mesh of this.gun.getChildMeshes()) {
+      mesh.visibility = vis;
     }
   }
 
