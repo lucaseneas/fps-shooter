@@ -1091,7 +1091,7 @@ export class FpsController {
    */
   private applyCameraAim(pitch: number, yaw: number, roll = 0): void {
     this.camera.rotation.set(pitch, yaw, roll);
-    this.camera.rotationQuaternion = null;
+    this.clearRotationQuaternion();
     if (roll === 0) {
       this.camera.upVector.set(0, 1, 0);
     }
@@ -1099,8 +1099,16 @@ export class FpsController {
 
   private levelCamera(): void {
     this.camera.rotation.z = 0;
-    this.camera.rotationQuaternion = null;
+    this.clearRotationQuaternion();
     this.camera.upVector.set(0, 1, 0);
+  }
+
+  /**
+   * TargetCamera tipa rotationQuaternion como Quaternion, mas null é a API
+   * documentada para voltar a usar Euler (`rotation`).
+   */
+  private clearRotationQuaternion(): void {
+    this.camera.rotationQuaternion = null as never;
   }
 
   /** Info de debug para o HUD. */

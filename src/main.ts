@@ -4101,7 +4101,12 @@ function setCrosshairScoped(on: boolean): void {
   crosshairEl.classList.toggle("scoped", on);
 }
 
-function paintScopeOverlay(): void {
+const SCOPE_LINE_BLUR_WALK = 2.8;
+
+let scopeLineBlur = 0;
+let scopeLineBlurPainted = -1;
+
+function paintScopeOverlay(lineBlurCss = 0): void {
   const cssW = Math.max(1, window.innerWidth);
   const cssH = Math.max(1, window.innerHeight);
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -4137,6 +4142,8 @@ function paintScopeOverlay(): void {
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
 
+  const blurPx = lineBlurCss * dpr;
+  if (blurPx > 0.05) ctx.filter = `blur(${blurPx}px)`;
   ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
   ctx.lineWidth = 2 * dpr;
   ctx.beginPath();
@@ -4145,6 +4152,24 @@ function paintScopeOverlay(): void {
   ctx.moveTo(cx, cy - r);
   ctx.lineTo(cx, cy + r);
   ctx.stroke();
+  ctx.filter = "none";
+}
+
+function updateScopeOverlayBlur(dt: number): void {
+  if (!adsOverlayOn) {
+    if (scopeLineBlur !== 0) {
+      scopeLineBlur = 0;
+      scopeLineBlurPainted = -1;
+    }
+    return;
+  }
+
+  const target = player.isMovingOnGround ? SCOPE_LINE_BLUR_WALK : 0;
+  scopeLineBlur += (target - scopeLineBlur) * Math.min(1, dt * 14);
+  if (Math.abs(scopeLineBlur - scopeLineBlurPainted) > 0.06) {
+    scopeLineBlurPainted = scopeLineBlur;
+    paintScopeOverlay(scopeLineBlur);
+  }
 }
 
 function exitAds(): void {
@@ -4514,6 +4539,7 @@ engine.runRenderLoop(() => {
   viewModel.setSprinting(sprinting);
   weapons.update(dt);
   updateAds(dt);
+  updateScopeOverlayBlur(dt);
   viewModel.update(dt);
   if (localHeli && (localPredator || localHeliLinger > 0)) {
     if (localPredator) {
@@ -4601,7 +4627,7 @@ window.addEventListener("resize", () => {
   }
   if (!shopModal.classList.contains("hidden")) shopPreview?.resize();
   socialPanel.resizeFriendPreview();
-  paintScopeOverlay();
+  paintScopeOverlay(scopeLineBlur);
 });
 
 // Pinta o scope fora do combate (evita hitch no 1º RMB).
