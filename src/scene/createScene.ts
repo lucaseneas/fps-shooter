@@ -15,7 +15,7 @@ import "@babylonjs/core/Collisions/collisionCoordinator";
 import "@babylonjs/loaders/glTF";
 
 import { MAP_BOXES, MAP_SIZE, type BoxDef } from "../../shared/mapData";
-import { textureUrlFor } from "../../shared/customMap";
+import { parseHexColor, textureUrlFor } from "../../shared/customMap";
 
 /**
  * Constrói a cena a partir de `shared/mapData` — a MESMA geometria que o
@@ -102,8 +102,9 @@ function createGround(
     floorTex.vScale = mapSizeZ / 4;
     mat.diffuseTexture = floorTex;
   }
-  const tint = look?.color ? hexToColor3(look.color) : null;
-  mat.diffuseColor = tint ?? new Color3(1, 1, 1);
+  const tint = look?.color ? parseHexColor(look.color) : null;
+  mat.diffuseColor = tint ? new Color3(tint.r, tint.g, tint.b) : new Color3(1, 1, 1);
+  applyMatAlpha(mat, tint?.a ?? 1);
   mat.specularColor = new Color3(0.02, 0.02, 0.02);
   mat.freeze();
   tagMap(mat);
@@ -113,15 +114,19 @@ function createGround(
   ground.freezeWorldMatrix();
 }
 
+function applyMatAlpha(mat: StandardMaterial, alpha: number): void {
+  const a = Math.max(0, Math.min(1, alpha));
+  mat.alpha = a;
+  if (a < 1) {
+    mat.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
+    mat.backFaceCulling = false;
+    mat.needDepthPrePass = true;
+  }
+}
+
 function hexToColor3(hex: string): Color3 | null {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return null;
-  const v = parseInt(m[1], 16);
-  return new Color3(
-    ((v >> 16) & 255) / 255,
-    ((v >> 8) & 255) / 255,
-    (v & 255) / 255
-  );
+  const p = parseHexColor(hex);
+  return p ? new Color3(p.r, p.g, p.b) : null;
 }
 
 function lookKey(b: BoxDef): string {
@@ -161,6 +166,7 @@ function createMapBoxes(scene: Scene, boxes: readonly BoxDef[]): void {
       const url = textureUrlFor(b.kind, b.texture);
       mat.diffuseTexture = url ? getTex(url) : null;
       mat.diffuseColor = b.color ? hexToColor3(b.color) ?? kindDefaultColor(b.kind) : kindDefaultColor(b.kind);
+      applyMatAlpha(mat, b.color ? parseHexColor(b.color)?.a ?? 1 : 1);
       mat.specularColor = new Color3(0.05, 0.05, 0.05);
       mat.freeze();
       tagMap(mat);

@@ -26,6 +26,7 @@ import {
   cloneCustomMap,
   mapAxes,
   newPieceId,
+  parseHexColor,
   pieceElev,
   resolveBorderLook,
   resolveGroundLook,
@@ -91,15 +92,13 @@ function toolToSpawnList(tool: "spawn" | "spawnAlpha" | "spawnEcho"): SpawnListI
   return "ffa";
 }
 
-function hexToColor3(hex: string): Color3 {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return new Color3(1, 1, 1);
-  const v = parseInt(m[1], 16);
-  return new Color3(
-    ((v >> 16) & 255) / 255,
-    ((v >> 8) & 255) / 255,
-    (v & 255) / 255
-  );
+function color3FromHex(hex: string): Color3 {
+  const p = parseHexColor(hex);
+  return p ? new Color3(p.r, p.g, p.b) : new Color3(1, 1, 1);
+}
+
+function alphaFromHex(hex: string): number {
+  return parseHexColor(hex)?.a ?? 1;
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -554,7 +553,11 @@ export class MapEditor {
     mat.diffuseColor = color;
     mat.specularColor = new Color3(0.04, 0.04, 0.04);
     mat.alpha = alpha;
-    if (alpha < 1) mat.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
+    if (alpha < 1) {
+      mat.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
+      mat.backFaceCulling = false;
+      mat.needDepthPrePass = true;
+    }
     if (texUrl) mat.diffuseTexture = this.getTex(texUrl);
     this.mats.set(cacheKey, mat);
     return mat;
@@ -586,7 +589,12 @@ export class MapEditor {
   private pieceMat(p: EditorPiece): StandardMaterial {
     const hex = p.color ?? KIND_DEFAULT_HEX[p.kind];
     const url = textureUrlFor(p.kind, p.texture);
-    return this.mat(`piece:${p.kind}:${p.texture ?? "default"}:${hex}`, hexToColor3(hex), 1, url);
+    return this.mat(
+      `piece:${p.kind}:${p.texture ?? "default"}:${hex}`,
+      color3FromHex(hex),
+      alphaFromHex(hex),
+      url
+    );
   }
 
   private rebuildGround(): void {
@@ -614,8 +622,15 @@ export class MapEditor {
     );
     const url = textureUrlFor("ground", look.texture);
     const mat = new StandardMaterial("ed_ground_mat", this.scene);
-    mat.diffuseColor = hexToColor3(look.color);
+    mat.diffuseColor = color3FromHex(look.color);
     mat.specularColor = new Color3(0.03, 0.03, 0.03);
+    const groundAlpha = alphaFromHex(look.color);
+    mat.alpha = groundAlpha;
+    if (groundAlpha < 1) {
+      mat.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
+      mat.backFaceCulling = false;
+      mat.needDepthPrePass = true;
+    }
     if (url) {
       mat.diffuseTexture = this.getTexScaled(url, sizeX / 4, sizeZ / 4);
     }
@@ -670,8 +685,8 @@ export class MapEditor {
       mesh.position = new Vector3(b.x, b.y, b.z);
       const mat = this.mat(
         `border:${look.texture}:${look.color}:${selected ? "sel" : ""}`,
-        hexToColor3(look.color),
-        1,
+        color3FromHex(look.color),
+        alphaFromHex(look.color),
         url
       );
       if (selected) mat.emissiveColor = new Color3(0.18, 0.1, 0.04);

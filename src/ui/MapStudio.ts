@@ -16,6 +16,9 @@ import {
   makeEmptyMap,
   mapAxes,
   pracaToCustomMap,
+  composeHexColor,
+  hexColorAlpha,
+  hexColorRgb,
   resolveBorderLook,
   resolveGroundLook,
   type CustomMapDef,
@@ -149,6 +152,8 @@ export class MapStudio {
   private readonly xInput: HTMLInputElement;
   private readonly zInput: HTMLInputElement;
   private readonly colorInput: HTMLInputElement;
+  private readonly opacityInput: HTMLInputElement;
+  private readonly opacityVal: HTMLElement;
   private readonly texturePicker: TexturePicker;
   private readonly canvas: HTMLCanvasElement;
   private readonly gizmo: HTMLElement;
@@ -181,13 +186,18 @@ export class MapStudio {
     this.xInput = el("mapEditorX");
     this.zInput = el("mapEditorZ");
     this.colorInput = el("mapEditorColor");
+    this.opacityInput = el("mapEditorOpacity");
+    this.opacityVal = el("mapEditorOpacityVal");
     this.texturePicker = new TexturePicker(el("mapEditorTexturePicker"), {
       includeDefault: true,
       includeNone: true,
       defaultLabel: "Padrão",
       noneLabel: "Só cor",
       onChange: (id) => {
-        this.editor?.setAppearance(this.colorInput.value, id as MapTextureId);
+        if (id !== "none" && id !== "default") {
+          this.colorInput.value = "#ffffff";
+        }
+        this.editor?.setAppearance(this.currentLookColor(), id as MapTextureId);
         this.editor?.commit();
       },
     });
@@ -349,13 +359,16 @@ export class MapStudio {
 
     this.texturePicker.setValue("default");
     const applyLook = () => {
+      this.syncOpacityLabel();
       this.editor?.setAppearance(
-        this.colorInput.value,
+        this.currentLookColor(),
         this.texturePicker.getValue() as MapTextureId
       );
     };
     this.colorInput.addEventListener("input", applyLook);
     this.colorInput.addEventListener("change", () => this.editor?.commit());
+    this.opacityInput.addEventListener("input", applyLook);
+    this.opacityInput.addEventListener("change", () => this.editor?.commit());
 
     el<HTMLButtonElement>("mapEditorPickGround").addEventListener("click", () => {
       this.editor?.selectSurface("ground");
@@ -747,14 +760,30 @@ export class MapStudio {
     this.elevInput.disabled = !elevOn;
   }
 
+  private currentLookColor(): string {
+    const pct = Number(this.opacityInput.value);
+    const alpha = Number.isFinite(pct) ? pct / 100 : 1;
+    return composeHexColor(this.colorInput.value, alpha);
+  }
+
+  private syncOpacityLabel(): void {
+    const pct = Number(this.opacityInput.value);
+    this.opacityVal.textContent = `${Number.isFinite(pct) ? Math.round(pct) : 100}%`;
+  }
+
   private setLookEnabled(
     on: boolean,
     color?: string,
     texture?: MapTextureId
   ): void {
     this.colorInput.disabled = !on;
+    this.opacityInput.disabled = !on;
     this.texturePicker.setDisabled(!on);
-    if (color) this.colorInput.value = color;
+    if (color) {
+      this.colorInput.value = hexColorRgb(color);
+      this.opacityInput.value = String(Math.round(hexColorAlpha(color) * 100));
+      this.syncOpacityLabel();
+    }
     if (texture) this.texturePicker.setValue(texture);
   }
 

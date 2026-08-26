@@ -17,7 +17,7 @@ export interface BoxDef {
   h: number;
   d: number;
   kind: "border" | "wall" | "building" | "box" | "platform" | "pillar";
-  /** Tint "#rrggbb" (mapa custom). */
+  /** Tint `#rrggbb` ou `#rrggbbaa` (mapa custom). */
   color?: string;
   /** Id de textura do editor (mapa custom). */
   texture?: string;

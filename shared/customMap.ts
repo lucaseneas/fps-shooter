@@ -100,10 +100,55 @@ export function resolveBorderLook(def: CustomMapDef): MapSurfaceLook {
   };
 }
 
+/** `#rrggbb` (opaco) ou `#rrggbbaa`. */
+export function parseHexColor(
+  hex: string
+): { r: number; g: number; b: number; a: number } | null {
+  const s = hex.trim();
+  const m8 = /^#?([0-9a-f]{8})$/i.exec(s);
+  const m6 = m8 ? null : /^#?([0-9a-f]{6})$/i.exec(s);
+  const body = m8?.[1] ?? m6?.[1];
+  if (!body) return null;
+  const v = parseInt(body.slice(0, 6), 16);
+  return {
+    r: ((v >> 16) & 255) / 255,
+    g: ((v >> 8) & 255) / 255,
+    b: (v & 255) / 255,
+    a: body.length === 8 ? parseInt(body.slice(6, 8), 16) / 255 : 1,
+  };
+}
+
+function toHex2(n: number): string {
+  return Math.round(Math.max(0, Math.min(1, n)) * 255)
+    .toString(16)
+    .padStart(2, "0");
+}
+
+/** RGB para `<input type="color">` (`#rrggbb`). */
+export function hexColorRgb(hex: string): string {
+  const p = parseHexColor(hex);
+  if (!p) return "#ffffff";
+  return `#${toHex2(p.r)}${toHex2(p.g)}${toHex2(p.b)}`;
+}
+
+export function hexColorAlpha(hex: string): number {
+  return parseHexColor(hex)?.a ?? 1;
+}
+
+/** Opaco → `#rrggbb`; com alpha → `#rrggbbaa`. */
+export function composeHexColor(rgb: string, alpha: number): string {
+  const p = parseHexColor(rgb);
+  const rgbPart = `#${toHex2(p?.r ?? 1)}${toHex2(p?.g ?? 1)}${toHex2(p?.b ?? 1)}`;
+  const a = Math.max(0, Math.min(1, alpha));
+  if (a >= 254.5 / 255) return rgbPart;
+  return `${rgbPart}${toHex2(a)}`;
+}
+
 export function sanitizeHexColor(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
-  const m = /^#?([0-9a-f]{6})$/i.exec(v.trim());
-  return m ? `#${m[1].toLowerCase()}` : undefined;
+  const p = parseHexColor(v);
+  if (!p) return undefined;
+  return composeHexColor(hexColorRgb(`#${toHex2(p.r)}${toHex2(p.g)}${toHex2(p.b)}`), p.a);
 }
 
 export function sanitizeTextureId(v: unknown): MapTextureId {
