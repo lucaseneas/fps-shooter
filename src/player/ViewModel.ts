@@ -219,6 +219,24 @@ function resolvePartColor(
   return resolvePartKey(meshName, parts);
 }
 
+type TintMat = {
+  albedoColor?: Color3;
+  diffuseColor?: Color3;
+  albedoTexture?: Texture | null;
+  diffuseTexture?: Texture | null;
+  metallic?: number;
+  roughness?: number;
+  specularColor?: Color3;
+  alpha?: number;
+  transparencyMode?: number | null;
+  useAlphaFromAlbedoTexture?: boolean;
+};
+
+function markCatalogTextureOpaque(tex: Texture): void {
+  tex.hasAlpha = false;
+  tex.getAlphaFromRGB = false;
+}
+
 const sceneTexCache = new WeakMap<Scene, Map<string, Texture>>();
 
 function cachedTexture(scene: Scene, url: string, scale: number): Texture {
@@ -230,25 +248,25 @@ function cachedTexture(scene: Scene, url: string, scale: number): Texture {
   const key = `${url}@${scale}`;
   let tex = map.get(key);
   if (!tex) {
-    tex = new Texture(url, scene);
-    tex.wrapU = Texture.WRAP_ADDRESSMODE;
-    tex.wrapV = Texture.WRAP_ADDRESSMODE;
-    tex.uScale = scale;
-    tex.vScale = scale;
-    map.set(key, tex);
+    const created = new Texture(url, scene);
+    created.wrapU = Texture.WRAP_ADDRESSMODE;
+    created.wrapV = Texture.WRAP_ADDRESSMODE;
+    created.uScale = scale;
+    created.vScale = scale;
+    markCatalogTextureOpaque(created);
+    created.onLoadObservable.add(() => markCatalogTextureOpaque(created));
+    map.set(key, created);
+    tex = created;
   }
+  markCatalogTextureOpaque(tex);
   return tex;
 }
 
-type TintMat = {
-  albedoColor?: Color3;
-  diffuseColor?: Color3;
-  albedoTexture?: Texture | null;
-  diffuseTexture?: Texture | null;
-  metallic?: number;
-  roughness?: number;
-  specularColor?: Color3;
-};
+function forceCatalogMatOpaque(mat: TintMat): void {
+  mat.alpha = 1;
+  mat.useAlphaFromAlbedoTexture = false;
+  mat.transparencyMode = 0;
+}
 
 function uvsAreUsable(uvs: ArrayLike<number> | null | undefined): boolean {
   if (!uvs || uvs.length < 2) return false;
@@ -367,6 +385,7 @@ export function applyWeaponMeshTexture(
   const scale = getGameTexture(textureId!)?.uvScale ?? 2;
   const tex = cachedTexture(scene, url, scale);
   bindMeshTexture(mat, tex);
+  forceCatalogMatOpaque(mat);
   if (mat.metallic !== undefined) {
     mat.metallic = Math.min(mat.metallic, 0.35);
     if (mat.roughness !== undefined) mat.roughness = Math.max(mat.roughness, 0.4);
@@ -651,9 +670,7 @@ export class ViewModel {
             m.material = mat;
           }
           originals.set(m.name, this.readMeshColor(m).clone());
-          if (m.material && this.isInvincible) {
-            m.material.alpha = 0.6;
-          }
+          m.visibility = this.isInvincible ? 0.6 : 1;
         }
         this.originalColors.set(id, originals);
         this.weaponModels.set(id, model);
@@ -797,16 +814,13 @@ export class ViewModel {
 
   setInvincible(on: boolean): void {
     this.isInvincible = on;
-    const alpha = on ? 0.6 : 1;
-    this.bodyMat.alpha = alpha;
-    this.bodyMat.transparencyMode = on
-      ? StandardMaterial.MATERIAL_ALPHABLEND
-      : StandardMaterial.MATERIAL_OPAQUE;
-
+    const vis = on ? 0.6 : 1;
+    this.bodyMesh.visibility = vis;
+    this.fallbackRoot.getChildMeshes().forEach((m) => {
+      m.visibility = vis;
+    });
     this.modelsRoot.getChildMeshes().forEach((m) => {
-      if (m.material) {
-        m.material.alpha = alpha;
-      }
+      m.visibility = vis;
     });
   }
 
