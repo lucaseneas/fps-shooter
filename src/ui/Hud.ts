@@ -127,6 +127,8 @@ export class Hud {
   private readonly streakTlFill = el<HTMLDivElement>("streakTlFill");
   private readonly streakTlNodes = el<HTMLDivElement>("streakTlNodes");
   private readonly streakTlHint = el<HTMLDivElement>("streakTlHint");
+  private readonly streakTimeline = el<HTMLDivElement>("streakTimeline");
+  private killStreaksEnabled = true;
 
   private hitmarkerTimeout = 0;
   private vignetteTimeout = 0;
@@ -292,6 +294,19 @@ export class Hud {
     this.killsPanelFfa.classList.toggle("hidden", mode !== "ffa");
     this.killsPanelTdm.classList.toggle("hidden", mode !== "tdm");
     this.killsPanelZombies.classList.toggle("hidden", mode !== "zombies");
+    this.setKillStreaksEnabled(mode !== "zombies");
+  }
+
+  private setKillStreaksEnabled(on: boolean): void {
+    if (on === this.killStreaksEnabled) return;
+    this.killStreaksEnabled = on;
+    this.streakTimeline.classList.toggle("hidden", !on);
+    if (!on) {
+      this.streakActivePanel.classList.add("hidden");
+      this.resetKillStreak();
+    } else {
+      this.renderStreakTimeline(this.currentKillStreak);
+    }
   }
 
   setZombieHud(round: number, left: number): void {
@@ -345,6 +360,7 @@ export class Hud {
 
   /** Atualiza a timeline de kill streaks (kills sem morrer). */
   setKillStreak(count: number): void {
+    if (!this.killStreaksEnabled) return;
     const streak = Math.max(0, Math.floor(count));
     if (streak === this.currentKillStreak) return;
     this.currentKillStreak = streak;
@@ -362,6 +378,7 @@ export class Hud {
    * Re-renderiza a timeline apenas quando algo muda.
    */
   updateAvailableStreaks(ids: string[], activeId: string): void {
+    if (!this.killStreaksEnabled) return;
     const changed =
       activeId !== this.activeStreakId ||
       ids.length !== this.availableStreakIds.length ||
@@ -373,6 +390,7 @@ export class Hud {
   }
 
   private renderStreakTimeline(streak: number): void {
+    if (!this.killStreaksEnabled) return;
     this.streakTlCount.textContent = String(streak);
 
     const rewards = KILL_STREAK_REWARDS;
@@ -462,9 +480,11 @@ export class Hud {
     showLocalBadge: boolean
   ): number {
     if (victimId) this.clearPlayerStreak(victimId);
-    const streak = this.bumpPlayerStreak(killerId);
+    const streak = this.killStreaksEnabled
+      ? this.bumpPlayerStreak(killerId)
+      : 1;
     this.addKillFeedEntry(killerName, victimName, weapon, streak);
-    if (showLocalBadge) this.showKillBadge(streak);
+    if (showLocalBadge && this.killStreaksEnabled) this.showKillBadge(streak);
     return streak;
   }
 
@@ -663,6 +683,7 @@ export class Hud {
     killerHealth = 0,
     downed = false
   ): void {
+    if (!this.endScreen.classList.contains("hidden")) return;
     this.deathInfo.textContent = killerName || "?";
     this.deathWeapon.textContent = weaponName ? `[${weaponName}]` : "";
     const hp = Math.max(0, Math.round(killerHealth));
@@ -707,6 +728,8 @@ export class Hud {
     rows: ScoreRow[],
     xp?: EndXpSummary
   ): void {
+    this.hideDeathScreen();
+    this.setRevivePrompt(false);
     this.endTitle.textContent = playerWon
       ? "Missão cumprida"
       : winnerName.startsWith("Round")
@@ -783,6 +806,12 @@ export class Hud {
   }
 
   updateActiveStreak(streakName: string, timeLeft: number): void {
+    if (!this.killStreaksEnabled) {
+      this.streakActivePanel.classList.add("hidden");
+      this.wallhackVignette.classList.add("hidden");
+      this.predatorVignette.classList.add("hidden");
+      return;
+    }
     if (streakName) {
       this.streakActivePanel.classList.remove("hidden");
       this.streakActiveTitle.textContent = streakName.replace("_", " ").toUpperCase();
@@ -814,6 +843,7 @@ export class Hud {
   }
 
   showKillstreakToast(message: string): void {
+    if (!this.killStreaksEnabled) return;
     const toast = document.createElement("div");
     toast.className = "streak-toast";
     toast.textContent = message;

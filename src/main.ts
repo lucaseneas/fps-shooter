@@ -217,7 +217,6 @@ const lobbyChatLog = document.getElementById("lobbyChatLog") as HTMLDivElement;
 const lobbyChatForm = document.getElementById("lobbyChatForm") as HTMLFormElement;
 const lobbyChatInput = document.getElementById("lobbyChatInput") as HTMLInputElement;
 const lobbyReadyButton = document.getElementById("lobbyReadyButton") as HTMLButtonElement;
-const lobbyLoadoutButton = document.getElementById("lobbyLoadoutButton") as HTMLButtonElement;
 const lobbyZombieCountdown = document.getElementById("lobbyZombieCountdown") as HTMLParagraphElement;
 const createBotsRow = document.getElementById("createBotsRow") as HTMLDivElement;
 const createKillsRow = document.getElementById("createKillsRow") as HTMLDivElement;
@@ -3423,11 +3422,6 @@ lobbyBotsSlider.addEventListener("input", () => {
   sendLobbySetting({ bots: parseInt(lobbyBotsSlider.value, 10) });
 });
 
-lobbyLoadoutButton.addEventListener("click", () => {
-  if (!inLobby) return;
-  openLoadoutModal(false);
-});
-
 lobbyReadyButton.addEventListener("click", () => {
   if (!room) return;
   const snap = getMatchSnapshot(room);
@@ -3775,7 +3769,6 @@ function updateLobbyUi(): void {
       : "Pré-lobby — aguardando o líder iniciar";
   }
   lobbyStatus.classList.toggle("live", snap.matchStarted);
-  lobbyLoadoutButton.classList.toggle("hidden", !zombies || snap.matchStarted);
   lobbyKillsRow.classList.toggle("hidden", zombies);
   lobbyBotsRow.classList.toggle("hidden", zombies);
 
@@ -3906,12 +3899,12 @@ function setupRoom(r: Room): void {
   });
 
   r.onMessage("killstreakEarned", (e: { playerName: string; streakName: string }) => {
-    if (!inGame) return;
+    if (!inGame || isZombiesMode(currentGameMode())) return;
     hud.showKillstreakToast(`${e.playerName} liberou [${e.streakName}]!`);
   });
 
   r.onMessage("killstreakActivated", (e: { playerName: string; streakName: string }) => {
-    if (!inGame) return;
+    if (!inGame || isZombiesMode(currentGameMode())) return;
     hud.showKillstreakToast(`${e.playerName} ativou [${e.streakName}]!`);
   });
 
@@ -3965,6 +3958,7 @@ function setupRoom(r: Room): void {
     deathCountdown = e.downed ? 0 : CONFIG.respawnDelay;
     player.setMovementEnabled(false);
     player.setLookEnabled(e.downed === true);
+    if (endScreenShown) return;
     hud.showDeathScreen(e.killerName, e.weaponName, e.killerHealth ?? 0, e.downed === true);
     if (!e.downed) hud.updateDeathTimer(deathCountdown);
     audio.death();
@@ -4920,6 +4914,7 @@ window.addEventListener("blur", () => {
 });
 
 function trySendActivateStreak(code: string, key = ""): boolean {
+  if (isZombiesMode(currentGameMode())) return false;
   const reward = killStreakRewardForKey(code, key);
   if (!reward) return false;
   if (room && inGame && !playerDead && !awaitingSpawn && !endScreenShown && !isGhostSpectating()) {

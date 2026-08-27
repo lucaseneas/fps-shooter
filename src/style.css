@@ -1462,6 +1462,7 @@ body {
 #endScreen {
   position: absolute;
   inset: 0;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3759,6 +3760,10 @@ kbd {
   padding: 12px 12px 10px;
   pointer-events: none;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+#streakTimeline.hidden {
+  display: none;
 }
 
 .streak-tl-header {

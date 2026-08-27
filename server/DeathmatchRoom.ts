@@ -260,6 +260,7 @@ export class DeathmatchRoom extends Room<MatchState> {
      */
     this.onMessage("activateStreak", (client, msg: { id?: unknown }) => {
       if (this.state.matchOver) return;
+      if (this.isZombies()) return;
       const p = this.state.players.get(client.sessionId);
       if (!p || !p.alive || !p.inMatch) return;
       const id = typeof msg?.id === "string" ? msg.id : "";
@@ -637,6 +638,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     id: string,
     devUnlock = false
   ): boolean {
+    if (this.isZombies()) return false;
     if (p.activeStreak || p.parachuting) return false;
     const index = p.availableStreaks.indexOf(id);
     if (index < 0 && !devUnlock) return false;
