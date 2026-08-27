@@ -6,7 +6,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Room } from "colyseus.js";
 
-import { createScene, applyBoxMap } from "./scene/createScene";
+import { createScene, applyBoxMap, setMatchAtmosphere } from "./scene/createScene";
 import { FpsController } from "./player/FpsController";
 import { ViewModel } from "./player/ViewModel";
 import { PlayerVisual } from "./player/PlayerVisual";
@@ -3093,8 +3093,10 @@ function startMatchLocal(): void {
   navigate("/play");
   audio.resume();
   applyClientWorldMap();
+  const zombies = isZombiesMode(getMatchSnapshot(room).gameMode);
+  setMatchAtmosphere(scene, zombies);
   syncAllViewModelSkins();
-  if (isZombiesMode(getMatchSnapshot(room).gameMode)) {
+  if (zombies) {
     audio.startZombieAmbience();
     applySelectedLoadout(savedLoadout());
     awaitingSpawn = true;
@@ -3212,6 +3214,7 @@ function cleanupMatchLocal(): void {
   hud.setRevivePrompt(false);
   hud.setBossHealth(0, 0);
   audio.stopZombieAmbience();
+  setMatchAtmosphere(scene, false);
 
   weapons.setTrigger(false);
   weapons.refillAll();

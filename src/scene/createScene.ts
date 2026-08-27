@@ -40,6 +40,18 @@ export function createScene(engine: Engine): Scene {
   return scene;
 }
 
+interface AtmosphereMeta {
+  night?: boolean;
+  mapFogStart?: number;
+  mapFogEnd?: number;
+}
+
+function atmosphereMeta(scene: Scene): AtmosphereMeta {
+  const extra = (scene.metadata as AtmosphereMeta | null) ?? {};
+  scene.metadata = extra;
+  return extra;
+}
+
 function setupLights(scene: Scene): void {
   const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
   hemi.intensity = 0.75;
@@ -48,6 +60,56 @@ function setupLights(scene: Scene): void {
   const sun = new DirectionalLight("sun", new Vector3(-0.5, -1, -0.6), scene);
   sun.position = new Vector3(30, 50, 30);
   sun.intensity = 1.1;
+}
+
+/** Dia (FFA/TDM) vs noite (Zombies). Chamar depois de `applyBoxMap`. */
+export function setMatchAtmosphere(scene: Scene, night: boolean): void {
+  atmosphereMeta(scene).night = night;
+  applyAtmosphere(scene);
+}
+
+function applyAtmosphere(scene: Scene): void {
+  const meta = atmosphereMeta(scene);
+  const night = meta.night === true;
+  const hemi = scene.getLightByName("hemi") as HemisphericLight | null;
+  const sun = scene.getLightByName("sun") as DirectionalLight | null;
+  const fogStart = meta.mapFogStart ?? 60;
+  const fogEnd = meta.mapFogEnd ?? 170;
+
+  if (night) {
+    scene.clearColor = new Color4(0.028, 0.032, 0.06, 1);
+    scene.ambientColor = new Color3(0.07, 0.08, 0.14);
+    scene.fogColor = new Color3(0.04, 0.045, 0.075);
+    scene.fogStart = Math.max(10, fogStart * 0.32);
+    scene.fogEnd = Math.max(36, fogEnd * 0.52);
+    if (hemi) {
+      hemi.intensity = 0.28;
+      hemi.diffuse = new Color3(0.38, 0.46, 0.78);
+      hemi.groundColor = new Color3(0.06, 0.08, 0.14);
+    }
+    if (sun) {
+      sun.direction = new Vector3(-0.22, -1, -0.18);
+      sun.intensity = 0.26;
+      sun.diffuse = new Color3(0.55, 0.64, 0.92);
+    }
+    return;
+  }
+
+  scene.clearColor = new Color4(0.53, 0.68, 0.82, 1);
+  scene.ambientColor = new Color3(0.3, 0.3, 0.35);
+  scene.fogColor = new Color3(0.53, 0.68, 0.82);
+  scene.fogStart = fogStart;
+  scene.fogEnd = fogEnd;
+  if (hemi) {
+    hemi.intensity = 0.75;
+    hemi.diffuse = new Color3(1, 1, 1);
+    hemi.groundColor = new Color3(0.35, 0.35, 0.4);
+  }
+  if (sun) {
+    sun.direction = new Vector3(-0.5, -1, -0.6);
+    sun.intensity = 1.1;
+    sun.diffuse = new Color3(1, 1, 1);
+  }
 }
 
 function tagMap(obj: { metadata: unknown }): void {
@@ -77,10 +139,12 @@ export function applyBoxMap(
 ): void {
   disposeMapWorld(scene);
   const fogSize = Math.max(mapSizeX, mapSizeZ);
-  scene.fogStart = Math.max(20, fogSize * 0.75);
-  scene.fogEnd = Math.max(60, fogSize * 2.1);
+  const meta = atmosphereMeta(scene);
+  meta.mapFogStart = Math.max(20, fogSize * 0.75);
+  meta.mapFogEnd = Math.max(60, fogSize * 2.1);
   createGround(scene, mapSizeX, mapSizeZ, groundLook);
   createMapBoxes(scene, boxes);
+  applyAtmosphere(scene);
 }
 
 function createGround(
