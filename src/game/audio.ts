@@ -13,6 +13,19 @@ export interface SpatialListener {
 interface SpatialMix {
   pan: number;
   gain: number;
+  /** +1 à frente, -1 atrás. */
+  forward: number;
+}
+
+interface TrackedVoice {
+  src: AudioBufferSourceNode;
+  pan: StereoPannerNode;
+  spatialGain: GainNode;
+  fadeGain: GainNode;
+  filter: BiquadFilterNode;
+  x: number;
+  z: number;
+  baseGain: number;
 }
 
 const ZOMBIE_CLIP = {
@@ -67,9 +80,13 @@ export class AudioManager {
     return this.volume;
   }
 
+  private readonly zombieVoices = new Map<string, TrackedVoice>();
+  private readonly zombieVoiceEpoch = new Map<string, number>();
+
   /** Posição/orientação do ouvinte (câmera local) — atualizar a cada frame in-game. */
   setListener(listener: SpatialListener): void {
     this.listener = listener;
+    for (const v of this.zombieVoices.values()) this.applyTrackedSpatial(v);
   }
 
   /** Pan stereo (-1 esq … 1 dir) + gain por distância horizontal. */
@@ -79,7 +96,7 @@ export class AudioManager {
     maxDist: number,
     falloff = 14
   ): SpatialMix | null {
-    if (!this.listener) return { pan: 0, gain: 1 };
+    if (!this.listener) return { pan: 0, gain: 1, forward: 1 };
 
     const dx = sourceX - this.listener.x;
     const dz = sourceZ - this.listener.z;
@@ -93,12 +110,13 @@ export class AudioManager {
     const rightZ = -Math.sin(yaw);
 
     let pan = 0;
+    let forward = 1;
     let behind = 1;
     if (dist > 0.05) {
       const nx = dx / dist;
       const nz = dz / dist;
       pan = nx * rightX + nz * rightZ;
-      const forward = nx * fwdX + nz * fwdZ;
+      forward = nx * fwdX + nz * fwdZ;
       if (forward < 0) behind = 0.72 + 0.28 * (1 + forward);
     }
 
@@ -106,6 +124,7 @@ export class AudioManager {
     return {
       pan: Math.max(-1, Math.min(1, pan)),
       gain,
+      forward,
     };
   }
 
@@ -207,10 +226,10 @@ export class AudioManager {
     spatial?: SpatialMix
   ): void {
     const mix: SpatialMix | undefined = spatial
-      ? { pan: spatial.pan, gain: spatial.gain * gainScale }
+      ? { pan: spatial.pan, gain: spatial.gain * gainScale, forward: spatial.forward }
       : gainScale === 1
         ? undefined
-        : { pan: 0, gain: gainScale };
+        : { pan: 0, gain: gainScale, forward: 1 };
 
     const jitter = 0.92 + Math.random() * 0.16;
     const attackS = profile.attackMs / 1000;
@@ -670,10 +689,22 @@ export class AudioManager {
   stopZombieAmbience(): void {
     this.zombieAmbienceOn = false;
     this.stopZombieAmbienceSource();
+    this.stopAllZombieVoices();
   }
 
-  tickZombieAmbience(dt: number): void {
-    if (!this.zombieAmbienceOn || this.zombieAmbienceSource) return;
+  /**
+   * Fundo da horda só enquanto houver zumbi vivo.
+   * `aliveCount === 0` (intermissão / wipe) corta na hora.
+   */
+  tickZombieAmbience(dt: number, aliveCount: number): void {
+    if (!this.zombieAmbienceOn) return;
+    if (aliveCount <= 0) {
+      this.stopZombieAmbienceSource();
+      this.stopAllZombieVoices();
+      this.zombieAmbienceAcc = 0;
+      return;
+    }
+    if (this.zombieAmbienceSource) return;
     this.zombieAmbienceAcc += dt;
     if (this.zombieAmbienceAcc >= this.zombieAmbienceWait) {
       this.zombieAmbienceAcc = 0;
@@ -681,31 +712,73 @@ export class AudioManager {
     }
   }
 
-  /** Gemido espacial — `zombie1`/`zombie2` aleatórios, ou o clip do boss. */
-  zombieGroan(source: { x: number; y: number; z: number }, boss = false): void {
-    const spatial = this.computeSpatial(source.x, source.z, boss ? 62 : 42, boss ? 18 : 12);
-    if (!spatial || spatial.gain < 0.025) return;
+  /** Corta o gemido daquele zumbi (morte / sumiu do mapa). */
+  stopZombieVoice(id: string): void {
+    this.zombieVoiceEpoch.set(id, (this.zombieVoiceEpoch.get(id) ?? 0) + 1);
+    const voice = this.zombieVoices.get(id);
+    if (!voice) return;
+    this.zombieVoices.delete(id);
+    try {
+      voice.src.stop();
+    } catch {
+      /* already stopped */
+    }
+  }
+
+  /** Atualiza o pan do gemido com a pose atual (zumbi anda, jogador gira). */
+  updateZombieVoice(id: string, x: number, z: number): void {
+    const voice = this.zombieVoices.get(id);
+    if (!voice) return;
+    voice.x = x;
+    voice.z = z;
+    this.applyTrackedSpatial(voice);
+  }
+
+  /**
+   * Gemido stereo na direção do jogo (mesmo eixo dos tiros remotos).
+   * Pan é reforçado e atualizado a cada frame.
+   */
+  zombieGroan(
+    id: string,
+    source: { x: number; y: number; z: number },
+    boss = false
+  ): void {
+    if (this.zombieVoices.has(id)) return;
+    if (!this.listener) return;
+    const spatial = this.computeSpatial(source.x, source.z, boss ? 58 : 42, boss ? 16 : 11);
+    if (!spatial) return;
+    if (!boss && this.zombieVoices.size >= 5) return;
+
     const url = boss
       ? ZOMBIE_CLIP.boss
-      : Math.random() < 0.5
+      : hashStr(id) % 2 === 0
         ? ZOMBIE_CLIP.groan1
         : ZOMBIE_CLIP.groan2;
-    this.playClip(url, boss ? 0.72 : 0.55, spatial);
+    const rate = boss ? 0.84 : 0.9 + (hashStr(id) % 21) / 100;
+    const dur = boss ? 2.8 : 2.15;
+    this.playDirectedClip(url, source, boss ? 0.85 : 0.7, {
+      id,
+      playbackRate: rate,
+      maxDuration: dur,
+    });
   }
 
-  /** Impacto melee no jogador. */
+  /** Impacto melee no jogador — vem da posição do zumbi. */
   zombieAttack(source: { x: number; y: number; z: number }): void {
-    const spatial = this.computeSpatial(source.x, source.z, 30, 10);
-    if (!spatial || spatial.gain < 0.02) return;
-    this.playClip(ZOMBIE_CLIP.hit, 0.78, spatial);
+    this.playDirectedClip(ZOMBIE_CLIP.hit, source, 0.88, { maxDuration: 1.4 });
   }
 
-  /** Passo arrastado, mais grave que o de jogador. */
+  /** Passo arrastado, no mesmo pan stereo dos outros combatentes. */
   zombieFootstep(source: { x: number; y: number; z: number }): void {
     const spatial = this.computeSpatial(source.x, source.z, 32, 10);
     if (!spatial || spatial.gain < 0.02) return;
-    this.noise(0.08, 0.22, "lowpass", 180 + Math.random() * 70, 0, 90, 1, spatial);
-    this.tone(70 + Math.random() * 18, 0.07, 0.08, "sine", 40, 0, spatial);
+    const mix: SpatialMix = {
+      pan: exaggeratePan(spatial.pan),
+      gain: spatial.gain,
+      forward: spatial.forward,
+    };
+    this.noise(0.08, 0.24, "lowpass", spatial.forward < 0 ? 160 : 220, 0, 90, 1, mix);
+    this.tone(70 + Math.random() * 18, 0.07, 0.09, "sine", 40, 0, mix);
   }
 
   private preloadZombieClips(): void {
@@ -721,7 +794,7 @@ export class AudioManager {
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
       const g = this.ctx.createGain();
-      g.gain.value = 0.3;
+      g.gain.value = 0.14;
       src.connect(g);
       g.connect(this.master);
       src.onended = () => {
@@ -749,21 +822,78 @@ export class AudioManager {
     }
   }
 
-  private playClip(url: string, gain: number, spatial?: SpatialMix | null): void {
+  stopAllZombieVoices(): void {
+    for (const id of [...this.zombieVoices.keys()]) this.stopZombieVoice(id);
+  }
+
+  private playDirectedClip(
+    url: string,
+    source: { x: number; y: number; z: number },
+    gain: number,
+    opts: { id?: string; playbackRate?: number; maxDuration?: number } = {}
+  ): void {
+    const epoch = opts.id ? this.zombieVoiceEpoch.get(opts.id) ?? 0 : 0;
     void this.ensureClip(url).then((buf) => {
       if (!buf || !this.ctx || !this.master) return;
+      if (opts.id) {
+        if ((this.zombieVoiceEpoch.get(opts.id) ?? 0) !== epoch) return;
+        if (this.zombieVoices.has(opts.id)) return;
+      }
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
-      const g = this.ctx.createGain();
-      g.gain.value = spatial ? gain * spatial.gain : gain;
-      src.connect(g);
-      this.connectOutput(g, spatial?.pan);
+      src.playbackRate.value = opts.playbackRate ?? 1;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 14000;
+      const fadeGain = this.ctx.createGain();
+      fadeGain.gain.value = 1;
+      const spatialGain = this.ctx.createGain();
+      spatialGain.gain.value = gain;
+      const pan = this.ctx.createStereoPanner();
+      src.connect(filter).connect(fadeGain).connect(spatialGain).connect(pan).connect(this.master);
+
+      const voice: TrackedVoice = {
+        src,
+        pan,
+        spatialGain,
+        fadeGain,
+        filter,
+        x: source.x,
+        z: source.z,
+        baseGain: gain,
+      };
+      this.applyTrackedSpatial(voice);
+      if (opts.id) {
+        this.zombieVoices.set(opts.id, voice);
+        src.onended = () => {
+          if (this.zombieVoices.get(opts.id!)?.src === src) this.zombieVoices.delete(opts.id!);
+        };
+      }
       try {
         src.start();
+        const cap = opts.maxDuration;
+        if (cap && cap > 0) {
+          const t0 = this.ctx.currentTime;
+          const fade = Math.min(0.18, cap * 0.2);
+          fadeGain.gain.setValueAtTime(1, t0 + Math.max(0, cap - fade));
+          fadeGain.gain.linearRampToValueAtTime(0.001, t0 + cap);
+          src.stop(t0 + cap + 0.02);
+        }
       } catch {
-        /* ignore */
+        if (opts.id) this.zombieVoices.delete(opts.id);
       }
     });
+  }
+
+  private applyTrackedSpatial(voice: TrackedVoice): void {
+    const spatial = this.computeSpatial(voice.x, voice.z, 52, 12);
+    if (!spatial) {
+      voice.spatialGain.gain.value = 0.0001;
+      return;
+    }
+    voice.pan.pan.value = exaggeratePan(spatial.pan);
+    voice.spatialGain.gain.value = voice.baseGain * Math.max(0.06, spatial.gain);
+    voice.filter.frequency.value = spatial.forward < 0.12 ? 780 : 14000;
   }
 
   private ensureClip(url: string): Promise<AudioBuffer | null> {
@@ -792,4 +922,16 @@ export class AudioManager {
       this.clipLoading.delete(url);
     }
   }
+}
+
+function hashStr(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+/** Empurra o pan para as orelhas — 30° ao lado já some quase todo num canal. */
+function exaggeratePan(pan: number): number {
+  const mag = Math.min(1, Math.pow(Math.abs(pan), 0.42));
+  return (pan < 0 ? -1 : 1) * mag;
 }

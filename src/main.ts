@@ -3899,6 +3899,7 @@ function setupRoom(r: Room): void {
       isLocal
     );
     if (isLocal) audio.killConfirm(streak);
+    if (e.victimId) audio.stopZombieVoice(e.victimId);
   });
 
   r.onMessage("killstreakEarned", (e: { playerName: string; streakName: string }) => {
@@ -4043,6 +4044,7 @@ function setupRoom(r: Room): void {
 
   r.onMessage("waveClear", (e: { round?: number }) => {
     if (!inGame) return;
+    audio.stopAllZombieVoices();
     hud.showZombieBanner(`ROUND ${e.round ?? 0} LIMPO`, "Próxima horda…", 3);
   });
 
@@ -4269,6 +4271,7 @@ function reconcile(r: Room): void {
     rp.setParachuting(p.parachuting === true);
     rp.setWallhack(ownHasWallhack);
     rp.setInvincible((p.invincibleTimeLeft ?? 0) > 0);
+    if (p.isZombie === true && !p.alive) audio.stopZombieVoice(id);
   });
 
   updateNametags(r, ownSnapshot?.team ?? "");
@@ -4303,6 +4306,7 @@ function reconcile(r: Room): void {
 
   for (const [id, rp] of remotePlayers) {
     if (!seen.has(id)) {
+      audio.stopZombieVoice(id);
       rp.dispose();
       remotePlayers.delete(id);
     }
@@ -5127,9 +5131,6 @@ engine.runRenderLoop(() => {
     z: player.getHead().z,
     yaw: player.getYaw(),
   });
-  if (isZombiesMode(currentGameMode())) {
-    audio.tickZombieAmbience(dt);
-  }
   weapons.setCrouching(player.isCrouching);
   weapons.setAirborne(!player.isGrounded);
   weapons.setMoving(player.isMovingOnGround);
@@ -5174,14 +5175,39 @@ engine.runRenderLoop(() => {
   }
   updateDynamicReticle();
 
+  const listenHead = player.getHead();
+  const nearbyZombies: { rp: RemotePlayer; d2: number }[] = [];
+  let zombiesAlive = 0;
   for (const rp of remotePlayers.values()) {
     rp.update(dt, serverRttMs > 0 ? serverRttMs : pingMs ?? 0);
     if (rp.isZombieNpc()) {
-      if (rp.tickFootstep(dt)) audio.zombieFootstep(rp.getFeet());
-      if (rp.tickZombieVoice(dt)) audio.zombieGroan(rp.getFeet(), rp.isBossZombie());
+      if (!rp.isAliveVisible()) {
+        audio.stopZombieVoice(rp.id);
+        continue;
+      }
+      zombiesAlive++;
+      const feet = rp.getFeet();
+      const dx = feet.x - listenHead.x;
+      const dz = feet.z - listenHead.z;
+      nearbyZombies.push({ rp, d2: dx * dx + dz * dz });
     } else if (rp.tickFootstep(dt)) {
       audio.remoteFootstep(rp.getFeet());
     }
+  }
+  nearbyZombies.sort((a, b) => a.d2 - b.d2);
+  const hearZombie = new Set<string>();
+  for (const z of nearbyZombies) {
+    if (z.rp.isBossZombie() || hearZombie.size < 5) hearZombie.add(z.rp.id);
+  }
+  for (const { rp } of nearbyZombies) {
+    const feet = rp.getFeet();
+    audio.updateZombieVoice(rp.id, feet.x, feet.z);
+    if (!hearZombie.has(rp.id)) continue;
+    if (rp.tickFootstep(dt)) audio.zombieFootstep(feet);
+    if (rp.tickZombieVoice(dt)) audio.zombieGroan(rp.id, feet, rp.isBossZombie());
+  }
+  if (isZombiesMode(currentGameMode())) {
+    audio.tickZombieAmbience(dt, zombiesAlive);
   }
   if (room) updateNametags(room, getOwnSnapshot(room)?.team ?? "");
 

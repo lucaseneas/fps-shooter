@@ -795,6 +795,10 @@ export class RemotePlayer {
     return this.isZombie;
   }
 
+  isAliveVisible(): boolean {
+    return this.aliveVisible;
+  }
+
   isBossZombie(): boolean {
     return this.isBoss;
   }
