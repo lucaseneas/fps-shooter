@@ -65,6 +65,20 @@ export class Hud {
   private readonly killCount = el<HTMLSpanElement>("killCount");
   private readonly killsPanelFfa = el<HTMLSpanElement>("killsPanelFfa");
   private readonly killsPanelTdm = el<HTMLSpanElement>("killsPanelTdm");
+  private readonly killsPanelZombies = el<HTMLSpanElement>("killsPanelZombies");
+  private readonly zombieRoundHud = el<HTMLSpanElement>("zombieRoundHud");
+  private readonly zombieLeftHud = el<HTMLSpanElement>("zombieLeftHud");
+  private readonly zombieBanner = el<HTMLDivElement>("zombieBanner");
+  private readonly zombieBannerTitle = el<HTMLDivElement>("zombieBannerTitle");
+  private readonly zombieBannerSub = el<HTMLDivElement>("zombieBannerSub");
+  private readonly revivePrompt = el<HTMLDivElement>("revivePrompt");
+  private readonly reviveBar = el<HTMLDivElement>("reviveBar");
+  private readonly reviveBarFill = el<HTMLDivElement>("reviveBarFill");
+  private readonly bossHpBar = el<HTMLDivElement>("bossHpBar");
+  private readonly bossHpName = el<HTMLDivElement>("bossHpName");
+  private readonly bossHpFill = el<HTMLDivElement>("bossHpFill");
+  private readonly bossHpText = el<HTMLDivElement>("bossHpText");
+  private zombieBannerTimer = 0;
   private readonly teamKillsAlphaEl = el<HTMLSpanElement>("teamKillsAlpha");
   private readonly teamKillsEchoEl = el<HTMLSpanElement>("teamKillsEcho");
   private readonly teamKillsTargetEl = el<HTMLSpanElement>("teamKillsTarget");
@@ -274,9 +288,46 @@ export class Hud {
     this.teamKillsTargetEl.textContent = String(target);
   }
 
-  setScoreMode(mode: "ffa" | "tdm"): void {
-    this.killsPanelFfa.classList.toggle("hidden", mode === "tdm");
+  setScoreMode(mode: "ffa" | "tdm" | "zombies"): void {
+    this.killsPanelFfa.classList.toggle("hidden", mode !== "ffa");
     this.killsPanelTdm.classList.toggle("hidden", mode !== "tdm");
+    this.killsPanelZombies.classList.toggle("hidden", mode !== "zombies");
+  }
+
+  setZombieHud(round: number, left: number): void {
+    this.zombieRoundHud.textContent = String(round);
+    this.zombieLeftHud.textContent = String(left);
+  }
+
+  setBossHealth(hp: number, max: number, name = "Zumbi Boss"): void {
+    const on = max > 0;
+    this.bossHpBar.classList.toggle("hidden", !on);
+    if (!on) return;
+    this.bossHpName.textContent = name.toUpperCase();
+    const pct = Math.max(0, Math.min(100, (hp / max) * 100));
+    this.bossHpFill.style.width = `${pct}%`;
+    this.bossHpText.textContent = `${Math.max(0, Math.ceil(hp))} / ${Math.ceil(max)}`;
+  }
+
+  showZombieBanner(title: string, sub = "", seconds = 3): void {
+    this.zombieBannerTitle.textContent = title;
+    this.zombieBannerSub.textContent = sub;
+    this.zombieBanner.classList.remove("hidden");
+    window.clearTimeout(this.zombieBannerTimer);
+    this.zombieBannerTimer = window.setTimeout(() => {
+      this.zombieBanner.classList.add("hidden");
+    }, seconds * 1000);
+  }
+
+  hideZombieBanner(): void {
+    window.clearTimeout(this.zombieBannerTimer);
+    this.zombieBanner.classList.add("hidden");
+  }
+
+  setRevivePrompt(on: boolean, progress = 0): void {
+    this.revivePrompt.classList.toggle("hidden", !on);
+    this.reviveBar.classList.toggle("hidden", !on || progress <= 0);
+    this.reviveBarFill.style.width = `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`;
   }
 
   setKills(kills: number): void {
@@ -609,7 +660,8 @@ export class Hud {
   showDeathScreen(
     killerName: string,
     weaponName: string,
-    killerHealth = 0
+    killerHealth = 0,
+    downed = false
   ): void {
     this.deathInfo.textContent = killerName || "?";
     this.deathWeapon.textContent = weaponName ? `[${weaponName}]` : "";
@@ -623,10 +675,15 @@ export class Hud {
     this.deathKillerHpText.textContent = `${hp} HP`;
     this.deathKillerHp.classList.toggle("hidden", !killerName);
     this.lastDeathSecond = -1;
+    this.deathCount.classList.toggle("hidden", downed);
+    this.deathTimer.textContent = downed
+      ? "Aguarde um aliado · Segure F no corpo"
+      : "Reinserção…";
     this.deathScreen.classList.remove("hidden");
   }
 
   updateDeathTimer(seconds: number): void {
+    if (this.deathCount.classList.contains("hidden")) return;
     const n = Math.max(0, Math.ceil(seconds));
     this.deathCount.textContent = String(n);
     this.deathTimer.textContent = n > 0 ? "Reinserção…" : "";
@@ -640,6 +697,7 @@ export class Hud {
 
   hideDeathScreen(): void {
     this.deathScreen.classList.add("hidden");
+    this.deathCount.classList.remove("hidden");
     this.lastDeathSecond = -1;
   }
 
@@ -651,7 +709,9 @@ export class Hud {
   ): void {
     this.endTitle.textContent = playerWon
       ? "Missão cumprida"
-      : `${winnerName} venceu a partida`;
+      : winnerName.startsWith("Round")
+        ? `Derrota — ${winnerName}`
+        : `${winnerName} venceu a partida`;
     if (xp && xp.earned > 0) {
       const gold = xp.gold;
       const hasGold = gold !== undefined && gold.earned > 0;

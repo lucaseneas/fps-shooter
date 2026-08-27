@@ -2,6 +2,7 @@
 export const GAME_MODES = [
   { id: "ffa", label: "Free-for-All" },
   { id: "tdm", label: "Mata-Mata em equipe" },
+  { id: "zombies", label: "Zombies" },
 ] as const;
 
 export type GameModeId = (typeof GAME_MODES)[number]["id"];
@@ -29,6 +30,10 @@ export function isTeamId(v: unknown): v is TeamId {
 
 export function isTdmMode(mode: string): boolean {
   return mode === "tdm";
+}
+
+export function isZombiesMode(mode: string): boolean {
+  return mode === "zombies";
 }
 
 export function gameModeLabel(mode: string): string {

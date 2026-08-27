@@ -1,6 +1,9 @@
 import { Engine } from "@babylonjs/core/Engines/engine";
-import { Vector3 } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3 } from "@babylonjs/core/Maths/math";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Room } from "colyseus.js";
 
 import { createScene, applyBoxMap } from "./scene/createScene";
@@ -49,7 +52,8 @@ import {
   isSocialConnected,
   sendPresence,
 } from "./net/socialClient";
-import { CONFIG, GAME_MODES, KILLS_TO_WIN_OPTIONS, MAPS, TEAMS, gameModeLabel, isTdmMode } from "../shared/config";
+import { CONFIG, GAME_MODES, KILLS_TO_WIN_OPTIONS, MAPS, TEAMS, gameModeLabel, isTdmMode, isZombiesMode } from "../shared/config";
+import { ZOMBIES_MAX_PLAYERS, zombieMaxHealth } from "../shared/zombies";
 import {
   DEFAULT_LOADOUT,
   LoadoutSlots,
@@ -213,6 +217,12 @@ const lobbyChatLog = document.getElementById("lobbyChatLog") as HTMLDivElement;
 const lobbyChatForm = document.getElementById("lobbyChatForm") as HTMLFormElement;
 const lobbyChatInput = document.getElementById("lobbyChatInput") as HTMLInputElement;
 const lobbyReadyButton = document.getElementById("lobbyReadyButton") as HTMLButtonElement;
+const lobbyLoadoutButton = document.getElementById("lobbyLoadoutButton") as HTMLButtonElement;
+const lobbyZombieCountdown = document.getElementById("lobbyZombieCountdown") as HTMLParagraphElement;
+const createBotsRow = document.getElementById("createBotsRow") as HTMLDivElement;
+const createKillsRow = document.getElementById("createKillsRow") as HTMLDivElement;
+const lobbyKillsRow = document.getElementById("lobbyKillsRow") as HTMLDivElement;
+const lobbyBotsRow = document.getElementById("lobbyBotsRow") as HTMLDivElement;
 const lobbyTeams = document.getElementById("lobbyTeams") as HTMLDivElement;
 const lobbyTeamAlpha = document.getElementById("lobbyTeamAlpha") as HTMLButtonElement;
 const lobbyTeamEcho = document.getElementById("lobbyTeamEcho") as HTMLButtonElement;
@@ -644,6 +654,8 @@ let room: Room | null = null;
 let inGame = false;
 let inLobby = false;
 const remotePlayers = new Map<string, RemotePlayer>();
+const ammoDropMeshes = new Map<string, Mesh>();
+let reviveHolding = false;
 let ownInitialized = false;
 let lastKnownHealth: number = CONFIG.playerMaxHealth;
 let playerDead = false;
@@ -1204,9 +1216,12 @@ function renderRoomList(rooms: RoomListing[]): void {
     );
     const modeLabel = gameModeLabel(r.gameMode);
     const startedLabel = r.matchStarted ? " · <b class='room-live'>Em partida</b>" : "";
+    const extra = isZombiesMode(r.gameMode)
+      ? `${r.clients}/${r.maxClients} jogadores · Mapa: ${r.map}${startedLabel}`
+      : `${r.killsToWin} kills · ${r.clients}/${r.maxClients} jogadores · ${r.bots} bots · Mapa: ${r.map}${startedLabel}`;
     info.innerHTML =
       `<b>${safeName}</b><br />` +
-      `<span class="room-meta">${modeLabel} · ${r.killsToWin} kills · ${r.clients}/${r.maxClients} jogadores · ${r.bots} bots · Mapa: ${r.map}${startedLabel}</span>`;
+      `<span class="room-meta">${modeLabel} · ${extra}</span>`;
 
     const joinBtn = document.createElement("button");
     joinBtn.textContent = "Entrar";
@@ -1220,10 +1235,22 @@ function renderRoomList(rooms: RoomListing[]): void {
 let pendingCreateOptions: CreateRoomOptions | null = null;
 
 function syncCreateRoomForm(): void {
+  const zombies = isZombiesMode(createGameMode.value);
+  createBotsRow.classList.toggle("hidden", zombies);
+  createKillsRow.classList.toggle("hidden", zombies);
+  if (zombies) {
+    createMaxPlayers.max = String(ZOMBIES_MAX_PLAYERS);
+    if (parseInt(createMaxPlayers.value, 10) > ZOMBIES_MAX_PLAYERS) {
+      createMaxPlayers.value = String(ZOMBIES_MAX_PLAYERS);
+    }
+    createBots.value = "0";
+  } else {
+    createMaxPlayers.max = String(CONFIG.roomSize);
+  }
   const maxPlayers = parseInt(createMaxPlayers.value, 10);
   createMaxPlayersValue.textContent = String(maxPlayers);
   createBots.max = String(Math.max(0, maxPlayers - 1));
-  const bots = Math.min(parseInt(createBots.value, 10), maxPlayers - 1);
+  const bots = zombies ? 0 : Math.min(parseInt(createBots.value, 10), maxPlayers - 1);
   createBots.value = String(Math.max(0, bots));
   createBotsValue.textContent = createBots.value;
 }
@@ -1307,19 +1334,24 @@ function beginJoinFlow(roomId: string | null): void {
 
 createMaxPlayers.addEventListener("input", syncCreateRoomForm);
 createBots.addEventListener("input", syncCreateRoomForm);
+createGameMode.addEventListener("change", syncCreateRoomForm);
 
 createRoomForm.addEventListener("submit", (e) => {
   e.preventDefault();
   const roomName = createRoomName.value.trim().slice(0, 24) || "Sala";
-  const maxPlayers = Math.min(
-    CONFIG.roomSize,
-    Math.max(2, parseInt(createMaxPlayers.value, 10) || 8)
-  );
-  const bots = Math.min(
-    maxPlayers - 1,
-    Math.max(0, parseInt(createBots.value, 10) || 0)
-  );
   const gameMode = createGameMode.value;
+  const zombies = isZombiesMode(gameMode);
+  const maxCap = zombies ? ZOMBIES_MAX_PLAYERS : CONFIG.roomSize;
+  const maxPlayers = Math.min(
+    maxCap,
+    Math.max(zombies ? 1 : 2, parseInt(createMaxPlayers.value, 10) || maxCap)
+  );
+  const bots = zombies
+    ? 0
+    : Math.min(
+        maxPlayers - 1,
+        Math.max(0, parseInt(createBots.value, 10) || 0)
+      );
   const killsToWin = parseInt(createKillsToWin.value, 10) || 20;
   const mapId = createMap.value || MAPS[0].id;
   const customMap = getCustomMap(mapId) ?? undefined;
@@ -1692,6 +1724,14 @@ function openLoadoutModal(inMatch: boolean): void {
     spawnButton.disabled = false;
     spectateButton.classList.toggle("hidden", matchSpectating);
     loadoutModal.classList.remove("prespawn");
+  } else if (inLobby) {
+    loadoutHint.textContent =
+      "Escolhe as armas. A horda começa quando a contagem acabar.";
+    loadoutCancelButton.textContent = "Pronto";
+    loadoutCancelButton.classList.remove("hidden");
+    loadoutModal.classList.add("prespawn");
+    spawnButton.classList.add("hidden");
+    spectateButton.classList.add("hidden");
   } else {
     loadoutHint.textContent = freeSpectating
       ? "Escolhe as armas e Spawn para jogar · ou ESC para continuar a voar."
@@ -1758,6 +1798,11 @@ function cancelLoadoutPick(): void {
   if (!loadoutPicking) return;
   if (loadoutPickInMatch) {
     confirmMatchLoadoutPick();
+    return;
+  }
+  if (inLobby) {
+    applySelectedLoadout(savedLoadout());
+    closeLoadoutModal(false);
     return;
   }
   if (freeSpectating) {
@@ -3033,6 +3078,9 @@ function enterLobby(r: Room): void {
 
   navigate("/lobby");
   showLobby();
+  if (isZombiesMode(getMatchSnapshot(r).gameMode)) {
+    openLoadoutModal(false);
+  }
 }
 
 /** Servidor avisou que entramos na partida (Start do líder ou Play tardio). */
@@ -3046,7 +3094,21 @@ function startMatchLocal(): void {
   audio.resume();
   applyClientWorldMap();
   syncAllViewModelSkins();
-  enterPreSpawn();
+  if (isZombiesMode(getMatchSnapshot(room).gameMode)) {
+    audio.startZombieAmbience();
+    applySelectedLoadout(savedLoadout());
+    awaitingSpawn = true;
+    playerDead = false;
+    weapons.setTrigger(false);
+    weapons.setEnabled(false);
+    player.setMovementEnabled(false);
+    player.setLookEnabled(false);
+    viewModel.setVisible(false);
+    hudRoot.classList.add("prespawn");
+    room.send("requestSpawn");
+  } else {
+    enterPreSpawn();
+  }
   pushSocialPresence();
 }
 
@@ -3086,6 +3148,9 @@ function returnToLobby(): void {
   showLobby();
   refreshSessionProfile();
   socialPanel.flushDeferredRequests();
+  if (isZombiesMode(getMatchSnapshot(room).gameMode)) {
+    openLoadoutModal(false);
+  }
 }
 
 function showLobby(): void {
@@ -3142,6 +3207,11 @@ function cleanupMatchLocal(): void {
 
   for (const rp of remotePlayers.values()) rp.dispose();
   remotePlayers.clear();
+  clearAmmoDropMeshes();
+  hud.hideZombieBanner();
+  hud.setRevivePrompt(false);
+  hud.setBossHealth(0, 0);
+  audio.stopZombieAmbience();
 
   weapons.setTrigger(false);
   weapons.refillAll();
@@ -3350,6 +3420,11 @@ lobbyBotsSlider.addEventListener("input", () => {
   sendLobbySetting({ bots: parseInt(lobbyBotsSlider.value, 10) });
 });
 
+lobbyLoadoutButton.addEventListener("click", () => {
+  if (!inLobby) return;
+  openLoadoutModal(false);
+});
+
 lobbyReadyButton.addEventListener("click", () => {
   if (!room) return;
   const snap = getMatchSnapshot(room);
@@ -3379,7 +3454,9 @@ function syncLobbyTeamPick(gameMode: string, ownTeam: string): void {
   lobbyTeamEcho.closest(".lobby-team-col")?.classList.toggle("mine", ownTeam === "echo");
   lobbyPlayersHint.textContent = tdm
     ? "Clique na outra equipe para trocar de time. Botão direito num jogador para adicionar como amigo."
-    : "Botão direito num jogador para adicionar como amigo.";
+    : isZombiesMode(gameMode)
+      ? "Cooperativo contra hordas. Botão direito num jogador para adicionar como amigo."
+      : "Botão direito num jogador para adicionar como amigo.";
 }
 
 function currentGameMode(): string {
@@ -3468,7 +3545,9 @@ teamSwitchYes.addEventListener("click", () => confirmTeamSwitch());
 teamSwitchNo.addEventListener("click", () => closeTeamSwitchConfirm());
 
 function updateNametags(r: Room, ownTeam: string): void {
-  const tdm = isTdmMode(getMatchSnapshot(r).gameMode);
+  const mode = getMatchSnapshot(r).gameMode;
+  const tdm = isTdmMode(mode);
+  const zombies = isZombiesMode(mode);
   let aimedId = "";
   if (!awaitingSpawn && !player.isSpectating && !player.isThirdPersonPeeking) {
     const ray = player.camera.getForwardRay(90);
@@ -3478,12 +3557,16 @@ function updateNametags(r: Room, ownTeam: string): void {
     }
   }
   const teams = new Map<string, string>();
+  const zombieIds = new Set<string>();
   forEachPlayer(r, (p, id) => {
     teams.set(id, typeof p.team === "string" ? p.team : "");
+    if (p.isZombie === true) zombieIds.add(id);
   });
   for (const [id, rp] of remotePlayers) {
     const team = teams.get(id) ?? "";
-    const ally = tdm && Boolean(ownTeam && team && team === ownTeam);
+    const ally = zombies
+      ? !zombieIds.has(id)
+      : tdm && Boolean(ownTeam && team && team === ownTeam);
     rp.setNameplateRole(ally ? "ally" : "enemy", aimedId === id);
   }
 }
@@ -3638,7 +3721,7 @@ function updateLobbyUi(): void {
   // O pré-lobby lista apenas jogadores reais — bots ficam de fora.
   const rows: LobbyPlayerRow[] = [];
   forEachPlayer(room, (p, id) => {
-    if (p.isBot === true) return;
+    if (p.isBot === true || p.isZombie === true) return;
     rows.push({
       id,
       userId: p.userId ?? 0,
@@ -3667,16 +3750,41 @@ function updateLobbyUi(): void {
     snap.maxPlayers,
     snap.desiredBots,
     canEdit,
+    Math.ceil(snap.prepTimeLeft),
+    snap.zombiePhase,
     rows,
   ]);
   if (sig === lastLobbySig) return;
   lastLobbySig = sig;
 
+  const zombies = isZombiesMode(snap.gameMode);
   lobbyRoomName.textContent = snap.roomName;
-  lobbyStatus.textContent = snap.matchStarted
-    ? "Partida em andamento — clique em Jogar para entrar"
-    : "Pré-lobby — aguardando o líder iniciar";
+  if (zombies && !snap.matchStarted) {
+    const secs = Math.max(0, Math.ceil(snap.prepTimeLeft));
+    lobbyStatus.textContent = "Zombies — configure os armamentos";
+    lobbyZombieCountdown.classList.remove("hidden");
+    lobbyZombieCountdown.textContent =
+      secs > 0 ? `Horda em ${secs}s` : "A iniciar…";
+  } else {
+    lobbyZombieCountdown.classList.add("hidden");
+    lobbyStatus.textContent = snap.matchStarted
+      ? "Partida em andamento — clique em Jogar para entrar"
+      : "Pré-lobby — aguardando o líder iniciar";
+  }
   lobbyStatus.classList.toggle("live", snap.matchStarted);
+  lobbyLoadoutButton.classList.toggle("hidden", !zombies || snap.matchStarted);
+  lobbyKillsRow.classList.toggle("hidden", zombies);
+  lobbyBotsRow.classList.toggle("hidden", zombies);
+
+  const maxCap = zombies ? ZOMBIES_MAX_PLAYERS : CONFIG.roomSize;
+  fillSelect(
+    lobbyMaxPlayersSelect,
+    Array.from({ length: Math.max(1, maxCap - (zombies ? 0 : 1)) }, (_, i) => {
+      const n = i + (zombies ? 1 : 2);
+      if (n > maxCap) return null;
+      return { value: String(n), label: `${n} jogadores` };
+    }).filter((o): o is { value: string; label: string } => o !== null)
+  );
 
   // Configurações: líder edita no pré-lobby; demais só veem.
   lobbyMapSelect.value = snap.mapId;
@@ -3697,7 +3805,9 @@ function updateLobbyUi(): void {
     el.disabled = !canEdit;
   }
   lobbySettingsHint.textContent = canEdit
-    ? "Você é o líder — ajuste as regras antes de iniciar."
+    ? zombies
+      ? "Você é o líder — a horda começa automaticamente. INICIAR pula a contagem."
+      : "Você é o líder — ajuste as regras antes de iniciar."
     : snap.matchStarted
       ? "Partida em andamento — configurações bloqueadas."
       : "Apenas o líder pode alterar as configurações.";
@@ -3719,7 +3829,7 @@ function updateLobbyUi(): void {
     lobbyReadyButton.textContent = "JOGAR AGORA";
     lobbyReadyButton.classList.add("play");
   } else if (isHost) {
-    lobbyReadyButton.textContent = "INICIAR PARTIDA";
+    lobbyReadyButton.textContent = zombies ? "COMEÇAR AGORA" : "INICIAR PARTIDA";
   } else {
     const me = rows.find((r) => r.isSelf);
     if (me?.ready) {
@@ -3823,6 +3933,9 @@ function setupRoom(r: Room): void {
     while (relative > Math.PI) relative -= Math.PI * 2;
     while (relative < -Math.PI) relative += Math.PI * 2;
     hud.showDirectionalDamage(relative);
+    if (isZombiesMode(currentGameMode())) {
+      audio.zombieAttack(e);
+    }
   });
 
   r.onMessage("chat", (e: { name: string; text: string }) => {
@@ -3834,6 +3947,7 @@ function setupRoom(r: Room): void {
     weaponName: string;
     killerHealth?: number;
     voluntary?: string;
+    downed?: boolean;
   }) => {
     if (!inGame) return;
     closeChat(false);
@@ -3844,11 +3958,11 @@ function setupRoom(r: Room): void {
     setLocalParachute(false);
 
     playerDead = true;
-    deathCountdown = CONFIG.respawnDelay;
+    deathCountdown = e.downed ? 0 : CONFIG.respawnDelay;
     player.setMovementEnabled(false);
-    player.setLookEnabled(false);
-    hud.showDeathScreen(e.killerName, e.weaponName, e.killerHealth ?? 0);
-    hud.updateDeathTimer(deathCountdown);
+    player.setLookEnabled(e.downed === true);
+    hud.showDeathScreen(e.killerName, e.weaponName, e.killerHealth ?? 0, e.downed === true);
+    if (!e.downed) hud.updateDeathTimer(deathCountdown);
     audio.death();
 
     if (e.voluntary === "spectate") {
@@ -3896,6 +4010,40 @@ function setupRoom(r: Room): void {
       settingsModal.classList.add("hidden");
       player.requestPointerLock();
     }
+  });
+
+  r.onMessage("revived", (e: { x: number; z: number; y?: number }) => {
+    if (!inGame) return;
+    playerDead = false;
+    ownInitialized = true;
+    player.teleport(new Vector3(e.x, e.y ?? 0, e.z));
+    weapons.setEnabled(true);
+    player.setMovementEnabled(true);
+    player.setLookEnabled(true);
+    hud.hideDeathScreen();
+    viewModel.setVisible(true);
+    hud.showZombieBanner("REANIMADO", "", 2);
+    if (!player.isPointerLocked) player.requestPointerLock();
+  });
+
+  r.onMessage("ammoPickup", () => {
+    if (!inGame || playerDead) return;
+    weapons.addMagazine();
+  });
+
+  r.onMessage("waveStart", (e: { round?: number; count?: number; boss?: boolean }) => {
+    if (!inGame) return;
+    const round = e.round ?? 1;
+    hud.showZombieBanner(
+      `ROUND ${round}`,
+      e.boss ? `${e.count ?? 0} zumbis + BOSS` : `${e.count ?? 0} zumbis`,
+      3.5
+    );
+  });
+
+  r.onMessage("waveClear", (e: { round?: number }) => {
+    if (!inGame) return;
+    hud.showZombieBanner(`ROUND ${e.round ?? 0} LIMPO`, "Próxima horda…", 3);
   });
 
   r.onMessage("shot", (e: {
@@ -4099,21 +4247,24 @@ function reconcile(r: Room): void {
       rp = new RemotePlayer(scene, id, p.name);
       remotePlayers.set(id, rp);
       rp.setDebugHitboxes(devHitbox);
-      rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
+      rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch), p.downed === true);
       rp.snapToTarget();
     } else {
-      rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch));
+      rp.applyState(p.x, p.y, p.z, p.yaw, p.alive, Boolean(p.crouch), p.downed === true);
     }
+    rp.setZombieAppearance(p.isZombie === true, p.isBoss === true);
     rp.setSkin(p.skinId || "skin_default");
-    const remoteWeapon = p.weaponId || "m4a1";
-    const fromState = decodeWeaponSkinLooks(p.weaponSkinParts);
-    const catalog = !fromState && p.weaponSkinId ? getWeaponSkin(p.weaponSkinId) : undefined;
-    rp.setWeaponAppearance(
-      remoteWeapon,
-      p.weaponSkinId || "",
-      fromState?.parts ?? (catalog && catalog.weaponId === remoteWeapon ? catalog.parts : null),
-      fromState?.textures ?? (catalog && catalog.weaponId === remoteWeapon ? catalog.textures ?? null : null)
-    );
+    if (p.isZombie !== true) {
+      const remoteWeapon = p.weaponId || "m4a1";
+      const fromState = decodeWeaponSkinLooks(p.weaponSkinParts);
+      const catalog = !fromState && p.weaponSkinId ? getWeaponSkin(p.weaponSkinId) : undefined;
+      rp.setWeaponAppearance(
+        remoteWeapon,
+        p.weaponSkinId || "",
+        fromState?.parts ?? (catalog && catalog.weaponId === remoteWeapon ? catalog.parts : null),
+        fromState?.textures ?? (catalog && catalog.weaponId === remoteWeapon ? catalog.textures ?? null : null)
+      );
+    }
     rp.setPredator(isPredatorStreak(p.activeStreak));
     rp.setParachuting(p.parachuting === true);
     rp.setWallhack(ownHasWallhack);
@@ -4123,10 +4274,30 @@ function reconcile(r: Room): void {
   updateNametags(r, ownSnapshot?.team ?? "");
 
   const snap = getMatchSnapshot(r);
-  hud.setScoreMode(isTdmMode(snap.gameMode) ? "tdm" : "ffa");
+  hud.setScoreMode(
+    isZombiesMode(snap.gameMode) ? "zombies" : isTdmMode(snap.gameMode) ? "tdm" : "ffa"
+  );
   hud.setKillsTarget(snap.killsToWin);
   if (isTdmMode(snap.gameMode)) {
     hud.setTeamScores(snap.teamKillsAlpha, snap.teamKillsEcho);
+  }
+  if (isZombiesMode(snap.gameMode)) {
+    hud.setZombieHud(snap.zombieRound, snap.zombiesLeft);
+    syncAmmoDrops(r);
+    updateRevivePrompt(r, ownSnapshot);
+    let bossHp = 0;
+    let bossMax = 0;
+    let bossName = "Zumbi Boss";
+    forEachPlayer(r, (p) => {
+      if (p.isBoss === true && p.alive) {
+        bossHp = p.health;
+        bossMax = zombieMaxHealth(true);
+        if (p.name) bossName = p.name;
+      }
+    });
+    hud.setBossHealth(bossHp, bossMax, bossName);
+  } else {
+    hud.setBossHealth(0, 0);
   }
   if (scoreboardOpen) refreshMatchScoreboard();
 
@@ -4149,7 +4320,9 @@ function reconcile(r: Room): void {
     const xpAfter = own?.xp ?? 0;
     const rankBefore = rankForXp(Math.max(0, xpAfter - earned));
     const rankAfter = rankForXp(xpAfter);
-    const playerWon = isTdmMode(snap.gameMode)
+    const playerWon = isZombiesMode(snap.gameMode)
+      ? false
+      : isTdmMode(snap.gameMode)
       ? Boolean(own?.team && own.team === snap.winnerTeam)
       : state.winnerName === own?.name;
     const xpLines: Array<{ label: string; xp: number }> = [];
@@ -4352,6 +4525,56 @@ function handleOwnState(p: PlayerSnapshot): void {
   hud.setInvincibleVignette(invincible);
 }
 
+function clearAmmoDropMeshes(): void {
+  for (const m of ammoDropMeshes.values()) m.dispose();
+  ammoDropMeshes.clear();
+}
+
+function syncAmmoDrops(r: Room): void {
+  const drops = (r.state as { ammoDrops?: { forEach: Function } }).ammoDrops;
+  const seen = new Set<string>();
+  drops?.forEach((d: { x: number; y: number; z: number }, id: string) => {
+    seen.add(id);
+    let mesh = ammoDropMeshes.get(id);
+    if (!mesh) {
+      mesh = MeshBuilder.CreateBox(`ammoDrop_${id}`, { size: 0.38 }, scene);
+      const mat = new StandardMaterial(`ammoDropMat_${id}`, scene);
+      mat.diffuseColor = new Color3(0.85, 0.72, 0.22);
+      mat.emissiveColor = new Color3(0.28, 0.22, 0.04);
+      mesh.material = mat;
+      mesh.isPickable = false;
+      ammoDropMeshes.set(id, mesh);
+    }
+    mesh.position.set(d.x, (d.y ?? 0) + 0.28, d.z);
+    mesh.rotation.y += 0.02;
+  });
+  for (const [id, mesh] of ammoDropMeshes) {
+    if (seen.has(id)) continue;
+    mesh.dispose();
+    ammoDropMeshes.delete(id);
+  }
+}
+
+function updateRevivePrompt(r: Room, own: PlayerSnapshot | null): void {
+  if (!own || !own.alive || own.downed || playerDead) {
+    hud.setRevivePrompt(false);
+    return;
+  }
+  let nearest: PlayerSnapshot | null = null;
+  let best = 2.5;
+  let progress = 0;
+  forEachPlayer(r, (p) => {
+    if (!p.downed || p.isZombie) return;
+    const d = Math.hypot(p.x - own.x, p.z - own.z);
+    if (d < best) {
+      best = d;
+      nearest = p;
+      progress = p.reviveProgress ?? 0;
+    }
+  });
+  hud.setRevivePrompt(Boolean(nearest), progress);
+}
+
 function getOwnSnapshot(r: Room): PlayerSnapshot | null {
   let own: PlayerSnapshot | null = null;
   forEachPlayer(r, (p, id) => {
@@ -4365,7 +4588,7 @@ function scoreboardRows(r: Room): ScoreRow[] {
   const rows: ScoreRow[] = [];
   forEachPlayer(r, (p, id) => {
     // Quem ficou no pré-lobby não aparece no placar da partida.
-    if (!p.inMatch) return;
+    if (!p.inMatch || p.isZombie === true) return;
     rows.push({
       name: p.name,
       kills: p.kills,
@@ -4655,6 +4878,13 @@ window.addEventListener("keydown", (e) => {
   if (!player.isPointerLocked) return;
   if (isGhostSpectating() || playerDead) return;
   if (e.code === "KeyR") weapons.startReload();
+  if (e.code === "KeyF") {
+    e.preventDefault();
+    if (!reviveHolding && isZombiesMode(currentGameMode())) {
+      reviveHolding = true;
+      room?.send("holdRevive", { holding: true });
+    }
+  }
   if (e.code === "KeyQ") {
     e.preventDefault();
     switchTo(lastWeaponIndex);
@@ -4665,6 +4895,10 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Digit3") switchTo(2);
 });
 window.addEventListener("keyup", (e) => {
+  if (e.code === "KeyF" && reviveHolding) {
+    reviveHolding = false;
+    room?.send("holdRevive", { holding: false });
+  }
   if (e.code === "Tab" && inGame) {
     e.preventDefault();
     if (endScreenShown) return;
@@ -4893,6 +5127,9 @@ engine.runRenderLoop(() => {
     z: player.getHead().z,
     yaw: player.getYaw(),
   });
+  if (isZombiesMode(currentGameMode())) {
+    audio.tickZombieAmbience(dt);
+  }
   weapons.setCrouching(player.isCrouching);
   weapons.setAirborne(!player.isGrounded);
   weapons.setMoving(player.isMovingOnGround);
@@ -4939,7 +5176,10 @@ engine.runRenderLoop(() => {
 
   for (const rp of remotePlayers.values()) {
     rp.update(dt, serverRttMs > 0 ? serverRttMs : pingMs ?? 0);
-    if (rp.tickFootstep(dt)) {
+    if (rp.isZombieNpc()) {
+      if (rp.tickFootstep(dt)) audio.zombieFootstep(rp.getFeet());
+      if (rp.tickZombieVoice(dt)) audio.zombieGroan(rp.getFeet(), rp.isBossZombie());
+    } else if (rp.tickFootstep(dt)) {
       audio.remoteFootstep(rp.getFeet());
     }
   }

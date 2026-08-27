@@ -56,6 +56,10 @@ export interface PlayerSnapshot {
   matchGold: number;
   /** Time no tdm: "alpha" | "echo" | "". */
   team: string;
+  isZombie?: boolean;
+  isBoss?: boolean;
+  downed?: boolean;
+  reviveProgress?: number;
 }
 
 export interface MatchSnapshot {
@@ -73,6 +77,11 @@ export interface MatchSnapshot {
   teamKillsAlpha: number;
   teamKillsEcho: number;
   winnerTeam: string;
+  zombieRound: number;
+  zombiesAlive: number;
+  zombiesLeft: number;
+  prepTimeLeft: number;
+  zombiePhase: string;
 }
 
 let cachedClient: Client | null = null;
@@ -204,5 +213,10 @@ export function getMatchSnapshot(room: Room): MatchSnapshot {
     teamKillsAlpha: typeof s.teamKillsAlpha === "number" ? s.teamKillsAlpha : 0,
     teamKillsEcho: typeof s.teamKillsEcho === "number" ? s.teamKillsEcho : 0,
     winnerTeam: typeof s.winnerTeam === "string" ? s.winnerTeam : "",
+    zombieRound: typeof s.zombieRound === "number" ? s.zombieRound : 0,
+    zombiesAlive: typeof s.zombiesAlive === "number" ? s.zombiesAlive : 0,
+    zombiesLeft: typeof s.zombiesLeft === "number" ? s.zombiesLeft : 0,
+    prepTimeLeft: typeof s.prepTimeLeft === "number" ? s.prepTimeLeft : 0,
+    zombiePhase: typeof s.zombiePhase === "string" ? s.zombiePhase : "",
   };
 }

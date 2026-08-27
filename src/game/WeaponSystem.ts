@@ -373,17 +373,37 @@ export class WeaponSystem {
   }
 
   startReload(): void {
-    if (this.streakWeaponId) return;
-    if (isMeleeWeapon(this.weapon)) return;
+    if (
+      !this.enabled ||
+      this.reloadRemaining > 0 ||
+      this.streakWeaponId ||
+      isMeleeWeapon(this.weapon) ||
+      this.infiniteAmmo
+    ) {
+      return;
+    }
     const state = this.ammo.get(this.weapon.id)!;
     if (
-      this.isReloading ||
       state.mag >= this.weapon.magSize ||
       state.reserve <= 0
     ) {
       return;
     }
     this.reloadRemaining = this.weapon.reloadTime;
+    this.onStateChanged?.();
+  }
+
+  /** Pente dropado: enche o pente atual ou soma um pente na reserva. */
+  addMagazine(): void {
+    if (isMeleeWeapon(this.weapon)) return;
+    const state = this.ammo.get(this.weapon.id);
+    if (!state) return;
+    const cap = this.weapon.magSize;
+    if (state.mag < cap) {
+      state.mag = cap;
+    } else {
+      state.reserve += cap;
+    }
     this.onStateChanged?.();
   }
 

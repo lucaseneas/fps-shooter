@@ -49,6 +49,14 @@ export class PlayerState extends Schema {
   @type("boolean") isBot = false;
   /** Time no Mata-Mata em equipe: "alpha" | "echo" | "" (FFA). */
   @type("string") team = "";
+  /** Zumbi no modo Zombies (IA de horda). */
+  @type("boolean") isZombie = false;
+  /** Boss da horda (2× tamanho, 10× HP). */
+  @type("boolean") isBoss = false;
+  /** Humano nocauteado à espera de reanimação (corpo no chão). */
+  @type("boolean") downed = false;
+  /** Progresso da reanimação 0–1 (exibido no corpo). */
+  @type("number") reviveProgress = 0;
 
   // Sistema de patentes (nível por XP de carreira):
   /** XP total da carreira — a patente é derivada dele (shared/ranks). */
@@ -67,6 +75,12 @@ export class PlayerState extends Schema {
   @type("number") matchGold = 0;
   /** JSON das cores da skin de arma (independente do catálogo do cliente). */
   @type("string") weaponSkinParts = "";
+}
+
+export class AmmoDropState extends Schema {
+  @type("number") x = 0;
+  @type("number") y = 0;
+  @type("number") z = 0;
 }
 
 export class MatchState extends Schema {
@@ -94,6 +108,17 @@ export class MatchState extends Schema {
   @type("number") teamKillsEcho = 0;
   /** Time vencedor no tdm: "alpha" | "echo" | "". */
   @type("string") winnerTeam = "";
+  /** Round atual no modo Zombies (0 = ainda não começou). */
+  @type("number") zombieRound = 0;
+  /** Zumbis ainda vivos neste round. */
+  @type("number") zombiesAlive = 0;
+  /** Zumbis que ainda vão nascer + vivos (HUD). */
+  @type("number") zombiesLeft = 0;
+  /** Segundos restantes da preparação / intermissão. */
+  @type("number") prepTimeLeft = 0;
+  /** "lobby" | "wave" | "intermission" | "". */
+  @type("string") zombiePhase = "";
+  @type({ map: AmmoDropState }) ammoDrops = new MapSchema<AmmoDropState>();
 }
 
 // --- Sala Social (presença global: amigos online, sala atual, convites) ---

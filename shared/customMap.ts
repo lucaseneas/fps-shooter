@@ -9,7 +9,12 @@ import {
   type MapGeometry,
   type SpawnPoint,
 } from "./mapData";
-import { SPAWN_POINTS, SPAWN_POINTS_ALPHA, SPAWN_POINTS_ECHO } from "./spawnPoints";
+import {
+  SPAWN_POINTS,
+  SPAWN_POINTS_ALPHA,
+  SPAWN_POINTS_ECHO,
+  SPAWN_POINTS_ZOMBIE,
+} from "./spawnPoints";
 import { GAME_TEXTURES, isGameTextureId, textureUrlById } from "./textures";
 
 export const CUSTOM_MAP_PREFIX = "custom:";
@@ -51,7 +56,7 @@ export const KIND_DEFAULT_TEXTURE: Record<EditorPieceKind | "border", MapTexture
 };
 
 export const KIND_DEFAULT_HEX: Record<
-  EditorPieceKind | "border" | "ground" | "spawn" | "spawnAlpha" | "spawnEcho",
+  EditorPieceKind | "border" | "ground" | "spawn" | "spawnAlpha" | "spawnEcho" | "spawnZombie",
   string
 > = {
   wall: "#525f75",
@@ -64,6 +69,7 @@ export const KIND_DEFAULT_HEX: Record<
   spawn: "#40d96b",
   spawnAlpha: "#4d8dff",
   spawnEcho: "#e05545",
+  spawnZombie: "#7ac84a",
 };
 
 export function textureUrlFor(
@@ -191,6 +197,8 @@ export interface CustomMapDef {
   spawnsAlpha: SpawnPoint[];
   /** Spawns da Equipe Echo (Mata-Mata em equipe). */
   spawnsEcho: SpawnPoint[];
+  /** Spawns das hordas no modo Zombies. */
+  spawnsZombie: SpawnPoint[];
   /** Aparência do chão (opcional; padrão = pedra). */
   groundColor?: string;
   groundTexture?: MapTextureId;
@@ -345,6 +353,25 @@ export function defaultTeamSpawnsForSize(
   };
 }
 
+/** Spawns de zumbi padrão: cantos e bordas. */
+export function defaultZombieSpawnsForSize(
+  sizeX: number,
+  sizeZ: number = sizeX
+): SpawnPoint[] {
+  const insetX = sizeX / 2 - 6;
+  const insetZ = sizeZ / 2 - 6;
+  return [
+    { x: -insetX, z: -insetZ },
+    { x: insetX, z: -insetZ },
+    { x: -insetX, z: insetZ },
+    { x: insetX, z: insetZ },
+    { x: 0, z: -insetZ },
+    { x: 0, z: insetZ },
+    { x: -insetX, z: 0 },
+    { x: insetX, z: 0 },
+  ];
+}
+
 export function makeEmptyMap(name: string, sizeX: number, sizeZ: number = sizeX): CustomMapDef {
   const x = clampMapAxis(sizeX);
   const z = clampMapAxis(sizeZ);
@@ -358,6 +385,7 @@ export function makeEmptyMap(name: string, sizeX: number, sizeZ: number = sizeX)
     spawns: defaultSpawnsForSize(x, z),
     spawnsAlpha: [],
     spawnsEcho: [],
+    spawnsZombie: defaultZombieSpawnsForSize(x, z),
     updatedAt: Date.now(),
   };
 }
@@ -396,6 +424,7 @@ export function pracaToCustomMap(): CustomMapDef {
     spawns: SPAWN_POINTS.map((s) => ({ x: s.x, z: s.z })),
     spawnsAlpha: SPAWN_POINTS_ALPHA.map((s) => ({ x: s.x, z: s.z })),
     spawnsEcho: SPAWN_POINTS_ECHO.map((s) => ({ x: s.x, z: s.z })),
+    spawnsZombie: SPAWN_POINTS_ZOMBIE.map((s) => ({ x: s.x, z: s.z })),
     updatedAt: Date.now(),
   };
 }
@@ -501,6 +530,10 @@ export function customMapToGeometry(def: CustomMapDef): MapGeometry {
     def.spawnsAlpha.length > 0 ? def.spawnsAlpha : teamFallback.alpha;
   const spawnsEcho =
     def.spawnsEcho.length > 0 ? def.spawnsEcho : teamFallback.echo;
+  const spawnsZombie =
+    (def.spawnsZombie ?? []).length > 0
+      ? def.spawnsZombie
+      : defaultZombieSpawnsForSize(sizeX, sizeZ);
   return {
     id: def.id,
     boxes,
@@ -516,6 +549,7 @@ export function customMapToGeometry(def: CustomMapDef): MapGeometry {
     spawns: spawns.map(copySpawnPoint),
     spawnsAlpha: spawnsAlpha.map(copySpawnPoint),
     spawnsEcho: spawnsEcho.map(copySpawnPoint),
+    spawnsZombie: spawnsZombie.map(copySpawnPoint),
     groundColor: resolveGroundLook(def).color,
     groundTexture: resolveGroundLook(def).texture,
   };
@@ -605,6 +639,7 @@ export function sanitizeCustomMap(raw: unknown): CustomMapDef | null {
     spawns: spawns.slice(0, MAX_SPAWNS),
     spawnsAlpha: sanitizeSpawnList(o.spawnsAlpha, sizeX, sizeZ),
     spawnsEcho: sanitizeSpawnList(o.spawnsEcho, sizeX, sizeZ),
+    spawnsZombie: sanitizeSpawnList(o.spawnsZombie, sizeX, sizeZ),
     groundColor: sanitizeHexColor(o.groundColor),
     groundTexture:
       o.groundTexture !== undefined ? sanitizeTextureId(o.groundTexture) : undefined,
@@ -638,6 +673,7 @@ export function cloneCustomMap(def: CustomMapDef): CustomMapDef {
     spawns: def.spawns.map((s) => ({ ...s })),
     spawnsAlpha: (def.spawnsAlpha ?? []).map((s) => ({ ...s })),
     spawnsEcho: (def.spawnsEcho ?? []).map((s) => ({ ...s })),
+    spawnsZombie: (def.spawnsZombie ?? []).map((s) => ({ ...s })),
     groundColor: def.groundColor,
     groundTexture: def.groundTexture,
     borderColor: def.borderColor,
@@ -665,5 +701,6 @@ export function defaultPracaGeometry(): MapGeometry {
   geo.spawns = SPAWN_POINTS.map((s) => ({ x: s.x, z: s.z }));
   geo.spawnsAlpha = SPAWN_POINTS_ALPHA.map((s) => ({ x: s.x, z: s.z }));
   geo.spawnsEcho = SPAWN_POINTS_ECHO.map((s) => ({ x: s.x, z: s.z }));
+  geo.spawnsZombie = SPAWN_POINTS_ZOMBIE.map((s) => ({ x: s.x, z: s.z }));
   return geo;
 }

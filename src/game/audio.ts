@@ -15,6 +15,15 @@ interface SpatialMix {
   gain: number;
 }
 
+const ZOMBIE_CLIP = {
+  groan1: "/sounds/zombie/zombie1.mp3",
+  groan2: "/sounds/zombie/zombie2.mp3",
+  hit: "/sounds/zombie/zombie-hit.mp3",
+  boss: "/sounds/zombie/zombie-boss1.mp3",
+  /** Nome do arquivo no repo (typo original). */
+  ambience: "/sounds/zombie/zombie-backgroud.mp3",
+} as const;
+
 export class AudioManager {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -26,6 +35,12 @@ export class AudioManager {
     noise: AudioBufferSourceNode;
     gain: GainNode;
   } | null = null;
+  private readonly clipBuffers = new Map<string, AudioBuffer>();
+  private readonly clipLoading = new Map<string, Promise<AudioBuffer | null>>();
+  private zombieAmbienceOn = false;
+  private zombieAmbienceAcc = 0;
+  private zombieAmbienceWait = 6;
+  private zombieAmbienceSource: AudioBufferSourceNode | null = null;
 
   /** Deve ser chamado num gesto do usuário (clique) para liberar o áudio. */
   resume(): void {
@@ -642,5 +657,139 @@ export class AudioManager {
 
   footstep(): void {
     this.noise(0.05, 0.14, "lowpass", 320);
+  }
+
+  startZombieAmbience(): void {
+    this.resume();
+    this.zombieAmbienceOn = true;
+    this.zombieAmbienceAcc = 0;
+    this.zombieAmbienceWait = 4 + Math.random() * 8;
+    void this.preloadZombieClips();
+  }
+
+  stopZombieAmbience(): void {
+    this.zombieAmbienceOn = false;
+    this.stopZombieAmbienceSource();
+  }
+
+  tickZombieAmbience(dt: number): void {
+    if (!this.zombieAmbienceOn || this.zombieAmbienceSource) return;
+    this.zombieAmbienceAcc += dt;
+    if (this.zombieAmbienceAcc >= this.zombieAmbienceWait) {
+      this.zombieAmbienceAcc = 0;
+      this.playZombieAmbienceClip();
+    }
+  }
+
+  /** Gemido espacial — `zombie1`/`zombie2` aleatórios, ou o clip do boss. */
+  zombieGroan(source: { x: number; y: number; z: number }, boss = false): void {
+    const spatial = this.computeSpatial(source.x, source.z, boss ? 62 : 42, boss ? 18 : 12);
+    if (!spatial || spatial.gain < 0.025) return;
+    const url = boss
+      ? ZOMBIE_CLIP.boss
+      : Math.random() < 0.5
+        ? ZOMBIE_CLIP.groan1
+        : ZOMBIE_CLIP.groan2;
+    this.playClip(url, boss ? 0.72 : 0.55, spatial);
+  }
+
+  /** Impacto melee no jogador. */
+  zombieAttack(source: { x: number; y: number; z: number }): void {
+    const spatial = this.computeSpatial(source.x, source.z, 30, 10);
+    if (!spatial || spatial.gain < 0.02) return;
+    this.playClip(ZOMBIE_CLIP.hit, 0.78, spatial);
+  }
+
+  /** Passo arrastado, mais grave que o de jogador. */
+  zombieFootstep(source: { x: number; y: number; z: number }): void {
+    const spatial = this.computeSpatial(source.x, source.z, 32, 10);
+    if (!spatial || spatial.gain < 0.02) return;
+    this.noise(0.08, 0.22, "lowpass", 180 + Math.random() * 70, 0, 90, 1, spatial);
+    this.tone(70 + Math.random() * 18, 0.07, 0.08, "sine", 40, 0, spatial);
+  }
+
+  private preloadZombieClips(): void {
+    for (const url of Object.values(ZOMBIE_CLIP)) {
+      void this.ensureClip(url);
+    }
+  }
+
+  private playZombieAmbienceClip(): void {
+    void this.ensureClip(ZOMBIE_CLIP.ambience).then((buf) => {
+      if (!buf || !this.ctx || !this.master || !this.zombieAmbienceOn) return;
+      if (this.zombieAmbienceSource) return;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      const g = this.ctx.createGain();
+      g.gain.value = 0.3;
+      src.connect(g);
+      g.connect(this.master);
+      src.onended = () => {
+        if (this.zombieAmbienceSource === src) this.zombieAmbienceSource = null;
+        this.zombieAmbienceWait = 12 + Math.random() * 20;
+        this.zombieAmbienceAcc = 0;
+      };
+      this.zombieAmbienceSource = src;
+      try {
+        src.start();
+      } catch {
+        this.zombieAmbienceSource = null;
+      }
+    });
+  }
+
+  private stopZombieAmbienceSource(): void {
+    const src = this.zombieAmbienceSource;
+    this.zombieAmbienceSource = null;
+    if (!src) return;
+    try {
+      src.stop();
+    } catch {
+      /* already stopped */
+    }
+  }
+
+  private playClip(url: string, gain: number, spatial?: SpatialMix | null): void {
+    void this.ensureClip(url).then((buf) => {
+      if (!buf || !this.ctx || !this.master) return;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      const g = this.ctx.createGain();
+      g.gain.value = spatial ? gain * spatial.gain : gain;
+      src.connect(g);
+      this.connectOutput(g, spatial?.pan);
+      try {
+        src.start();
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
+  private ensureClip(url: string): Promise<AudioBuffer | null> {
+    const cached = this.clipBuffers.get(url);
+    if (cached) return Promise.resolve(cached);
+    const pending = this.clipLoading.get(url);
+    if (pending) return pending;
+    const job = this.fetchClip(url);
+    this.clipLoading.set(url, job);
+    return job;
+  }
+
+  private async fetchClip(url: string): Promise<AudioBuffer | null> {
+    this.resume();
+    if (!this.ctx) return null;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const raw = await res.arrayBuffer();
+      const buf = await this.ctx.decodeAudioData(raw.slice(0));
+      this.clipBuffers.set(url, buf);
+      return buf;
+    } catch {
+      return null;
+    } finally {
+      this.clipLoading.delete(url);
+    }
   }
 }

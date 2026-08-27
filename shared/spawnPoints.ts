@@ -34,6 +34,18 @@ export const SPAWN_POINTS_ECHO: SpawnPoint[] = [
   { x: -34, z: -14 },
 ];
 
+/** Hordas no modo Zombies — bordas da Praça. */
+export const SPAWN_POINTS_ZOMBIE: SpawnPoint[] = [
+  { x: 0, z: -34 },
+  { x: 26, z: -34 },
+  { x: -26, z: -34 },
+  { x: 34, z: 0 },
+  { x: -34, z: 0 },
+  { x: 0, z: 34 },
+  { x: 30, z: 33 },
+  { x: -30, z: 33 },
+];
+
 function listOrDefault(points?: readonly SpawnPoint[]): readonly SpawnPoint[] {
   return points && points.length > 0 ? points : SPAWN_POINTS;
 }
@@ -71,5 +83,13 @@ export function spawnsForTeam(
   if (team === "echo" && map.spawnsEcho && map.spawnsEcho.length > 0) {
     return map.spawnsEcho;
   }
+  return listOrDefault(map.spawns);
+}
+
+export function zombieSpawnsFor(map: {
+  spawns: readonly SpawnPoint[];
+  spawnsZombie?: readonly SpawnPoint[];
+}): readonly SpawnPoint[] {
+  if (map.spawnsZombie && map.spawnsZombie.length > 0) return map.spawnsZombie;
   return listOrDefault(map.spawns);
 }

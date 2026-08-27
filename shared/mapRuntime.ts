@@ -17,6 +17,7 @@ export interface MapCollision {
   spawns: SpawnPoint[];
   spawnsAlpha: SpawnPoint[];
   spawnsEcho: SpawnPoint[];
+  spawnsZombie: SpawnPoint[];
 }
 
 export function geometryToCollision(geo: MapGeometry, label?: string): MapCollision {
@@ -35,6 +36,7 @@ export function geometryToCollision(geo: MapGeometry, label?: string): MapCollis
     spawns: geo.spawns.length > 0 ? geo.spawns : [{ x: 0, z: 0 }],
     spawnsAlpha: geo.spawnsAlpha ?? [],
     spawnsEcho: geo.spawnsEcho ?? [],
+    spawnsZombie: geo.spawnsZombie ?? [],
   };
 }
 

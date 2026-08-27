@@ -50,9 +50,10 @@ export type EditorTool =
   | "stair"
   | "spawn"
   | "spawnAlpha"
-  | "spawnEcho";
+  | "spawnEcho"
+  | "spawnZombie";
 
-export type SpawnListId = "ffa" | "alpha" | "echo";
+export type SpawnListId = "ffa" | "alpha" | "echo" | "zombie";
 
 export type EditorSelection =
   | { type: "piece"; id: string }
@@ -69,7 +70,7 @@ function spawnMarkerY(s: Pick<SpawnPoint, "y">): number {
 }
 
 const KIND_COLOR: Record<
-  EditorPieceKind | "border" | "spawn" | "spawnAlpha" | "spawnEcho",
+  EditorPieceKind | "border" | "spawn" | "spawnAlpha" | "spawnEcho" | "spawnZombie",
   Color3
 > = {
   wall: new Color3(0.32, 0.38, 0.46),
@@ -81,15 +82,17 @@ const KIND_COLOR: Record<
   spawn: new Color3(0.25, 0.85, 0.42),
   spawnAlpha: new Color3(0.3, 0.55, 1),
   spawnEcho: new Color3(0.88, 0.33, 0.27),
+  spawnZombie: new Color3(0.48, 0.78, 0.29),
 };
 
-function isSpawnTool(tool: EditorTool): tool is "spawn" | "spawnAlpha" | "spawnEcho" {
-  return tool === "spawn" || tool === "spawnAlpha" || tool === "spawnEcho";
+function isSpawnTool(tool: EditorTool): tool is "spawn" | "spawnAlpha" | "spawnEcho" | "spawnZombie" {
+  return tool === "spawn" || tool === "spawnAlpha" || tool === "spawnEcho" || tool === "spawnZombie";
 }
 
-function toolToSpawnList(tool: "spawn" | "spawnAlpha" | "spawnEcho"): SpawnListId {
+function toolToSpawnList(tool: "spawn" | "spawnAlpha" | "spawnEcho" | "spawnZombie"): SpawnListId {
   if (tool === "spawnAlpha") return "alpha";
   if (tool === "spawnEcho") return "echo";
+  if (tool === "spawnZombie") return "zombie";
   return "ffa";
 }
 
@@ -349,6 +352,7 @@ export class MapEditor {
     for (const s of this.def.spawns) this.clampSpawn(s);
     for (const s of this.def.spawnsAlpha ?? []) this.clampSpawn(s);
     for (const s of this.def.spawnsEcho ?? []) this.clampSpawn(s);
+    for (const s of this.def.spawnsZombie ?? []) this.clampSpawn(s);
     this.rebuildWorld();
     this.fitCamera();
     this.markDirty();
@@ -511,12 +515,17 @@ export class MapEditor {
       if (!this.def.spawnsEcho) this.def.spawnsEcho = [];
       return this.def.spawnsEcho;
     }
+    if (list === "zombie") {
+      if (!this.def.spawnsZombie) this.def.spawnsZombie = [];
+      return this.def.spawnsZombie;
+    }
     return this.def.spawns;
   }
 
-  private spawnColorKey(list: SpawnListId): "spawn" | "spawnAlpha" | "spawnEcho" {
+  private spawnColorKey(list: SpawnListId): "spawn" | "spawnAlpha" | "spawnEcho" | "spawnZombie" {
     if (list === "alpha") return "spawnAlpha";
     if (list === "echo") return "spawnEcho";
+    if (list === "zombie") return "spawnZombie";
     return "spawn";
   }
 
@@ -777,6 +786,7 @@ export class MapEditor {
     this.def.spawns.forEach((s, i) => this.addSpawnMesh(s, "ffa", i));
     (this.def.spawnsAlpha ?? []).forEach((s, i) => this.addSpawnMesh(s, "alpha", i));
     (this.def.spawnsEcho ?? []).forEach((s, i) => this.addSpawnMesh(s, "echo", i));
+    (this.def.spawnsZombie ?? []).forEach((s, i) => this.addSpawnMesh(s, "zombie", i));
   }
 
   private addSpawnMesh(s: SpawnPoint, list: SpawnListId, i: number): void {

@@ -1,11 +1,12 @@
 import { Room, Client } from "colyseus";
 
-import { MatchState, PlayerState } from "./schema";
+import { MatchState, PlayerState, AmmoDropState } from "./schema";
 import { BotAi, BotWorld, ShotEvent } from "./BotAi";
-import { CONFIG, GAME_MODES, MAPS, isTeamId, isTdmMode, TEAMS, type TeamId } from "../shared/config";
+import { ZombieAi, type ZombieWorld } from "./ZombieAi";
+import { CONFIG, GAME_MODES, MAPS, isTeamId, isTdmMode, isZombiesMode, TEAMS, type TeamId } from "../shared/config";
 import { KILL_STREAK_REWARDS, PREDATOR, isPredatorStreak, stepPredator, stepParachute } from "../shared/killStreaks";
 import { pickBotNames } from "../shared/names";
-import { pickSpawnFarFrom, randomSpawn, spawnsForTeam } from "../shared/spawnPoints";
+import { pickSpawnFarFrom, randomSpawn, spawnsForTeam, zombieSpawnsFor } from "../shared/spawnPoints";
 import {
   customMapToGeometry,
   defaultPracaGeometry,
@@ -40,6 +41,20 @@ import { isAuthEnabled } from "./db";
 import { XP_RULES, MAX_XP, MULTIKILL_WINDOW_MS } from "../shared/ranks";
 import { MAX_GOLD, matchGoldFor } from "../shared/gold";
 import { DEFAULT_SKIN } from "../shared/skins";
+import {
+  ZOMBIES_MAX_PLAYERS,
+  ZOMBIES_PREP_SECONDS,
+  ZOMBIES_INTERMISSION_SECONDS,
+  ZOMBIES_REVIVE_SECONDS,
+  ZOMBIES_REVIVE_RANGE,
+  ZOMBIES_PICKUP_RANGE,
+  ZOMBIE_AMMO_DROP_CHANCE,
+  ZOMBIE_MAX_ALIVE,
+  ZOMBIE_BOSS_SCALE,
+  zombieWavePlan,
+  zombieMaxHealth,
+  randomZombieSkin,
+} from "../shared/zombies";
 
 const HISTORY_WINDOW_MS = 1000;
 /** Quantos inputs processar por jogador a cada tick (anti-speedhack). */
@@ -122,6 +137,17 @@ export class DeathmatchRoom extends Room<MatchState> {
   private bots = new Map<string, BotAi>();
   private botCounter = 0;
   private namePool: string[] = [];
+  private zombies = new Map<string, ZombieAi>();
+  private zombieCounter = 0;
+  private zombieToSpawn = 0;
+  private zombieSpawnAcc = 0;
+  private zombieSpawnInterval = 1;
+  private zombieBossQueued = false;
+  private intermissionLeft = 0;
+  private lobbyCountdownAt = 0;
+  private ammoDropCounter = 0;
+  /** Quem está a segurar F para reanimar, e o alvo. */
+  private reviveHold = new Map<string, { targetId: string; elapsed: number }>();
   /** Capacidade total (humanos + bots) usada no rebalance. */
   private roomCapacity: number = CONFIG.roomSize;
   /** Quantos bots a sala deve manter (só o líder altera). */
@@ -178,14 +204,23 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.setPatchRate(CONFIG.simulationIntervalMs);
     this.namePool = pickBotNames(16);
 
-    const maxPlayers = clampInt(options.maxPlayers, 2, CONFIG.roomSize, CONFIG.roomSize);
-    const desiredBots = clampInt(options.bots, 0, maxPlayers - 1, Math.max(0, maxPlayers - 1));
     const roomName = sanitizeRoomName(options.roomName);
     const gameMode =
       typeof options.gameMode === "string" &&
       GAME_MODES.some((m) => m.id === options.gameMode)
         ? options.gameMode
         : "ffa";
+    const zombies = isZombiesMode(gameMode);
+    const maxCap = zombies ? ZOMBIES_MAX_PLAYERS : CONFIG.roomSize;
+    const maxPlayers = clampInt(
+      options.maxPlayers,
+      zombies ? 1 : 2,
+      maxCap,
+      zombies ? ZOMBIES_MAX_PLAYERS : CONFIG.roomSize
+    );
+    const desiredBots = zombies
+      ? 0
+      : clampInt(options.bots, 0, maxPlayers - 1, Math.max(0, maxPlayers - 1));
     const killsToWin = clampInt(options.killsToWin, 1, 100, CONFIG.killsToWin);
 
     this.maxClients = maxPlayers;
@@ -196,6 +231,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.maxPlayers = maxPlayers;
     this.state.gameMode = gameMode;
     this.state.killsToWin = killsToWin;
+    if (zombies) this.state.zombiePhase = "lobby";
     this.applyRoomMap(options.mapId, options.customMap);
 
     // Metadata exibida na lista de salas do lobby.
@@ -206,7 +242,7 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     this.onMessage("input", (client, input: PlayerInput) => {
       const p = this.state.players.get(client.sessionId);
-      if (!p || !p.alive) return;
+      if (!p || !p.alive || p.downed) return;
       if (typeof input?.seq !== "number") return;
       const queue = this.pendingInputs.get(client.sessionId);
       if (!queue) return;
@@ -252,6 +288,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     // Só o líder altera quantos bots preenchem os slots vazios.
     this.onMessage("setBots", (client, msg: { count: number }) => {
       if (client.sessionId !== this.state.hostId) return;
+      if (this.isZombies()) return;
       if (typeof msg?.count !== "number" || !Number.isFinite(msg.count)) return;
       this.desiredBots = Math.max(
         0,
@@ -276,6 +313,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.onMessage("startMatch", (client) => {
       if (client.sessionId !== this.state.hostId) return;
       if (this.state.matchStarted) return;
+      this.cancelLobbyCountdown();
       this.startMatch();
     });
 
@@ -287,6 +325,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.inMatch = true;
       p.ready = false;
       client.send("matchStart");
+      if (this.isZombies()) this.respawnPlayer(client.sessionId);
     });
 
     /** Líder altera mapa/modo/kills/etc. — apenas no pré-lobby. */
@@ -308,6 +347,10 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     this.onMessage("setTeam", (client, msg: { team?: unknown }) => {
       this.handleSetTeam(client, msg?.team);
+    });
+
+    this.onMessage("holdRevive", (client, msg: { holding?: unknown }) => {
+      this.handleHoldRevive(client.sessionId, msg?.holding === true);
     });
 
     this.onMessage(
@@ -391,7 +434,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       const id = client.sessionId;
       const p = this.state.players.get(id);
       // Só spawna quem realmente entrou na partida (Start/Play).
-      if (!p || !p.inMatch || p.alive) return;
+      if (!p || !p.inMatch || p.alive || p.downed) return;
       if (this.isTdm() && !isTeamId(p.team)) return;
       // Morte: o timer de respawn manda; aqui só o spawn inicial / pós-reset.
       if (this.respawnAt.has(id)) return;
@@ -482,6 +525,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     client.send("sping", { t: Date.now() });
 
     this.rebalanceBots();
+    if (this.isZombies()) this.ensureLobbyCountdown();
   }
 
   onLeave(client: Client): void {
@@ -507,6 +551,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.matchXpEarned.delete(id);
     this.matchGoldEarned.delete(id);
 
+    this.reviveHold.delete(id);
+
     if (this.state.hostId === id) {
       let nextHost = "";
       for (const pid of this.state.players.keys()) {
@@ -519,22 +565,28 @@ export class DeathmatchRoom extends Room<MatchState> {
     }
 
     this.rebalanceBots();
+    if (this.isZombies() && this.state.matchStarted && !this.state.matchOver) {
+      this.checkZombieWipe();
+    }
   }
 
-  // --- Simulação ---
-
   private update(dt: number): void {
+    this.processLobbyCountdown(dt);
     this.processHumanInputs();
-    // No pré-lobby os bots aguardam parados nos spawns.
     if (this.state.matchStarted) {
       for (const bot of this.bots.values()) bot.update(dt);
+      for (const z of this.zombies.values()) z.update(dt);
     }
     this.pushHistory();
     this.pingClients();
     this.processRespawns();
     this.processHealthRegen(dt);
+    this.processZombieWave(dt);
+    this.processRevives(dt);
+    this.processAmmoPickups();
     this.processMatchReset();
-    this.processKillStreaks(dt);
+    this.processInvincibility(dt);
+    if (!this.isZombies()) this.processKillStreaks(dt);
     this.processParachuteLandings();
   }
 
@@ -547,9 +599,6 @@ export class DeathmatchRoom extends Room<MatchState> {
           p.activeStreak = "";
         }
       }
-      if (p.invincibleTimeLeft > 0) {
-        p.invincibleTimeLeft = Math.max(0, p.invincibleTimeLeft - dt);
-      }
       // Bots não têm tecla: ativam assim que um slot fica livre.
       const firstAvailable = p.availableStreaks[0];
       if (
@@ -560,6 +609,15 @@ export class DeathmatchRoom extends Room<MatchState> {
         firstAvailable !== undefined
       ) {
         this.tryActivateStreak(id, p, firstAvailable);
+      }
+    }
+  }
+
+  /** Spawn-protect / streaks: o timer precisa correr também no modo Zombies. */
+  private processInvincibility(dt: number): void {
+    for (const p of this.state.players.values()) {
+      if (p.invincibleTimeLeft > 0) {
+        p.invincibleTimeLeft = Math.max(0, p.invincibleTimeLeft - dt);
       }
     }
   }
@@ -837,7 +895,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     if (this.state.matchOver) return;
     const now = Date.now();
     for (const [id, player] of this.state.players) {
-      if (!player.alive || player.health >= CONFIG.playerMaxHealth) continue;
+      if (!player.alive || player.isZombie || player.health >= CONFIG.playerMaxHealth) continue;
       if (isPredatorStreak(player.activeStreak)) continue;
       const lastDamage = this.lastDamagedAt.get(id) ?? now;
       if (now - lastDamage < CONFIG.healthRegenDelay * 1000) continue;
@@ -867,6 +925,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.predatorWeapons.delete(id);
     this.lastDamagedAt.delete(id);
     p.alive = true;
+    p.downed = false;
+    p.reviveProgress = 0;
     this.grantInvincibility(p, CONFIG.spawnInvincibilityDuration);
 
     const bot = this.bots.get(id);
@@ -892,6 +952,14 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.teamKillsAlpha = 0;
     this.state.teamKillsEcho = 0;
     this.state.matchStarted = false;
+    this.state.zombieRound = 0;
+    this.state.zombiesAlive = 0;
+    this.state.zombiesLeft = 0;
+    this.state.prepTimeLeft = 0;
+    this.state.zombiePhase = this.isZombies() ? "lobby" : "";
+    this.clearZombies();
+    this.clearAmmoDrops();
+    this.reviveHold.clear();
     this.statsRecorded = false;
     this.matchResetAt = 0;
     this.respawnAt.clear();
@@ -917,6 +985,8 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.multiKills = 0;
       p.health = CONFIG.playerMaxHealth;
       p.alive = false;
+      p.downed = false;
+      p.reviveProgress = 0;
       this.history.set(id, []);
       if (this.bots.has(id)) {
         // Bot aguarda o próximo start num spawn limpo.
@@ -936,16 +1006,17 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.broadcast("matchReset");
     this.broadcast("backToLobby");
     void this.syncMetadata();
+    if (this.isZombies()) this.ensureLobbyCountdown();
   }
 
   /** Inicia a partida com o líder + todos os humanos prontos (e os bots). */
   private startMatch(): void {
-    // Captura quem entra ANTES de limpar os flags de pronto.
+    const zombies = this.isZombies();
     const joining = new Set<string>();
     for (const client of this.clients) {
       const p = this.state.players.get(client.sessionId);
       if (!p) continue;
-      if (client.sessionId === this.state.hostId || p.ready) {
+      if (zombies || client.sessionId === this.state.hostId || p.ready) {
         joining.add(client.sessionId);
       }
     }
@@ -956,6 +1027,11 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.winnerTeam = "";
     this.state.teamKillsAlpha = 0;
     this.state.teamKillsEcho = 0;
+    this.state.zombieRound = 0;
+    this.state.zombiesAlive = 0;
+    this.state.zombiesLeft = 0;
+    this.state.prepTimeLeft = 0;
+    this.state.zombiePhase = zombies ? "wave" : "";
     this.statsRecorded = false;
     this.matchResetAt = 0;
     this.respawnAt.clear();
@@ -964,6 +1040,10 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.matchMultis.clear();
     this.matchXpEarned.clear();
     this.matchGoldEarned.clear();
+    this.reviveHold.clear();
+    this.clearZombies();
+    this.clearAmmoDrops();
+    this.cancelLobbyCountdown();
 
     for (const [, p] of this.state.players) {
       p.kills = 0;
@@ -982,9 +1062,10 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.health = CONFIG.playerMaxHealth;
       p.alive = false;
       p.ready = false;
+      p.downed = false;
+      p.reviveProgress = 0;
     }
 
-    // Bots sempre participam — nascem direto nos spawns.
     if (this.isTdm()) this.rebalanceBotTeams();
     for (const id of this.bots.keys()) {
       const p = this.state.players.get(id);
@@ -993,13 +1074,16 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.respawnPlayer(id);
     }
 
-    // O spawn dos humanos acontece via requestSpawn após o loadout no cliente.
     for (const client of this.clients) {
       const p = this.state.players.get(client.sessionId);
       if (!p) continue;
       p.inMatch = joining.has(client.sessionId);
-      if (p.inMatch) client.send("matchStart");
+      if (p.inMatch) {
+        client.send("matchStart");
+        if (zombies) this.respawnPlayer(client.sessionId);
+      }
     }
+    if (zombies) this.beginZombieRound(1);
     void this.syncMetadata();
   }
 
@@ -1019,17 +1103,39 @@ export class DeathmatchRoom extends Room<MatchState> {
       if (next !== this.state.gameMode) {
         this.state.gameMode = next;
         this.applyGameModeTeams();
+        if (isZombiesMode(next)) {
+          this.desiredBots = 0;
+          this.state.desiredBots = 0;
+          const humans = this.state.players.size - this.bots.size;
+          const maxPlayers = clampInt(
+            this.state.maxPlayers,
+            Math.max(1, humans),
+            ZOMBIES_MAX_PLAYERS,
+            ZOMBIES_MAX_PLAYERS
+          );
+          this.maxClients = maxPlayers;
+          this.roomCapacity = maxPlayers;
+          this.state.maxPlayers = maxPlayers;
+          this.state.zombiePhase = "lobby";
+          this.ensureLobbyCountdown();
+        } else {
+          this.cancelLobbyCountdown();
+          this.state.zombiePhase = "";
+          this.state.prepTimeLeft = 0;
+        }
       }
     }
     if (typeof msg.killsToWin === "number") {
       this.state.killsToWin = clampInt(msg.killsToWin, 1, 100, this.state.killsToWin);
     }
     if (typeof msg.maxPlayers === "number") {
-      const humans = this.state.players.size - this.bots.size;
+      const humans = this.state.players.size - this.bots.size - this.zombies.size;
+      const cap = this.isZombies() ? ZOMBIES_MAX_PLAYERS : CONFIG.roomSize;
+      const minP = this.isZombies() ? Math.max(1, humans) : Math.max(2, humans);
       const maxPlayers = clampInt(
         msg.maxPlayers,
-        Math.max(2, humans),
-        CONFIG.roomSize,
+        minP,
+        cap,
         this.state.maxPlayers
       );
       this.maxClients = maxPlayers;
@@ -1040,9 +1146,13 @@ export class DeathmatchRoom extends Room<MatchState> {
         this.state.desiredBots = this.desiredBots;
       }
     }
-    if (typeof msg.bots === "number") {
+    if (typeof msg.bots === "number" && !this.isZombies()) {
       this.desiredBots = clampInt(msg.bots, 0, this.roomCapacity - 1, this.desiredBots);
       this.state.desiredBots = this.desiredBots;
+    }
+    if (this.isZombies()) {
+      this.desiredBots = 0;
+      this.state.desiredBots = 0;
     }
     void this.syncMetadata();
     this.rebalanceBots();
@@ -1228,17 +1338,18 @@ export class DeathmatchRoom extends Room<MatchState> {
           continue;
         }
         const crouched = Boolean(targetPlayer?.crouch);
+        const scale = targetPlayer?.isBoss ? ZOMBIE_BOSS_SCALE : 1;
         const yaw = targetPlayer?.yaw ?? 0;
-        const headY = crouched ? CROUCH_HEAD_CENTER_Y : HEAD_CENTER_Y;
-        const headFwd = crouched ? CROUCH_HEAD_FORWARD : 0;
+        const headY = (crouched ? CROUCH_HEAD_CENTER_Y : HEAD_CENTER_Y) * scale;
+        const headFwd = crouched ? CROUCH_HEAD_FORWARD * scale : 0;
         const headX = target.pos.x + Math.sin(yaw) * headFwd;
         const headZ = target.pos.z + Math.cos(yaw) * headFwd;
-        const bodyY = crouched ? CROUCH_BODY_CENTER_Y : BODY_CENTER_Y;
-        const bodyHalfY = crouched ? CROUCH_BODY_HALF_Y : BODY_HALF.y;
+        const bodyY = (crouched ? CROUCH_BODY_CENTER_Y : BODY_CENTER_Y) * scale;
+        const bodyHalfY = (crouched ? CROUCH_BODY_HALF_Y : BODY_HALF.y) * scale;
         const tHead = raySphere(
           origin, dir,
           headX, target.pos.y + headY, headZ,
-          HEAD_RADIUS, tBest
+          HEAD_RADIUS * scale, tBest
         );
         if (tHead !== null && tHead < tBest) {
           tBest = tHead;
@@ -1249,7 +1360,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         const tBody = rayAabb(
           origin, dir,
           target.pos.x, target.pos.y + bodyY, target.pos.z,
-          BODY_HALF.x, bodyHalfY, BODY_HALF.z, tBest
+          BODY_HALF.x * scale, bodyHalfY, BODY_HALF.z * scale, tBest
         );
         if (tBody !== null && tBody < tBest) {
           tBest = tBody;
@@ -1316,9 +1427,17 @@ export class DeathmatchRoom extends Room<MatchState> {
       weaponName: "Suicídio",
       killerHealth: 0,
       voluntary: opts.spectate ? "spectate" : "respawn",
+      downed: this.isZombies(),
     });
 
     this.deathPos.set(targetId, { x: target.x, z: target.z });
+
+    if (this.isZombies()) {
+      target.downed = true;
+      target.reviveProgress = 0;
+      this.checkZombieWipe();
+      return;
+    }
 
     if (opts.spectate) {
       this.bodies.delete(targetId);
@@ -1396,16 +1515,17 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     if (attacker && attackerId !== targetId) {
       attacker.kills++;
-      attacker.killStreak++;
-      this.trackMultikill(attackerId);
-      const reward = KILL_STREAK_REWARDS.find((r) => r.kills === attacker.killStreak);
-      if (reward && !attacker.availableStreaks.includes(reward.id)) {
-        // Libera para ativação manual (Z/X/C) — o efeito só começa ao ativar.
-        attacker.availableStreaks.push(reward.id);
-        this.broadcast("killstreakEarned", {
-          playerName: attacker.name,
-          streakName: reward.name,
-        });
+      if (!this.isZombies()) {
+        attacker.killStreak++;
+        this.trackMultikill(attackerId);
+        const reward = KILL_STREAK_REWARDS.find((r) => r.kills === attacker.killStreak);
+        if (reward && !attacker.availableStreaks.includes(reward.id)) {
+          attacker.availableStreaks.push(reward.id);
+          this.broadcast("killstreakEarned", {
+            playerName: attacker.name,
+            streakName: reward.name,
+          });
+        }
       }
     }
 
@@ -1420,9 +1540,26 @@ export class DeathmatchRoom extends Room<MatchState> {
     });
 
     const victimClient = this.clients.find((c) => c.sessionId === targetId);
-    victimClient?.send("died", { killerName, weaponName, killerHealth });
+    victimClient?.send("died", {
+      killerName,
+      weaponName,
+      killerHealth,
+      downed: this.isZombies() && !target.isZombie,
+    });
 
     this.deathPos.set(targetId, { x: target.x, z: target.z });
+
+    if (this.isZombies()) {
+      if (target.isZombie) {
+        this.onZombieKilled(targetId, target);
+      } else {
+        target.downed = true;
+        target.reviveProgress = 0;
+        this.checkZombieWipe();
+      }
+      return true;
+    }
+
     this.respawnAt.set(targetId, Date.now() + CONFIG.respawnDelay * 1000);
 
     if (this.isTdm() && attacker && isTeamId(attacker.team)) {
@@ -1539,6 +1676,12 @@ export class DeathmatchRoom extends Room<MatchState> {
    * Humano entra → bot sai; humano sai → bot volta (troca suave).
    */
   private rebalanceBots(): void {
+    if (this.isZombies()) {
+      this.desiredBots = 0;
+      this.state.desiredBots = 0;
+      while (this.bots.size > 0) this.removeOneBot();
+      return;
+    }
     const humans = this.state.players.size - this.bots.size;
     const maxBots = Math.max(0, this.roomCapacity - humans);
     const target = Math.min(this.desiredBots, maxBots);
@@ -1598,8 +1741,14 @@ export class DeathmatchRoom extends Room<MatchState> {
     return isTdmMode(this.state.gameMode);
   }
 
+  private isZombies(): boolean {
+    return isZombiesMode(this.state.gameMode);
+  }
+
   private sameTeam(a: PlayerState | undefined, b: PlayerState | undefined): boolean {
-    if (!this.isTdm() || !a || !b) return false;
+    if (!a || !b) return false;
+    if (this.isZombies()) return a.isZombie === b.isZombie;
+    if (!this.isTdm()) return false;
     return isTeamId(a.team) && a.team === b.team;
   }
 
@@ -1624,7 +1773,7 @@ export class DeathmatchRoom extends Room<MatchState> {
   }
 
   private applyGameModeTeams(): void {
-    if (!this.isTdm()) {
+    if (this.isZombies() || !this.isTdm()) {
       this.state.teamKillsAlpha = 0;
       this.state.teamKillsEcho = 0;
       this.state.winnerTeam = "";
@@ -1689,6 +1838,7 @@ export class DeathmatchRoom extends Room<MatchState> {
   }
 
   private isMatchWinner(id: string, team: string, winnerId: string): boolean {
+    if (this.isZombies()) return false;
     if (this.isTdm()) {
       return isTeamId(this.state.winnerTeam) && team === this.state.winnerTeam;
     }
@@ -1697,7 +1847,12 @@ export class DeathmatchRoom extends Room<MatchState> {
 
   private finishMatch(winnerId: string, winnerTeam?: TeamId): void {
     this.state.matchOver = true;
-    if (this.isTdm() && winnerTeam) {
+    if (this.isZombies()) {
+      this.state.winnerTeam = "";
+      this.state.winnerName = `Round ${this.state.zombieRound}`;
+      this.state.zombiePhase = "";
+      this.clearZombies();
+    } else if (this.isTdm() && winnerTeam) {
       this.state.winnerTeam = winnerTeam;
       this.state.winnerName = TEAMS[winnerTeam].label;
     } else {
@@ -1712,5 +1867,275 @@ export class DeathmatchRoom extends Room<MatchState> {
       winnerTeam: this.state.winnerTeam,
     });
     void this.persistMatchStats(winnerId);
+  }
+
+  private ensureLobbyCountdown(): void {
+    if (!this.isZombies() || this.state.matchStarted) return;
+    if (this.lobbyCountdownAt > 0) return;
+    this.lobbyCountdownAt = Date.now() + ZOMBIES_PREP_SECONDS * 1000;
+    this.state.zombiePhase = "lobby";
+    this.state.prepTimeLeft = ZOMBIES_PREP_SECONDS;
+  }
+
+  private cancelLobbyCountdown(): void {
+    this.lobbyCountdownAt = 0;
+    if (!this.state.matchStarted) this.state.prepTimeLeft = 0;
+  }
+
+  private processLobbyCountdown(_dt: number): void {
+    if (!this.isZombies() || this.state.matchStarted || this.state.matchOver) return;
+    if (this.lobbyCountdownAt <= 0) {
+      this.ensureLobbyCountdown();
+      return;
+    }
+    const left = Math.max(0, (this.lobbyCountdownAt - Date.now()) / 1000);
+    this.state.prepTimeLeft = left;
+    this.state.zombiePhase = "lobby";
+    if (left > 0) return;
+    this.cancelLobbyCountdown();
+    this.startMatch();
+  }
+
+  private beginZombieRound(round: number): void {
+    const plan = zombieWavePlan(round);
+    this.state.zombieRound = plan.round;
+    this.state.zombiePhase = "wave";
+    this.state.prepTimeLeft = 0;
+    this.intermissionLeft = 0;
+    this.zombieToSpawn = plan.count;
+    this.zombieSpawnInterval = plan.spawnInterval;
+    this.zombieSpawnAcc = 0;
+    this.zombieBossQueued = plan.boss;
+    this.refreshZombieCounts();
+    this.broadcast("waveStart", {
+      round: plan.round,
+      count: plan.count,
+      boss: plan.boss,
+    });
+  }
+
+  private processZombieWave(dt: number): void {
+    if (!this.isZombies() || !this.state.matchStarted || this.state.matchOver) return;
+
+    if (this.state.zombiePhase === "intermission") {
+      this.intermissionLeft = Math.max(0, this.intermissionLeft - dt);
+      this.state.prepTimeLeft = this.intermissionLeft;
+      if (this.intermissionLeft <= 0) {
+        this.beginZombieRound(this.state.zombieRound + 1);
+      }
+      return;
+    }
+
+    if (this.state.zombiePhase !== "wave") return;
+
+    if (this.zombieBossQueued && this.zombies.size < ZOMBIE_MAX_ALIVE) {
+      this.spawnZombie(true);
+      this.zombieBossQueued = false;
+    }
+
+    this.zombieSpawnAcc += dt;
+    while (
+      this.zombieToSpawn > 0 &&
+      this.zombies.size < ZOMBIE_MAX_ALIVE &&
+      this.zombieSpawnAcc >= this.zombieSpawnInterval
+    ) {
+      this.zombieSpawnAcc -= this.zombieSpawnInterval;
+      this.spawnZombie(false);
+      this.zombieToSpawn--;
+    }
+    this.refreshZombieCounts();
+
+    if (this.zombieToSpawn <= 0 && !this.zombieBossQueued && this.zombies.size === 0) {
+      this.state.zombiePhase = "intermission";
+      this.intermissionLeft = ZOMBIES_INTERMISSION_SECONDS;
+      this.state.prepTimeLeft = this.intermissionLeft;
+      this.broadcast("waveClear", { round: this.state.zombieRound });
+    }
+  }
+
+  private spawnZombie(boss: boolean): void {
+    const id = `zom_${this.zombieCounter++}`;
+    const p = new PlayerState();
+    p.name = boss ? "Zumbi Boss" : "Zumbi";
+    p.isBot = true;
+    p.isZombie = true;
+    p.isBoss = boss;
+    p.inMatch = true;
+    p.alive = true;
+    p.health = zombieMaxHealth(boss);
+    p.skinId = randomZombieSkin();
+    p.weaponId = "";
+    const spawn = randomSpawn(this.zombieSpawnPoints());
+    p.x = spawn.x;
+    p.z = spawn.z;
+    p.y = spawn.y ?? 0;
+    this.state.players.set(id, p);
+    this.history.set(id, []);
+    const world: ZombieWorld = {
+      getPlayers: () => this.state.players as unknown as Map<string, PlayerState>,
+      applyDamage: (t, a, k, w) => this.applyDamage(t, a, k, w),
+      isMatchOver: () => this.state.matchOver,
+      getMap: () => this.roomMap,
+      getZombieSpawns: () => [...this.zombieSpawnPoints()],
+    };
+    this.zombies.set(id, new ZombieAi(id, p, world, boss));
+    this.refreshZombieCounts();
+  }
+
+  private zombieSpawnPoints(): readonly { x: number; z: number; y?: number }[] {
+    return zombieSpawnsFor(this.roomMap);
+  }
+
+  private refreshZombieCounts(): void {
+    this.state.zombiesAlive = this.zombies.size;
+    this.state.zombiesLeft = this.zombies.size + this.zombieToSpawn + (this.zombieBossQueued ? 1 : 0);
+  }
+
+  private onZombieKilled(id: string, target: PlayerState): void {
+    if (Math.random() < ZOMBIE_AMMO_DROP_CHANCE) {
+      this.spawnAmmoDrop(target.x, target.y, target.z);
+    }
+    this.removeZombie(id);
+    this.refreshZombieCounts();
+  }
+
+  private removeZombie(id: string): void {
+    this.zombies.delete(id);
+    this.state.players.delete(id);
+    this.history.delete(id);
+    this.respawnAt.delete(id);
+    this.deathPos.delete(id);
+  }
+
+  private clearZombies(): void {
+    for (const id of [...this.zombies.keys()]) this.removeZombie(id);
+    this.zombieToSpawn = 0;
+    this.zombieBossQueued = false;
+    this.refreshZombieCounts();
+  }
+
+  private spawnAmmoDrop(x: number, y: number, z: number): void {
+    const id = `ammo_${this.ammoDropCounter++}`;
+    const drop = new AmmoDropState();
+    drop.x = x;
+    drop.y = y;
+    drop.z = z;
+    this.state.ammoDrops.set(id, drop);
+  }
+
+  private clearAmmoDrops(): void {
+    this.state.ammoDrops.clear();
+  }
+
+  private processAmmoPickups(): void {
+    if (!this.isZombies() || !this.state.matchStarted || this.state.matchOver) return;
+    if (this.state.ammoDrops.size === 0) return;
+    for (const [dropId, drop] of this.state.ammoDrops) {
+      for (const [pid, p] of this.state.players) {
+        if (p.isZombie || !p.alive || p.downed || !p.inMatch) continue;
+        const d = Math.hypot(p.x - drop.x, p.z - drop.z);
+        if (d > ZOMBIES_PICKUP_RANGE) continue;
+        const client = this.clients.find((c) => c.sessionId === pid);
+        client?.send("ammoPickup", { x: drop.x, y: drop.y, z: drop.z });
+        this.state.ammoDrops.delete(dropId);
+        break;
+      }
+    }
+  }
+
+  private handleHoldRevive(reviverId: string, holding: boolean): void {
+    if (!holding) {
+      this.reviveHold.delete(reviverId);
+      return;
+    }
+    if (!this.isZombies() || this.state.matchOver) return;
+    const reviver = this.state.players.get(reviverId);
+    if (!reviver || !reviver.alive || reviver.downed || !reviver.inMatch) return;
+    const target = this.nearestDowned(reviver);
+    if (!target) {
+      this.reviveHold.delete(reviverId);
+      return;
+    }
+    const cur = this.reviveHold.get(reviverId);
+    if (!cur || cur.targetId !== target.id) {
+      this.reviveHold.set(reviverId, { targetId: target.id, elapsed: 0 });
+    }
+  }
+
+  private nearestDowned(reviver: PlayerState): { id: string; p: PlayerState } | null {
+    let best: { id: string; p: PlayerState } | null = null;
+    let bestD = ZOMBIES_REVIVE_RANGE;
+    for (const [id, p] of this.state.players) {
+      if (!p.downed || p.isZombie || !p.inMatch) continue;
+      const d = Math.hypot(p.x - reviver.x, p.z - reviver.z);
+      if (d <= bestD) {
+        bestD = d;
+        best = { id, p };
+      }
+    }
+    return best;
+  }
+
+  private processRevives(dt: number): void {
+    if (!this.isZombies() || !this.state.matchStarted || this.state.matchOver) return;
+
+    for (const p of this.state.players.values()) {
+      if (p.downed) p.reviveProgress = 0;
+    }
+
+    for (const [reviverId, hold] of [...this.reviveHold]) {
+      const reviver = this.state.players.get(reviverId);
+      const target = this.state.players.get(hold.targetId);
+      if (
+        !reviver ||
+        !reviver.alive ||
+        reviver.downed ||
+        !target ||
+        !target.downed
+      ) {
+        this.reviveHold.delete(reviverId);
+        continue;
+      }
+      const d = Math.hypot(reviver.x - target.x, reviver.z - target.z);
+      if (d > ZOMBIES_REVIVE_RANGE) {
+        this.reviveHold.delete(reviverId);
+        continue;
+      }
+      hold.elapsed += dt;
+      target.reviveProgress = Math.min(1, hold.elapsed / ZOMBIES_REVIVE_SECONDS);
+      if (hold.elapsed >= ZOMBIES_REVIVE_SECONDS) {
+        this.revivePlayer(hold.targetId);
+        this.reviveHold.delete(reviverId);
+      }
+    }
+  }
+
+  private revivePlayer(id: string): void {
+    const p = this.state.players.get(id);
+    if (!p || !p.downed) return;
+    p.downed = false;
+    p.alive = true;
+    p.reviveProgress = 0;
+    p.health = CONFIG.playerMaxHealth;
+    this.grantInvincibility(p, CONFIG.spawnInvincibilityDuration);
+    this.lastDamagedAt.delete(id);
+    this.bodies.set(id, createBody(p.x, p.z, p.y));
+    this.pendingInputs.get(id)?.splice(0);
+    this.history.set(id, []);
+    const client = this.clients.find((c) => c.sessionId === id);
+    client?.send("revived", { x: p.x, z: p.z, y: p.y });
+  }
+
+  private checkZombieWipe(): void {
+    if (!this.isZombies() || this.state.matchOver) return;
+    let anyAlive = false;
+    for (const p of this.state.players.values()) {
+      if (p.isZombie || !p.inMatch) continue;
+      if (p.alive && !p.downed) {
+        anyAlive = true;
+        break;
+      }
+    }
+    if (!anyAlive) this.finishMatch("");
   }
 }

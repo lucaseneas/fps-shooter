@@ -40,6 +40,7 @@ export interface PlayerVisualPose {
   isCrouching: boolean;
   speedRatio?: number;
   isAlive?: boolean;
+  isDowned?: boolean;
 }
 
 function cleanAnimKey(name: string): string {
@@ -73,6 +74,8 @@ export class PlayerVisual {
 
   private invincible = false;
   private alive = true;
+  private downed = false;
+  private zombieKind: "none" | "zombie" | "boss" = "none";
   private lastPose: PlayerVisualPose = {
     isMoving: false,
     isCrouching: false,
@@ -119,6 +122,8 @@ export class PlayerVisual {
 
       this.setSkin(this.currentSkinId);
       this.applyInvincibilityAlpha();
+      this.applyZombieTint();
+      this.setDowned(this.downed);
       this.setPose(this.lastPose);
     }).catch(console.error);
 
@@ -318,8 +323,10 @@ export class PlayerVisual {
     this.lastPose = pose;
     const isAlive = pose.isAlive ?? this.alive;
     this.alive = isAlive;
+    const isDowned = pose.isDowned ?? this.downed;
+    this.setDowned(isDowned);
 
-    if (!isAlive) {
+    if (!isAlive || isDowned) {
       this.stopAllAnimations();
       return;
     }
@@ -333,6 +340,35 @@ export class PlayerVisual {
 
     const speedRatio = pose.isMoving ? Math.max(0.8, Math.min(2.0, pose.speedRatio ?? 1.0)) : 1.0;
     this.playAnimation(targetAnim, speedRatio);
+  }
+
+  setZombieLook(kind: "none" | "zombie" | "boss"): void {
+    if (this.zombieKind === kind) return;
+    this.zombieKind = kind;
+    const scale = kind === "boss" ? 2 : 1;
+    this.root.scaling.setAll(scale);
+    this.gunRoot.setEnabled(kind === "none");
+    this.applyZombieTint();
+  }
+
+  setDowned(on: boolean): void {
+    this.downed = on;
+    if (this.dummyMesh) {
+      this.dummyMesh.rotation.x = on ? Math.PI / 2 : 0;
+      this.dummyMesh.position.y = on ? THIRD_PERSON_DUMMY_Y + 0.15 : THIRD_PERSON_DUMMY_Y;
+    }
+    if (on) this.stopAllAnimations();
+  }
+
+  private applyZombieTint(): void {
+    if (!this.skinMat) return;
+    const mat = this.skinMat as {
+      albedoColor?: Color3;
+      emissiveColor?: Color3;
+    };
+    // Skins zombie1/2/3 já trazem o visual; não pintar por cima (verde/vermelho).
+    if (mat.albedoColor) mat.albedoColor = new Color3(1, 1, 1);
+    if (mat.emissiveColor) mat.emissiveColor = new Color3(0, 0, 0);
   }
 
   private playAnimation(animName: string, speedRatio = 1.0): void {

@@ -53,7 +53,7 @@ Rota `/maps`, botão **Criação** (dropdown) na home → **Mapas**. Código: `s
 - Mapas custom: id `custom:…`. Catálogo **global** na tabela Postgres `custom_maps` (todos os jogadores vêem os mesmos). Sem `localStorage`. Publicar exige conta. GET `/api/maps` é público. A Praça oficial **não** se sobrescreve — editar gera cópia.
 - Geometria = AABBs (`BoxDef`). Escada vira degraus `platform`. Colisão/partida usam `customMapToGeometry` → `mapPayload` no estado da sala (o servidor **não** lê localStorage na partida).
 - Peça pode ter `color` (`#rrggbb` ou `#rrggbbaa` com opacidade) e `texture` (id de `shared/textures.ts`). O mapa também tem `groundColor`/`groundTexture` (chão) e `borderColor`/`borderTexture` (paredes da borda). No editor: botões **Chão** / **Paredes**, ou clique no chão / nas paredes; ao lado da cor há um slider de opacidade. `createScene.applyBoxMap` recebe o look do chão; as bordas vão nos `BoxDef` kind `border`.
-- Spawns: `spawns` = Free-for-All (verde); `spawnsAlpha` = Equipe Alfa / norte (azul); `spawnsEcho` = Equipe Echo / sul (vermelho). São listas **separadas**. Publicar exige ≥1 de cada. Sem spawns de time no JSON, a partida TDM usa fallback norte/sul.
+- Spawns: `spawns` = Free-for-All (verde); `spawnsAlpha` = Equipe Alfa / norte (azul); `spawnsEcho` = Equipe Echo / sul (vermelho); `spawnsZombie` = hordas Zombies (verde-lima). São listas **separadas**. Publicar exige ≥1 de cada (incluindo zumbi). Sem spawns de time no JSON, a partida TDM usa fallback norte/sul. Sem `spawnsZombie`, o modo Zombies usa cantos/bordas.
 - Não existe `.hidden` global. Hub/tamanho/editor **precisam** de `#pageMaps .hidden { display: none }`. Sem isso o canvas abre empurrado para baixo. Editor visível: `position: absolute; inset: 0`.
 - A página de mapas usa o tema militar (`mil-menu`): botões caqui / `.secondary` / `.map-tool`, iguais ao resto do menu.
 
@@ -63,3 +63,15 @@ Rota `/maps`, botão **Criação** (dropdown) na home → **Mapas**. Código: `s
 - Spawns TDM vêm de `spawnsAlpha` / `spawnsEcho` (não dos spawns FFA).
 - Nicknames: aliados sempre visíveis; inimigos só com a mira em cima (vermelho).
 - Entrada: overlay de equipe; durante a partida, **Tab** abre a troca de equipe. Bots são repartidos igualmente entre os times.
+
+## Zombies (`zombies`)
+
+Cooperativo PvE, até **4 jogadores**, contra hordas. Sem bots de mata-mata, sem fogo amigo, sem kill streaks, sem kills-to-win.
+
+- **Spawns de mapa:** `spawnsZombie` (verde-lima no editor). Publicar exige ≥1. Sem a lista no JSON, a geometria usa cantos/bordas (`defaultZombieSpawnsForSize` / `SPAWN_POINTS_ZOMBIE` na Praça). Jogadores nascem nos spawns FFA.
+- **Lobby:** ao entrar, começa a contagem de **15s** (`ZOMBIES_PREP_SECONDS`) para configurar armamentos (botão **Armamentos** / loadout). O líder pode pular com **COMEÇAR AGORA**. Acabou a conta → partida inicia, Round 1.
+- **Hordas:** Round 1 = 8 zumbis, 1/s em spawn aleatório. Cada round: +4 zumbis e spawn um pouco mais rápido (`shared/zombies.ts` `zombieWavePlan`). Intermissão 5s entre rounds.
+- **Zumbi:** 100 HP, skins `zombie1`/`zombie2`/`zombie3` (`public/assets/skins/`), **sem arma** (esconde o viewmodel). Bate com as **Mãos** (~18 dano). Anda **lento** (50% do walk), **só para frente** (sem strafe), escala muros (`server/ZombieAi.ts` — não usa `BotAi`). Sons em `public/sounds/zombie/` (gemidos `zombie1`/`zombie2` aleatórios, `zombie-hit` no melee, `zombie-boss1` no boss, `zombie-backgroud` de vez em quando). 10% de chance de dropar pente; passar por cima recarrega 1 pente da arma atual (cliente, mensagem `ammoPickup`).
+- **Boss:** a cada 5 rounds (5, 10, …), 2× tamanho e 10× HP (1000), dano melee maior. Enquanto vivo, **todos** os jogadores veem uma barra de HP grande no topo (`#bossHpBar`).
+- **Reanimação:** quem morre fica **nocauteado** no chão (`downed`). Aliado vivo segura **F** por 5s perto do corpo. A partida acaba quando **ninguém** está vivo para reanimar.
+- Código: `server/ZombieAi.ts`, estado em `MatchState` (`zombieRound`, `zombiesLeft`, `prepTimeLeft`, `zombiePhase`, `ammoDrops`).

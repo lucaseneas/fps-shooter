@@ -175,6 +175,8 @@ export interface MapGeometry {
   spawnsAlpha: SpawnPoint[];
   /** Spawns da Equipe Echo (Mata-Mata em equipe). */
   spawnsEcho: SpawnPoint[];
+  /** Spawns das hordas no modo Zombies. */
+  spawnsZombie: SpawnPoint[];
   groundColor?: string;
   groundTexture?: string;
 }
@@ -196,5 +198,6 @@ export function buildPracaGeometry(): MapGeometry {
     spawns: [],
     spawnsAlpha: [],
     spawnsEcho: [],
+    spawnsZombie: [],
   };
 }

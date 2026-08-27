@@ -92,6 +92,9 @@ export class RemotePlayer {
   private readonly heli: HelicopterVisual;
   private readonly chute: ParachuteVisual;
   private aliveVisible = true;
+  private downed = false;
+  private isZombie = false;
+  private isBoss = false;
   private predator = false;
   private parachuting = false;
   private heliLinger = 0;
@@ -116,12 +119,15 @@ export class RemotePlayer {
   private prevVisZ = 0;
   private hasVisual = false;
   private footstepAcc = 0;
+  private voiceAcc = 0;
+  private voiceNext = 1.5;
   private movingOnGround = false;
   private running = false;
 
   constructor(scene: Scene, id: string, name: string) {
     this.id = id;
     this.playerName = name;
+    this.voiceNext = 1.8 + (hashId(id) % 17) * 0.28;
 
     this.root = MeshBuilder.CreateBox(
       `${id}_root`,
@@ -553,10 +559,11 @@ export class RemotePlayer {
     this.running = effectiveSpeed > 6.0;
 
     this.visual.setPose({
-      isMoving,
+      isMoving: isMoving && !this.downed,
       isCrouching: this.crouching,
       speedRatio: effectiveSpeed / 3.0,
-      isAlive: this.aliveVisible,
+      isAlive: this.aliveVisible && !this.downed,
+      isDowned: this.downed,
     });
 
     this.prevVisX = this.visX;
@@ -598,7 +605,8 @@ export class RemotePlayer {
     z: number,
     yaw: number,
     alive: boolean,
-    crouch = false
+    crouch = false,
+    downed = false
   ): void {
     const now = performance.now();
     const respawned = !this.wasAlive && alive;
@@ -645,6 +653,7 @@ export class RemotePlayer {
     this.lastYaw = yaw;
     this.crouching = crouch;
     this.wasAlive = alive;
+    this.downed = downed;
 
     // Morto: não alimenta o buffer — evita “deslizar” até o spawn.
     if (alive) {
@@ -658,7 +667,7 @@ export class RemotePlayer {
       if (!respawned && !teleported) this.refreshKinematics();
     }
 
-    this.setVisible(alive);
+    this.setVisible(alive || downed);
 
     if (alive && (respawned || teleported)) {
       this.snapToTarget();
@@ -782,6 +791,14 @@ export class RemotePlayer {
     return new Vector3(this.visX, this.visY, this.visZ);
   }
 
+  isZombieNpc(): boolean {
+    return this.isZombie;
+  }
+
+  isBossZombie(): boolean {
+    return this.isBoss;
+  }
+
   /** Retorna true quando um passo remoto deve tocar (som espacial no cliente). */
   tickFootstep(dt: number): boolean {
     if (this.predator || this.parachuting || !this.movingOnGround) {
@@ -789,12 +806,44 @@ export class RemotePlayer {
       return false;
     }
     this.footstepAcc += dt;
-    const interval = this.crouching ? 0.55 : this.running ? 0.3 : 0.42;
+    const interval = this.isZombie
+      ? 0.62
+      : this.crouching
+        ? 0.55
+        : this.running
+          ? 0.3
+          : 0.42;
     if (this.footstepAcc >= interval) {
       this.footstepAcc = 0;
       return true;
     }
     return false;
+  }
+
+  /** Gemido periódico ( stagger por id para a horda não gritar junta). */
+  tickZombieVoice(dt: number): boolean {
+    if (!this.isZombie || !this.aliveVisible || this.downed) {
+      this.voiceAcc = 0;
+      return false;
+    }
+    this.voiceAcc += dt;
+    if (this.voiceAcc >= this.voiceNext) {
+      this.voiceAcc = 0;
+      this.voiceNext = (this.isBoss ? 2.4 : 3.4) + Math.random() * (this.isBoss ? 3.2 : 5.5);
+      return true;
+    }
+    return false;
+  }
+
+  setZombieAppearance(isZombie: boolean, isBoss: boolean): void {
+    if (this.isZombie === isZombie && this.isBoss === isBoss) return;
+    this.isZombie = isZombie;
+    this.isBoss = isBoss;
+    this.visual.setZombieLook(isBoss ? "boss" : isZombie ? "zombie" : "none");
+    this.gun.setEnabled(!isZombie && this.aliveVisible && !this.predator);
+    this.nameplate.position.y = isBoss
+      ? STAND_HEIGHT + 1.1
+      : STAND_HEIGHT / 2 + 0.45;
   }
 
   private refreshPredatorVisual(): void {
@@ -805,12 +854,14 @@ export class RemotePlayer {
     this.visual.setEnabled(showDummy);
     this.bodyMesh.setEnabled(showDummy);
     this.headMesh.setEnabled(showDummy);
-    this.gun.setEnabled(showDummy);
+    this.gun.setEnabled(showDummy && !this.isZombie);
     this.aimPick.setEnabled(this.aliveVisible);
     this.chute.setEnabled(this.parachuting && showDummy);
     this.nameplate.position.y = this.predator
       ? 1.8
-      : STAND_HEIGHT / 2 + 0.45;
+      : this.isBoss
+        ? STAND_HEIGHT + 1.1
+        : STAND_HEIGHT / 2 + 0.45;
     this.refreshSkeletonVisibility();
   }
 
@@ -821,8 +872,9 @@ export class RemotePlayer {
     this.headMesh.setEnabled(on && !this.predator);
     this.nameplate.setEnabled(on && this.nameplateWanted);
     this.aimPick.setEnabled(on);
-    this.gun.setEnabled(on && !this.predator);
+    this.gun.setEnabled(on && !this.predator && !this.isZombie);
     this.visual.setEnabled(on && !this.predator);
+    this.visual.setDowned(this.downed);
     this.heli.setEnabled(on && (this.predator || this.heliLinger > 0));
     this.chute.setEnabled(on && this.parachuting && !this.predator);
     this.root.checkCollisions = on;
@@ -839,4 +891,10 @@ export class RemotePlayer {
     this.debugHeadHitbox.dispose();
     this.root.dispose(false, false);
   }
+}
+
+function hashId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(h);
 }

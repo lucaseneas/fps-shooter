@@ -48,6 +48,11 @@ export interface PlayerInput {
    * Sempre limitado em stepPlayer (anti-speedhack).
    */
   speedMult?: number;
+  /**
+   * NPC (zumbi): pode andar mais lento que o piso das armas.
+   * Jogadores nunca enviam isto — se um cliente marcar, só fica mais lento.
+   */
+  npc?: boolean;
 }
 
 /** Estado físico do corpo (posição = pés). */
@@ -105,7 +110,9 @@ export function stepPlayer(
     typeof input.speedMult === "number" && Number.isFinite(input.speedMult)
       ? input.speedMult
       : 1;
-  const speedMult = clamp(rawMult, MIN_MOVE_SPEED_MULT, MAX_MOVE_SPEED_MULT);
+  const speedMult = input.npc
+    ? clamp(rawMult, 0.15, 1)
+    : clamp(rawMult, MIN_MOVE_SPEED_MULT, MAX_MOVE_SPEED_MULT);
   const speed =
     WALK_SPEED *
     (crouched ? CROUCH_MULTIPLIER : input.run ? RUN_MULTIPLIER : 1) *

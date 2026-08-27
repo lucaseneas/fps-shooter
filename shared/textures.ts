@@ -132,6 +132,48 @@ export const GAME_TEXTURES: readonly GameTextureDef[] = [
     url: "/assets/textures/map/moss.png",
   },
   {
+    id: "blood_floor",
+    label: "Chão com sangue",
+    category: "map",
+    url: "/assets/textures/map/blood_floor.png",
+  },
+  {
+    id: "horror_crate",
+    label: "Caixa de madeira",
+    category: "map",
+    url: "/assets/textures/map/horror_crate.png",
+  },
+  {
+    id: "horror_metal",
+    label: "Caixa de metal",
+    category: "map",
+    url: "/assets/textures/map/horror_metal.png",
+  },
+  {
+    id: "bloody_wall",
+    label: "Parede ensanguentada",
+    category: "map",
+    url: "/assets/textures/map/bloody_wall.png",
+  },
+  {
+    id: "horror_tiles",
+    label: "Azulejo sujo",
+    category: "map",
+    url: "/assets/textures/map/horror_tiles.png",
+  },
+  {
+    id: "rotten_wood",
+    label: "Madeira podre",
+    category: "map",
+    url: "/assets/textures/map/rotten_wood.png",
+  },
+  {
+    id: "bloody_brick",
+    label: "Tijolo com sangue",
+    category: "map",
+    url: "/assets/textures/map/bloody_brick.png",
+  },
+  {
     id: "carbon",
     label: "Carbono",
     category: "weapon",

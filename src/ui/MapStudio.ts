@@ -46,17 +46,18 @@ const OBJECT_OPTIONS: Array<{ id: EditorPieceKind; label: string }> = [
 ];
 
 function isSpawnTool(tool: EditorTool): boolean {
-  return tool === "spawn" || tool === "spawnAlpha" || tool === "spawnEcho";
+  return tool === "spawn" || tool === "spawnAlpha" || tool === "spawnEcho" || tool === "spawnZombie";
 }
 
 function isObjectTool(tool: EditorTool): tool is EditorPieceKind {
   return OBJECT_OPTIONS.some((o) => o.id === tool);
 }
 
-const SPAWN_LABEL: Record<"ffa" | "alpha" | "echo", string> = {
+const SPAWN_LABEL: Record<"ffa" | "alpha" | "echo" | "zombie", string> = {
   ffa: "FFA",
   alpha: "Alfa",
   echo: "Echo",
+  zombie: "Zumbi",
 };
 
 function shadeHex(hex: string, factor: number): string {
@@ -525,6 +526,10 @@ export class MapStudio {
       this.statusEl.textContent = "Defina pelo menos 1 spawn da Equipe Echo (sul).";
       return;
     }
+    if ((latest.spawnsZombie ?? []).length < 1) {
+      this.statusEl.textContent = "Defina pelo menos 1 spawn de zumbi (modo Zombies).";
+      return;
+    }
     this.statusEl.textContent = "A gravar…";
     try {
       const result = await saveCustomMap(latest);
@@ -597,7 +602,7 @@ export class MapStudio {
       const axes = mapAxes(m);
       card.innerHTML = `
         <h3></h3>
-        <p>${axes.sizeX}×${axes.sizeZ} · ${m.pieces.length} peças · ${m.spawns.length} FFA · ${m.spawnsAlpha.length} Alfa · ${m.spawnsEcho.length} Echo<br>${when}</p>
+        <p>${axes.sizeX}×${axes.sizeZ} · ${m.pieces.length} peças · ${m.spawns.length} FFA · ${m.spawnsAlpha.length} Alfa · ${m.spawnsEcho.length} Echo · ${(m.spawnsZombie ?? []).length} Zumbis<br>${when}</p>
         <div class="map-card-actions">
           <button type="button" data-act="edit">Editar</button>
           <button type="button" class="secondary" data-act="dup">Duplicar</button>
@@ -703,7 +708,9 @@ export class MapStudio {
           ? def.spawnsAlpha
           : sel.list === "echo"
             ? def.spawnsEcho
-            : def.spawns;
+            : sel.list === "zombie"
+              ? def.spawnsZombie
+              : def.spawns;
       const s = list[sel.index];
       this.selLabel.textContent = `Spawn ${SPAWN_LABEL[sel.list]} ${sel.index + 1} · Elevação · Del apaga`;
       this.xInput.value = s ? String(s.x) : "0";
@@ -722,6 +729,8 @@ export class MapStudio {
         this.selLabel.textContent = "Clique no chão para spawn da Equipe Alfa (azul, norte). Use Elevação para pôr em cima de objetos.";
       } else if (tool === "spawnEcho") {
         this.selLabel.textContent = "Clique no chão para spawn da Equipe Echo (vermelho, sul). Use Elevação para pôr em cima de objetos.";
+      } else if (tool === "spawnZombie") {
+        this.selLabel.textContent = "Clique no chão para spawn de zumbi (verde-lima). Use Elevação para pôr em cima de objetos.";
       } else if (isObjectTool(tool)) {
         this.selLabel.textContent = `Clique no chão para colocar ${PIECE_PRESETS[tool].label.toLowerCase()}`;
       } else {
@@ -806,7 +815,7 @@ export class MapStudio {
     }
     const dirty = this.isDirty() ? " · não salvo" : " · salvo";
     const axes = mapAxes(def);
-    this.statusEl.textContent = `${axes.sizeX}×${axes.sizeZ} · ${def.pieces.length} peças · ${def.spawns.length} FFA · ${def.spawnsAlpha.length} Alfa · ${def.spawnsEcho.length} Echo${dirty}`;
+    this.statusEl.textContent = `${axes.sizeX}×${axes.sizeZ} · ${def.pieces.length} peças · ${def.spawns.length} FFA · ${def.spawnsAlpha.length} Alfa · ${def.spawnsEcho.length} Echo · ${(def.spawnsZombie ?? []).length} Zumbis${dirty}`;
     this.editorSizeX.value = String(axes.sizeX);
     this.editorSizeZ.value = String(axes.sizeZ);
   }

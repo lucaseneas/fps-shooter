@@ -139,6 +139,11 @@
           <span class="tdm-echo"><span id="teamKillsEcho">0</span> Echo</span>
           <span class="tdm-target">META <span id="teamKillsTarget">20</span></span>
         </span>
+        <span id="killsPanelZombies" class="hidden">
+          <span>ROUND <span id="zombieRoundHud">1</span></span>
+          <span class="tdm-sep">·</span>
+          <span id="zombieLeftHud">0</span> zumbis
+        </span>
       </div>
 
       <!-- Vida (canto inferior esquerdo) -->
@@ -206,6 +211,18 @@
         <div id="deathCount">3</div>
         <div id="deathTimer">Reinserção…</div>
       </div>
+
+      <div id="zombieBanner" class="hidden">
+        <div id="zombieBannerTitle">ROUND 1</div>
+        <div id="zombieBannerSub"></div>
+      </div>
+      <div id="bossHpBar" class="hidden">
+        <div id="bossHpName">ZUMBI BOSS</div>
+        <div id="bossHpTrack"><div id="bossHpFill"></div></div>
+        <div id="bossHpText">1000 / 1000</div>
+      </div>
+      <div id="revivePrompt" class="hidden">Segure F para reanimar</div>
+      <div id="reviveBar" class="hidden"><div id="reviveBarFill"></div></div>
 
       <!-- Fim de partida -->
       <div id="endScreen" class="hidden">
@@ -408,7 +425,7 @@
               <span id="createMaxPlayersValue">8</span>
             </div>
           </div>
-          <div class="setting-row">
+          <div class="setting-row" id="createBotsRow">
             <label for="createBots">Bots</label>
             <div class="setting-control">
               <input
@@ -435,7 +452,7 @@
               <option value="tdm">Mata-Mata em equipe</option>
             </select>
           </div>
-          <div class="setting-row">
+          <div class="setting-row" id="createKillsRow">
             <label for="createKillsToWin">Kills para vencer</label>
             <select id="createKillsToWin" class="setting-select">
               <option value="5">5 kills</option>
@@ -533,6 +550,7 @@
               <option value="spawn">Spawn FFA</option>
               <option value="spawnAlpha">Spawn Alfa</option>
               <option value="spawnEcho">Spawn Echo</option>
+              <option value="spawnZombie">Spawn Zumbi</option>
             </select>
             <span id="mapEditorSpawnPreview" class="map-spawn-preview" data-spawn=""></span>
           </div>
@@ -616,6 +634,7 @@
             <span class="hud-tag">Sala</span>
             <h1 id="lobbyRoomName">Sala</h1>
             <p class="subtitle" id="lobbyStatus">Aguardando jogadores</p>
+            <p id="lobbyZombieCountdown" class="lobby-zombie-countdown hidden"></p>
           </div>
           <div class="home-top-actions">
             <button type="button" id="lobbyShopButton" class="social-btn shop-btn">Loja</button>
@@ -735,7 +754,7 @@
               <label for="lobbyModeSelect">Modo de jogo</label>
               <select id="lobbyModeSelect" class="setting-select"></select>
             </div>
-            <div class="setting-row">
+            <div class="setting-row" id="lobbyKillsRow">
               <label for="lobbyKillsSelect">Kills para vencer</label>
               <select id="lobbyKillsSelect" class="setting-select"></select>
             </div>
@@ -743,7 +762,7 @@
               <label for="lobbyMaxPlayersSelect">Jogadores (máx.)</label>
               <select id="lobbyMaxPlayersSelect" class="setting-select"></select>
             </div>
-            <div class="setting-row">
+            <div class="setting-row" id="lobbyBotsRow">
               <label for="lobbyBotsSlider">Bots</label>
               <div class="setting-control">
                 <input
@@ -764,6 +783,9 @@
         </div>
 
         <footer class="lobby-footer">
+          <button type="button" id="lobbyLoadoutButton" class="secondary hidden">
+            ARMAMENTOS
+          </button>
           <button type="button" id="lobbyReadyButton" class="lobby-main-action">
             ESTOU PRONTO
           </button>
