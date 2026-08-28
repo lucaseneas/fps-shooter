@@ -678,6 +678,11 @@ export class AudioManager {
     this.noise(0.05, 0.14, "lowpass", 320);
   }
 
+  flashlightToggle(on: boolean): void {
+    this.noise(0.03, 0.08, "bandpass", on ? 2600 : 1400);
+    this.tone(on ? 390 : 240, 0.04, 0.03, "square");
+  }
+
   startZombieAmbience(): void {
     this.resume();
     this.zombieAmbienceOn = true;

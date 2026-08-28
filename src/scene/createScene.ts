@@ -77,20 +77,20 @@ function applyAtmosphere(scene: Scene): void {
   const fogEnd = meta.mapFogEnd ?? 170;
 
   if (night) {
-    scene.clearColor = new Color4(0.028, 0.032, 0.06, 1);
-    scene.ambientColor = new Color3(0.07, 0.08, 0.14);
-    scene.fogColor = new Color3(0.04, 0.045, 0.075);
-    scene.fogStart = Math.max(10, fogStart * 0.32);
-    scene.fogEnd = Math.max(36, fogEnd * 0.52);
+    scene.clearColor = new Color4(0.02, 0.024, 0.045, 1);
+    scene.ambientColor = new Color3(0.05, 0.055, 0.085);
+    scene.fogColor = new Color3(0.025, 0.03, 0.05);
+    scene.fogStart = Math.max(8, fogStart * 0.26);
+    scene.fogEnd = Math.max(30, fogEnd * 0.5);
     if (hemi) {
-      hemi.intensity = 0.28;
-      hemi.diffuse = new Color3(0.38, 0.46, 0.78);
-      hemi.groundColor = new Color3(0.06, 0.08, 0.14);
+      hemi.intensity = 0.2;
+      hemi.diffuse = new Color3(0.3, 0.38, 0.62);
+      hemi.groundColor = new Color3(0.04, 0.05, 0.08);
     }
     if (sun) {
-      sun.direction = new Vector3(-0.22, -1, -0.18);
-      sun.intensity = 0.26;
-      sun.diffuse = new Color3(0.55, 0.64, 0.92);
+      sun.direction = new Vector3(-0.18, -1, -0.12);
+      sun.intensity = 0.12;
+      sun.diffuse = new Color3(0.4, 0.5, 0.75);
     }
     return;
   }
@@ -170,6 +170,7 @@ function createGround(
   mat.diffuseColor = tint ? new Color3(tint.r, tint.g, tint.b) : new Color3(1, 1, 1);
   applyMatAlpha(mat, tint?.a ?? 1);
   mat.specularColor = new Color3(0.02, 0.02, 0.02);
+  mat.maxSimultaneousLights = 6;
   mat.freeze();
   tagMap(mat);
   ground.material = mat;
@@ -232,6 +233,7 @@ function createMapBoxes(scene: Scene, boxes: readonly BoxDef[]): void {
       mat.diffuseColor = b.color ? hexToColor3(b.color) ?? kindDefaultColor(b.kind) : kindDefaultColor(b.kind);
       applyMatAlpha(mat, b.color ? parseHexColor(b.color)?.a ?? 1 : 1);
       mat.specularColor = new Color3(0.05, 0.05, 0.05);
+      mat.maxSimultaneousLights = 6;
       mat.freeze();
       tagMap(mat);
       materials.set(key, mat);

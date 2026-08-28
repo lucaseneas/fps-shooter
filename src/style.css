@@ -235,6 +235,7 @@ body {
 #killsPanel,
 #ammoPanel,
 #healthPanel,
+#flashlightHud,
 #bossHpBar,
 #roomChat,
 #hitmarker,
@@ -975,6 +976,34 @@ body {
 
 #healthPanel.heli #healthFill {
   --hp-color: #d4a017;
+}
+
+/* ---------- Lanterna (Zombies) ---------- */
+#flashlightHud {
+  position: absolute;
+  right: 20px;
+  bottom: 168px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 7px;
+  min-width: 0;
+}
+
+#flashlightHud.hidden {
+  display: none;
+}
+
+#flashlightHud.off #flashlightLabel {
+  color: #c44a3a;
+}
+
+#flashlightLabel {
+  font-size: 12px;
+  font-family: var(--hud-mono);
+  text-transform: uppercase;
+  letter-spacing: 1.8px;
+  color: #e8ecd8;
 }
 
 /* ---------- Munição / arma ---------- */
@@ -2708,6 +2737,7 @@ kbd {
 #hud.prespawn #crosshair,
 #hud.prespawn #ammoPanel,
 #hud.prespawn #healthPanel,
+#hud.prespawn #flashlightHud,
 #hud.prespawn #bossHpBar,
 #hud.prespawn #scopeOverlay,
 #hud.prespawn #minimapFrame,
@@ -2721,6 +2751,7 @@ kbd {
 #hud.freefly #crosshair,
 #hud.freefly #ammoPanel,
 #hud.freefly #healthPanel,
+#hud.freefly #flashlightHud,
 #hud.freefly #bossHpBar,
 #hud.freefly #scopeOverlay,
 #hud.freefly #killBadge,

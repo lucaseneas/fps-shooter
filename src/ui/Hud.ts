@@ -78,6 +78,8 @@ export class Hud {
   private readonly bossHpName = el<HTMLDivElement>("bossHpName");
   private readonly bossHpFill = el<HTMLDivElement>("bossHpFill");
   private readonly bossHpText = el<HTMLDivElement>("bossHpText");
+  private readonly flashlightHud = el<HTMLDivElement>("flashlightHud");
+  private readonly flashlightLabel = el<HTMLSpanElement>("flashlightLabel");
   private zombieBannerTimer = 0;
   private zombiePrepBanner = false;
   private readonly teamKillsAlphaEl = el<HTMLSpanElement>("teamKillsAlpha");
@@ -342,7 +344,7 @@ export class Hud {
       this.zombiePrepBanner = true;
       window.clearTimeout(this.zombieBannerTimer);
       this.zombieBannerTitle.textContent = `HORDA EM ${seconds}`;
-      this.zombieBannerSub.textContent = "Preparem-se";
+      this.zombieBannerSub.textContent = "Preparem-se · L lanterna";
       this.zombieBanner.classList.remove("hidden");
       return;
     }
@@ -355,6 +357,14 @@ export class Hud {
     this.zombiePrepBanner = false;
     window.clearTimeout(this.zombieBannerTimer);
     this.zombieBanner.classList.add("hidden");
+  }
+
+  /** `null` esconde o HUD da lanterna (fora do modo Zombies). */
+  setFlashlight(on: boolean | null): void {
+    const active = on !== null;
+    this.flashlightHud.classList.toggle("hidden", !active);
+    this.flashlightHud.classList.toggle("off", on === false);
+    this.flashlightLabel.textContent = on === false ? "Lanterna off" : "Lanterna";
   }
 
   setRevivePrompt(on: boolean, progress = 0): void {

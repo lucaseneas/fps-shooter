@@ -12,6 +12,7 @@ import { ViewModel } from "./player/ViewModel";
 import { PlayerVisual } from "./player/PlayerVisual";
 import { WeaponSystem } from "./game/WeaponSystem";
 import { EffectsManager } from "./game/effects";
+import { Flashlight } from "./game/Flashlight";
 import { HelicopterVisual } from "./game/HelicopterVisual";
 import { ParachuteVisual } from "./game/ParachuteVisual";
 import { Hud, ScoreRow } from "./ui/Hud";
@@ -289,6 +290,7 @@ const player = new FpsController(scene, canvas, {
 player.onStreakKey = (code, key) => trySendActivateStreak(code, key);
 scene.activeCamera = player.camera;
 
+const flashlight = new Flashlight(scene, player.camera);
 const viewModel = new ViewModel(scene, player.camera);
 const weapons = new WeaponSystem(
   scene,
@@ -3091,6 +3093,8 @@ function startMatchLocal(): void {
   applyClientWorldMap();
   const zombies = isZombiesMode(getMatchSnapshot(room).gameMode);
   setMatchAtmosphere(scene, zombies);
+  flashlight.setMatchEnabled(zombies);
+  hud.setFlashlight(zombies ? true : null);
   syncAllViewModelSkins();
   if (zombies) {
     audio.startZombieAmbience();
@@ -3207,6 +3211,8 @@ function cleanupMatchLocal(): void {
   hud.setRevivePrompt(false);
   hud.setBossHealth(0, 0);
   audio.stopZombieAmbience();
+  flashlight.setMatchEnabled(false);
+  hud.setFlashlight(null);
   setMatchAtmosphere(scene, false);
 
   weapons.setTrigger(false);
@@ -4866,6 +4872,15 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (!player.isPointerLocked) return;
+  if (e.code === "KeyL" && flashlight.isMatchEnabled()) {
+    e.preventDefault();
+    if (!e.repeat) {
+      const on = flashlight.toggle();
+      hud.setFlashlight(on);
+      audio.flashlightToggle(on);
+    }
+    return;
+  }
   if (isGhostSpectating() || playerDead) return;
   if (e.code === "KeyR") weapons.startReload();
   if (e.code === "KeyF") {
@@ -5108,6 +5123,7 @@ engine.runRenderLoop(() => {
 
   player.update(dt);
   player.updateRecoil(dt);
+  flashlight.update(dt);
 
   updateLocalPlayerVisual(dt);
   crosshairEl.style.visibility = player.isThirdPersonPeeking ? "hidden" : "";

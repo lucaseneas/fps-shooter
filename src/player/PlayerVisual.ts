@@ -117,6 +117,7 @@ export class PlayerVisual {
         m.isPickable = false;
         if (m.material) {
           this.skinMat = m.material as PBRMaterial | StandardMaterial;
+          this.skinMat.maxSimultaneousLights = 6;
         }
       });
 
