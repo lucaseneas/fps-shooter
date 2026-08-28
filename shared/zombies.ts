@@ -1,7 +1,7 @@
 /** Regras do modo cooperativo Zombies (hordas). */
 
 export const ZOMBIES_MAX_PLAYERS = 4;
-export const ZOMBIE_HP = 100;
+export const ZOMBIE_HP = 200;
 export const ZOMBIE_BOSS_HP_MULT = 10;
 export const ZOMBIE_BOSS_SCALE = 2;
 export const ZOMBIE_MELEE_DAMAGE = 18;
