@@ -16,8 +16,6 @@ export const ZOMBIES_REVIVE_SECONDS = 5;
 export const ZOMBIES_REVIVE_RANGE = 2.5;
 export const ZOMBIES_PICKUP_RANGE = 1.45;
 export const ZOMBIES_BOSS_EVERY = 5;
-/** Teto de zumbis vivos ao mesmo tempo (evita lag). */
-export const ZOMBIE_MAX_ALIVE = 20;
 /** Skins NPC (não entram na loja). Arquivos em `public/assets/skins/`. */
 export const ZOMBIE_SKIN_IDS = ["zombie1", "zombie2", "zombie3"] as const;
 /** Fração do walk do jogador — zumbis não correm. */
@@ -28,28 +26,30 @@ export function randomZombieSkin(): string {
   return ZOMBIE_SKIN_IDS[Math.floor(Math.random() * ZOMBIE_SKIN_IDS.length)]!;
 }
 
-export type ZombiePhase = "" | "lobby" | "wave" | "intermission";
+export type ZombiePhase = "" | "lobby" | "prep" | "wave" | "intermission";
 
 export interface ZombieWavePlan {
   round: number;
-  count: number;
-  spawnInterval: number;
+  /** Quantidade total de zumbis deste round (nascem todos, sem teto de vivos). */
+  totalZombies: number;
+  /** Zumbis por segundo, cada um num spawn aleatório. */
+  respawnSpeed: number;
   boss: boolean;
 }
 
 /**
- * Round 1: 8 zumbis, 1/s.
+ * Round 1: 8 zumbis, 1/s em spawn aleatório.
  * Cada round: +4 zumbis e spawn um pouco mais rápido.
  * A cada 5 rounds: um Boss extra (2× tamanho, 10× HP).
  */
 export function zombieWavePlan(round: number): ZombieWavePlan {
   const n = Math.max(1, Math.floor(round));
-  const count = 8 + (n - 1) * 4;
+  const totalZombies = 8 + (n - 1) * 4;
   const spawnInterval = Math.max(0.28, 1 - (n - 1) * 0.05);
   return {
     round: n,
-    count,
-    spawnInterval,
+    totalZombies,
+    respawnSpeed: 1 / spawnInterval,
     boss: n % ZOMBIES_BOSS_EVERY === 0,
   };
 }

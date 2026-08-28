@@ -3077,9 +3077,6 @@ function enterLobby(r: Room): void {
 
   navigate("/lobby");
   showLobby();
-  if (isZombiesMode(getMatchSnapshot(r).gameMode)) {
-    openLoadoutModal(false);
-  }
 }
 
 /** Servidor avisou que entramos na partida (Start do líder ou Play tardio). */
@@ -3149,9 +3146,6 @@ function returnToLobby(): void {
   showLobby();
   refreshSessionProfile();
   socialPanel.flushDeferredRequests();
-  if (isZombiesMode(getMatchSnapshot(room).gameMode)) {
-    openLoadoutModal(false);
-  }
 }
 
 function showLobby(): void {
@@ -3756,18 +3750,10 @@ function updateLobbyUi(): void {
 
   const zombies = isZombiesMode(snap.gameMode);
   lobbyRoomName.textContent = snap.roomName;
-  if (zombies && !snap.matchStarted) {
-    const secs = Math.max(0, Math.ceil(snap.prepTimeLeft));
-    lobbyStatus.textContent = "Zombies — configure os armamentos";
-    lobbyZombieCountdown.classList.remove("hidden");
-    lobbyZombieCountdown.textContent =
-      secs > 0 ? `Horda em ${secs}s` : "A iniciar…";
-  } else {
-    lobbyZombieCountdown.classList.add("hidden");
-    lobbyStatus.textContent = snap.matchStarted
-      ? "Partida em andamento — clique em Jogar para entrar"
-      : "Pré-lobby — aguardando o líder iniciar";
-  }
+  lobbyZombieCountdown.classList.add("hidden");
+  lobbyStatus.textContent = snap.matchStarted
+    ? "Partida em andamento — clique em Jogar para entrar"
+    : "Pré-lobby — aguardando o líder iniciar";
   lobbyStatus.classList.toggle("live", snap.matchStarted);
   lobbyKillsRow.classList.toggle("hidden", zombies);
   lobbyBotsRow.classList.toggle("hidden", zombies);
@@ -3802,7 +3788,7 @@ function updateLobbyUi(): void {
   }
   lobbySettingsHint.textContent = canEdit
     ? zombies
-      ? "Você é o líder — a horda começa automaticamente. INICIAR pula a contagem."
+      ? "Você é o líder — COMEÇAR AGORA entra no mapa. A horda nasce após a contagem."
       : "Você é o líder — ajuste as regras antes de iniciar."
     : snap.matchStarted
       ? "Partida em andamento — configurações bloqueadas."
@@ -4283,6 +4269,9 @@ function reconcile(r: Room): void {
   }
   if (isZombiesMode(snap.gameMode)) {
     hud.setZombieHud(snap.zombieRound, snap.zombiesLeft);
+    hud.setZombiePrepCountdown(
+      snap.zombiePhase === "prep" ? Math.ceil(snap.prepTimeLeft) : 0
+    );
     syncAmmoDrops(r);
     updateRevivePrompt(r, ownSnapshot);
     let bossHp = 0;

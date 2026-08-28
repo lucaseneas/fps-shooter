@@ -49,7 +49,6 @@ import {
   ZOMBIES_REVIVE_RANGE,
   ZOMBIES_PICKUP_RANGE,
   ZOMBIE_AMMO_DROP_CHANCE,
-  ZOMBIE_MAX_ALIVE,
   ZOMBIE_BOSS_SCALE,
   zombieWavePlan,
   zombieMaxHealth,
@@ -144,7 +143,6 @@ export class DeathmatchRoom extends Room<MatchState> {
   private zombieSpawnInterval = 1;
   private zombieBossQueued = false;
   private intermissionLeft = 0;
-  private lobbyCountdownAt = 0;
   private ammoDropCounter = 0;
   /** Quem está a segurar F para reanimar, e o alvo. */
   private reviveHold = new Map<string, { targetId: string; elapsed: number }>();
@@ -314,7 +312,6 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.onMessage("startMatch", (client) => {
       if (client.sessionId !== this.state.hostId) return;
       if (this.state.matchStarted) return;
-      this.cancelLobbyCountdown();
       this.startMatch();
     });
 
@@ -526,7 +523,6 @@ export class DeathmatchRoom extends Room<MatchState> {
     client.send("sping", { t: Date.now() });
 
     this.rebalanceBots();
-    if (this.isZombies()) this.ensureLobbyCountdown();
   }
 
   onLeave(client: Client): void {
@@ -572,7 +568,7 @@ export class DeathmatchRoom extends Room<MatchState> {
   }
 
   private update(dt: number): void {
-    this.processLobbyCountdown(dt);
+    this.processPrepCountdown(dt);
     this.processHumanInputs();
     if (this.state.matchStarted) {
       for (const bot of this.bots.values()) bot.update(dt);
@@ -1008,7 +1004,6 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.broadcast("matchReset");
     this.broadcast("backToLobby");
     void this.syncMetadata();
-    if (this.isZombies()) this.ensureLobbyCountdown();
   }
 
   /** Inicia a partida com o líder + todos os humanos prontos (e os bots). */
@@ -1029,11 +1024,11 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.winnerTeam = "";
     this.state.teamKillsAlpha = 0;
     this.state.teamKillsEcho = 0;
-    this.state.zombieRound = 0;
+    this.state.zombieRound = zombies ? 1 : 0;
     this.state.zombiesAlive = 0;
     this.state.zombiesLeft = 0;
-    this.state.prepTimeLeft = 0;
-    this.state.zombiePhase = zombies ? "wave" : "";
+    this.state.prepTimeLeft = zombies ? ZOMBIES_PREP_SECONDS : 0;
+    this.state.zombiePhase = zombies ? "prep" : "";
     this.statsRecorded = false;
     this.matchResetAt = 0;
     this.respawnAt.clear();
@@ -1045,7 +1040,6 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.reviveHold.clear();
     this.clearZombies();
     this.clearAmmoDrops();
-    this.cancelLobbyCountdown();
 
     for (const [, p] of this.state.players) {
       p.kills = 0;
@@ -1085,7 +1079,6 @@ export class DeathmatchRoom extends Room<MatchState> {
         if (zombies) this.respawnPlayer(client.sessionId);
       }
     }
-    if (zombies) this.beginZombieRound(1);
     void this.syncMetadata();
   }
 
@@ -1119,9 +1112,7 @@ export class DeathmatchRoom extends Room<MatchState> {
           this.roomCapacity = maxPlayers;
           this.state.maxPlayers = maxPlayers;
           this.state.zombiePhase = "lobby";
-          this.ensureLobbyCountdown();
         } else {
-          this.cancelLobbyCountdown();
           this.state.zombiePhase = "";
           this.state.prepTimeLeft = 0;
         }
@@ -1871,31 +1862,12 @@ export class DeathmatchRoom extends Room<MatchState> {
     void this.persistMatchStats(winnerId);
   }
 
-  private ensureLobbyCountdown(): void {
-    if (!this.isZombies() || this.state.matchStarted) return;
-    if (this.lobbyCountdownAt > 0) return;
-    this.lobbyCountdownAt = Date.now() + ZOMBIES_PREP_SECONDS * 1000;
-    this.state.zombiePhase = "lobby";
-    this.state.prepTimeLeft = ZOMBIES_PREP_SECONDS;
-  }
-
-  private cancelLobbyCountdown(): void {
-    this.lobbyCountdownAt = 0;
-    if (!this.state.matchStarted) this.state.prepTimeLeft = 0;
-  }
-
-  private processLobbyCountdown(_dt: number): void {
-    if (!this.isZombies() || this.state.matchStarted || this.state.matchOver) return;
-    if (this.lobbyCountdownAt <= 0) {
-      this.ensureLobbyCountdown();
-      return;
-    }
-    const left = Math.max(0, (this.lobbyCountdownAt - Date.now()) / 1000);
-    this.state.prepTimeLeft = left;
-    this.state.zombiePhase = "lobby";
-    if (left > 0) return;
-    this.cancelLobbyCountdown();
-    this.startMatch();
+  private processPrepCountdown(dt: number): void {
+    if (!this.isZombies() || !this.state.matchStarted || this.state.matchOver) return;
+    if (this.state.zombiePhase !== "prep") return;
+    this.state.prepTimeLeft = Math.max(0, this.state.prepTimeLeft - dt);
+    if (this.state.prepTimeLeft > 0) return;
+    this.beginZombieRound(1);
   }
 
   private beginZombieRound(round: number): void {
@@ -1904,14 +1876,14 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.zombiePhase = "wave";
     this.state.prepTimeLeft = 0;
     this.intermissionLeft = 0;
-    this.zombieToSpawn = plan.count;
-    this.zombieSpawnInterval = plan.spawnInterval;
-    this.zombieSpawnAcc = 0;
+    this.zombieToSpawn = plan.totalZombies;
+    this.zombieSpawnInterval = 1 / Math.max(0.01, plan.respawnSpeed);
+    this.zombieSpawnAcc = this.zombieSpawnInterval;
     this.zombieBossQueued = plan.boss;
     this.refreshZombieCounts();
     this.broadcast("waveStart", {
       round: plan.round,
-      count: plan.count,
+      count: plan.totalZombies,
       boss: plan.boss,
     });
   }
@@ -1930,17 +1902,13 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     if (this.state.zombiePhase !== "wave") return;
 
-    if (this.zombieBossQueued && this.zombies.size < ZOMBIE_MAX_ALIVE) {
+    if (this.zombieBossQueued) {
       this.spawnZombie(true);
       this.zombieBossQueued = false;
     }
 
     this.zombieSpawnAcc += dt;
-    while (
-      this.zombieToSpawn > 0 &&
-      this.zombies.size < ZOMBIE_MAX_ALIVE &&
-      this.zombieSpawnAcc >= this.zombieSpawnInterval
-    ) {
+    while (this.zombieToSpawn > 0 && this.zombieSpawnAcc >= this.zombieSpawnInterval) {
       this.zombieSpawnAcc -= this.zombieSpawnInterval;
       this.spawnZombie(false);
       this.zombieToSpawn--;

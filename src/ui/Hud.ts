@@ -79,6 +79,7 @@ export class Hud {
   private readonly bossHpFill = el<HTMLDivElement>("bossHpFill");
   private readonly bossHpText = el<HTMLDivElement>("bossHpText");
   private zombieBannerTimer = 0;
+  private zombiePrepBanner = false;
   private readonly teamKillsAlphaEl = el<HTMLSpanElement>("teamKillsAlpha");
   private readonly teamKillsEchoEl = el<HTMLSpanElement>("teamKillsEcho");
   private readonly teamKillsTargetEl = el<HTMLSpanElement>("teamKillsTarget");
@@ -325,6 +326,7 @@ export class Hud {
   }
 
   showZombieBanner(title: string, sub = "", seconds = 3): void {
+    this.zombiePrepBanner = false;
     this.zombieBannerTitle.textContent = title;
     this.zombieBannerSub.textContent = sub;
     this.zombieBanner.classList.remove("hidden");
@@ -334,7 +336,23 @@ export class Hud {
     }, seconds * 1000);
   }
 
+  /** Contagem in-game antes da horda (fica visível até chegar a 0). */
+  setZombiePrepCountdown(seconds: number): void {
+    if (seconds > 0) {
+      this.zombiePrepBanner = true;
+      window.clearTimeout(this.zombieBannerTimer);
+      this.zombieBannerTitle.textContent = `HORDA EM ${seconds}`;
+      this.zombieBannerSub.textContent = "Preparem-se";
+      this.zombieBanner.classList.remove("hidden");
+      return;
+    }
+    if (!this.zombiePrepBanner) return;
+    this.zombiePrepBanner = false;
+    this.zombieBanner.classList.add("hidden");
+  }
+
   hideZombieBanner(): void {
+    this.zombiePrepBanner = false;
     window.clearTimeout(this.zombieBannerTimer);
     this.zombieBanner.classList.add("hidden");
   }

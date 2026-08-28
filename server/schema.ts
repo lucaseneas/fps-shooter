@@ -116,7 +116,7 @@ export class MatchState extends Schema {
   @type("number") zombiesLeft = 0;
   /** Segundos restantes da preparação / intermissão. */
   @type("number") prepTimeLeft = 0;
-  /** "lobby" | "wave" | "intermission" | "". */
+  /** "lobby" | "prep" | "wave" | "intermission" | "". */
   @type("string") zombiePhase = "";
   @type({ map: AmmoDropState }) ammoDrops = new MapSchema<AmmoDropState>();
 }

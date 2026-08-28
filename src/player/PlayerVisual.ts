@@ -126,8 +126,6 @@ export class PlayerVisual {
       this.setDowned(this.downed);
       this.setPose(this.lastPose);
     }).catch(console.error);
-
-    this.setWeapon(this.currentWeaponId);
   }
 
   setSkin(skinId: string): void {
@@ -158,7 +156,7 @@ export class PlayerVisual {
   }
 
   setWeapon(weaponId: string): void {
-    if (!weaponId) return;
+    if (!weaponId || this.zombieKind !== "none") return;
     const weaponChanged = weaponId !== this.currentWeaponId;
     this.currentWeaponId = weaponId;
     if (weaponChanged) this.pendingWeaponSkinId = this.currentWeaponSkinId;
@@ -348,7 +346,22 @@ export class PlayerVisual {
     const scale = kind === "boss" ? 2 : 1;
     this.root.scaling.setAll(scale);
     this.gunRoot.setEnabled(kind === "none");
+    if (kind !== "none") this.clearWeapon();
     this.applyZombieTint();
+  }
+
+  private clearWeapon(): void {
+    this.loadingWeaponId = "";
+    this.currentWeaponId = "";
+    this.loadedWeaponId = "";
+    this.currentWeaponSkinId = "";
+    this.pendingWeaponSkinId = "";
+    this.pendingWeaponSkinParts = null;
+    this.pendingWeaponSkinTextures = null;
+    if (this.currentWeaponModel) {
+      disposeWeaponModelKeepTextures(this.currentWeaponModel);
+      this.currentWeaponModel = null;
+    }
   }
 
   setDowned(on: boolean): void {
@@ -405,7 +418,7 @@ export class PlayerVisual {
     this.alive = enabled;
     this.root.setEnabled(enabled);
     this.dummyMesh?.setEnabled(enabled);
-    this.gunRoot.setEnabled(enabled);
+    this.gunRoot.setEnabled(enabled && this.zombieKind === "none");
     if (!enabled) {
       this.stopAllAnimations();
     }
