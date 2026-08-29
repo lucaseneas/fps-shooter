@@ -8,6 +8,8 @@ export class PlayerState extends Schema {
   @type("number") y = 0;
   @type("number") z = 0;
   @type("number") yaw = 0;
+  /** Pitch da mira — usado para a lanterna visível dos aliados. */
+  @type("number") pitch = 0;
   @type("number") health = 100;
   @type("number") kills = 0;
   @type("number") deaths = 0;
@@ -55,6 +57,8 @@ export class PlayerState extends Schema {
   @type("boolean") isBoss = false;
   /** Humano nocauteado à espera de reanimação (corpo no chão). */
   @type("boolean") downed = false;
+  /** Lanterna ligada (modo Zombies) — visível para os aliados. */
+  @type("boolean") flashlightOn = false;
   /** Progresso da reanimação 0–1 (exibido no corpo). */
   @type("number") reviveProgress = 0;
 

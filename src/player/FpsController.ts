@@ -993,6 +993,7 @@ export class FpsController {
       forward,
       strafe,
       yaw: this.yaw,
+      pitch: this.basePitch,
       jump: !this.parachuteMode && this.keys.has("Space"),
       run:
         !this.parachuteMode &&
@@ -1028,6 +1029,7 @@ export class FpsController {
       forward,
       strafe,
       yaw: this.yaw,
+      pitch: this.basePitch,
       jump: false,
       run: false,
       crouch: false,

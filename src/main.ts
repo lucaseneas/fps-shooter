@@ -12,7 +12,7 @@ import { ViewModel } from "./player/ViewModel";
 import { PlayerVisual } from "./player/PlayerVisual";
 import { WeaponSystem } from "./game/WeaponSystem";
 import { EffectsManager } from "./game/effects";
-import { Flashlight } from "./game/Flashlight";
+import { Flashlight, RemoteFlashlight } from "./game/Flashlight";
 import { HelicopterVisual } from "./game/HelicopterVisual";
 import { ParachuteVisual } from "./game/ParachuteVisual";
 import { Hud, ScoreRow } from "./ui/Hud";
@@ -291,6 +291,13 @@ player.onStreakKey = (code, key) => trySendActivateStreak(code, key);
 scene.activeCamera = player.camera;
 
 const flashlight = new Flashlight(scene, player.camera);
+/** Pool fixo de spots dos aliados (Zombies é no máx. 4 jogadores). */
+const remoteFlashlights = [
+  new RemoteFlashlight(scene, "remoteFlash0"),
+  new RemoteFlashlight(scene, "remoteFlash1"),
+  new RemoteFlashlight(scene, "remoteFlash2"),
+];
+const tmpRemoteAim = new Vector3();
 const viewModel = new ViewModel(scene, player.camera);
 const weapons = new WeaponSystem(
   scene,
@@ -3095,6 +3102,7 @@ function startMatchLocal(): void {
   setMatchAtmosphere(scene, zombies);
   flashlight.setMatchEnabled(zombies);
   hud.setFlashlight(zombies ? true : null);
+  if (zombies) room.send("flashlight", { on: true });
   syncAllViewModelSkins();
   if (zombies) {
     audio.startZombieAmbience();
@@ -3212,6 +3220,7 @@ function cleanupMatchLocal(): void {
   hud.setBossHealth(0, 0);
   audio.stopZombieAmbience();
   flashlight.setMatchEnabled(false);
+  for (const fl of remoteFlashlights) fl.setOn(false);
   hud.setFlashlight(null);
   setMatchAtmosphere(scene, false);
 
@@ -4260,6 +4269,15 @@ function reconcile(r: Room): void {
     rp.setParachuting(p.parachuting === true);
     rp.setWallhack(ownHasWallhack);
     rp.setInvincible((p.invincibleTimeLeft ?? 0) > 0);
+    rp.setFlashlight(
+      isZombiesMode(currentGameMode()) &&
+        p.flashlightOn === true &&
+        p.alive &&
+        !p.downed &&
+        p.inMatch &&
+        p.isZombie !== true,
+      typeof p.pitch === "number" ? p.pitch : 0
+    );
     if (p.isZombie === true && !p.alive) audio.stopZombieVoice(id);
   });
 
@@ -4878,6 +4896,7 @@ window.addEventListener("keydown", (e) => {
       const on = flashlight.toggle();
       hud.setFlashlight(on);
       audio.flashlightToggle(on);
+      room?.send("flashlight", { on });
     }
     return;
   }
@@ -5209,6 +5228,22 @@ engine.runRenderLoop(() => {
     if (rp.tickFootstep(dt)) audio.zombieFootstep(feet);
     if (rp.tickZombieVoice(dt)) audio.zombieGroan(rp.id, feet, rp.isBossZombie());
   }
+
+  // Lanternas dos aliados (Zombies): o pool de spots segue a mira de cada um.
+  let flashSlot = 0;
+  if (isZombiesMode(currentGameMode())) {
+    for (const rp of remotePlayers.values()) {
+      if (flashSlot >= remoteFlashlights.length) break;
+      if (!rp.hasFlashlight()) continue;
+      const fl = remoteFlashlights[flashSlot++];
+      fl.setPose(rp.getHead(), rp.getAimDirection(tmpRemoteAim));
+      fl.setOn(true);
+    }
+  }
+  for (let i = flashSlot; i < remoteFlashlights.length; i++) {
+    remoteFlashlights[i].setOn(false);
+  }
+  for (const fl of remoteFlashlights) fl.update(dt);
   if (isZombiesMode(currentGameMode())) {
     audio.tickZombieAmbience(dt, zombiesAlive);
   }

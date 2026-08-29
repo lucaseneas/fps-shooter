@@ -351,6 +351,13 @@ export class DeathmatchRoom extends Room<MatchState> {
       this.handleHoldRevive(client.sessionId, msg?.holding === true);
     });
 
+    this.onMessage("flashlight", (client, msg: { on?: unknown }) => {
+      if (!this.isZombies()) return;
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      p.flashlightOn = msg?.on === true;
+    });
+
     this.onMessage(
       "setDevOptions",
       (
@@ -765,6 +772,7 @@ export class DeathmatchRoom extends Room<MatchState> {
           stepPredator(body, input, this.roomMap);
           p.lastSeq = input.seq;
           p.yaw = input.yaw;
+          if (typeof input.pitch === "number") p.pitch = input.pitch;
         }
         queue.splice(0, count);
         p.x = body.x;
@@ -796,6 +804,7 @@ export class DeathmatchRoom extends Room<MatchState> {
             stepParachute(body, input, this.roomMap);
             p.lastSeq = input.seq;
             p.yaw = input.yaw;
+            if (typeof input.pitch === "number") p.pitch = input.pitch;
           }
           queue.splice(0, count);
         }
@@ -812,6 +821,7 @@ export class DeathmatchRoom extends Room<MatchState> {
         stepPlayer(body, input, this.roomMap);
         p.lastSeq = input.seq;
         p.yaw = input.yaw;
+        if (typeof input.pitch === "number") p.pitch = input.pitch;
         p.crouch = Boolean(input.crouch);
       }
       queue.splice(0, count);
@@ -976,6 +986,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.invincibleTimeLeft = 0;
       p.heliHp = 0;
       p.parachuting = false;
+      p.flashlightOn = false;
       p.availableStreaks.clear();
       p.matchXp = 0;
       p.doubleKills = 0;
@@ -1050,6 +1061,7 @@ export class DeathmatchRoom extends Room<MatchState> {
       p.invincibleTimeLeft = 0;
       p.heliHp = 0;
       p.parachuting = false;
+      p.flashlightOn = false;
       p.availableStreaks.clear();
       p.matchXp = 0;
       p.doubleKills = 0;

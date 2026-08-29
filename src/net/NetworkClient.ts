@@ -10,6 +10,8 @@ export interface PlayerSnapshot {
   y: number;
   z: number;
   yaw: number;
+  /** Pitch da mira (lanterna dos aliados no Zombies). */
+  pitch: number;
   health: number;
   kills: number;
   deaths: number;
@@ -59,6 +61,8 @@ export interface PlayerSnapshot {
   isZombie?: boolean;
   isBoss?: boolean;
   downed?: boolean;
+  /** Lanterna ligada (modo Zombies). */
+  flashlightOn?: boolean;
   reviveProgress?: number;
 }
 

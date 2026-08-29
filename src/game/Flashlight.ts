@@ -18,6 +18,35 @@ const FADE_SPEED = 9;
 const CAM_FORWARD = new Vector3(0, 0, 1);
 
 /**
+ * Sempre habilitada com intensidade 0: os materiais do mapa ficam congelados
+ * e não recompilam o shader ao ligar/desligar — o toggle anima só a intensidade.
+ */
+function createSpot(scene: Scene, name: string): SpotLight {
+  const light = new SpotLight(
+    name,
+    Vector3.Zero(),
+    new Vector3(0, 0, 1),
+    OUTER_ANGLE,
+    2.2,
+    scene
+  );
+  light.innerAngle = INNER_ANGLE;
+  light.diffuse = new Color3(1, 0.94, 0.82);
+  light.specular = new Color3(0.22, 0.18, 0.1);
+  light.intensity = 0;
+  light.range = RANGE;
+  light.falloffType = Light.FALLOFF_STANDARD;
+  light.shadowEnabled = false;
+  return light;
+}
+
+function fadeStep(current: number, target: number, dt: number): number {
+  const f = 1 - Math.exp(-FADE_SPEED * dt);
+  const next = current + (target - current) * f;
+  return target === 0 && next < 0.01 ? 0 : next;
+}
+
+/**
  * Lanterna da câmera no modo Zombies.
  * Só o SpotLight no mundo — sem cone 3D nem vinheta 2D (viram um círculo na tela).
  */
@@ -32,23 +61,7 @@ export class Flashlight {
   private time = 0;
 
   constructor(scene: Scene, private readonly camera: UniversalCamera) {
-    this.light = new SpotLight(
-      "flashlight",
-      Vector3.Zero(),
-      new Vector3(0, 0, 1),
-      OUTER_ANGLE,
-      2.2,
-      scene
-    );
-    this.light.innerAngle = INNER_ANGLE;
-    this.light.diffuse = new Color3(1, 0.94, 0.82);
-    this.light.specular = new Color3(0.22, 0.18, 0.1);
-    this.light.intensity = 0;
-    this.light.range = RANGE;
-    this.light.falloffType = Light.FALLOFF_STANDARD;
-    this.light.shadowEnabled = false;
-    // Sempre na lista de luzes: os materiais do mapa ficam congelados e não
-    // recompilam o shader ao ligar/desligar — o toggle anima só a intensidade.
+    this.light = createSpot(scene, "flashlight");
   }
 
   /** Liga a lanterna no modo Zombies (começa acesa). Apaga ao sair da partida. */
@@ -106,8 +119,48 @@ export class Flashlight {
       Math.sin(this.time * 6.2) * 0.008 +
       Math.sin(this.time * 2.3) * 0.005;
     const target = this.matchActive && this.on ? BASE_INTENSITY * flicker : 0;
-    const f = 1 - Math.exp(-FADE_SPEED * dt);
-    this.intensity += (target - this.intensity) * f;
-    this.light.intensity = target === 0 && this.intensity < 0.01 ? 0 : this.intensity;
+    this.intensity = fadeStep(this.intensity, target, dt);
+    this.light.intensity = this.intensity;
+  }
+}
+
+/**
+ * Lanterna de um aliado (modo Zombies): spot na cabeça do boneco remoto,
+ * seguindo a mira sincronizada pela rede. Vem de um pool fixo (3 vagas).
+ */
+export class RemoteFlashlight {
+  private readonly light: SpotLight;
+  private on = false;
+  private intensity = 0;
+  private time = Math.random() * 10;
+
+  constructor(scene: Scene, name: string) {
+    this.light = createSpot(scene, name);
+  }
+
+  setOn(on: boolean): void {
+    this.on = on;
+  }
+
+  isOn(): boolean {
+    return this.on;
+  }
+
+  setPose(pos: Vector3, dir: Vector3): void {
+    this.light.position.set(
+      pos.x + dir.x * 0.15,
+      pos.y + dir.y * 0.15 - 0.06,
+      pos.z + dir.z * 0.15
+    );
+    this.light.direction.copyFrom(dir);
+  }
+
+  update(dt: number): void {
+    this.time += dt;
+    const flicker =
+      1 + Math.sin(this.time * 29.3) * 0.012 + Math.sin(this.time * 5.1) * 0.008;
+    const target = this.on ? BASE_INTENSITY * 0.9 * flicker : 0;
+    this.intensity = fadeStep(this.intensity, target, dt);
+    this.light.intensity = this.intensity;
   }
 }

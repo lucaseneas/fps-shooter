@@ -115,6 +115,8 @@ export class RemotePlayer {
   private visY = 0;
   private visZ = 0;
   private visYaw = 0;
+  private flashlightOn = false;
+  private remotePitch = 0;
   private prevVisX = 0;
   private prevVisZ = 0;
   private hasVisual = false;
@@ -789,6 +791,26 @@ export class RemotePlayer {
 
   getFeet(): Vector3 {
     return new Vector3(this.visX, this.visY, this.visZ);
+  }
+
+  /** Lanterna do modo Zombies visível neste boneco (estado da rede). */
+  setFlashlight(on: boolean, pitch: number): void {
+    this.flashlightOn = on;
+    this.remotePitch = pitch;
+  }
+
+  hasFlashlight(): boolean {
+    return this.flashlightOn;
+  }
+
+  /** Direção da mira: yaw interpolado + pitch cru da rede. */
+  getAimDirection(out: Vector3): Vector3 {
+    const cosP = Math.cos(this.remotePitch);
+    return out.set(
+      Math.sin(this.visYaw) * cosP,
+      -Math.sin(this.remotePitch),
+      Math.cos(this.visYaw) * cosP
+    );
   }
 
   isZombieNpc(): boolean {

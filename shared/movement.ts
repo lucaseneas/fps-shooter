@@ -39,6 +39,8 @@ export interface PlayerInput {
   strafe: number;
   /** Yaw da câmera no momento do input (radianos). */
   yaw: number;
+  /** Pitch da mira (radianos) — sincroniza a lanterna/visual remoto. */
+  pitch?: number;
   jump: boolean;
   run: boolean;
   /** Agachado (CTRL) — movimento lento e mais precisão no tiro. */

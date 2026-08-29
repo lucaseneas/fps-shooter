@@ -170,7 +170,7 @@ function createGround(
   mat.diffuseColor = tint ? new Color3(tint.r, tint.g, tint.b) : new Color3(1, 1, 1);
   applyMatAlpha(mat, tint?.a ?? 1);
   mat.specularColor = new Color3(0.02, 0.02, 0.02);
-  mat.maxSimultaneousLights = 6;
+  mat.maxSimultaneousLights = 8;
   mat.freeze();
   tagMap(mat);
   ground.material = mat;
@@ -233,7 +233,7 @@ function createMapBoxes(scene: Scene, boxes: readonly BoxDef[]): void {
       mat.diffuseColor = b.color ? hexToColor3(b.color) ?? kindDefaultColor(b.kind) : kindDefaultColor(b.kind);
       applyMatAlpha(mat, b.color ? parseHexColor(b.color)?.a ?? 1 : 1);
       mat.specularColor = new Color3(0.05, 0.05, 0.05);
-      mat.maxSimultaneousLights = 6;
+      mat.maxSimultaneousLights = 8;
       mat.freeze();
       tagMap(mat);
       materials.set(key, mat);
