@@ -2,7 +2,10 @@
 
 export const ZOMBIES_MAX_PLAYERS = 4;
 export const ZOMBIE_HP = 200;
-export const ZOMBIE_BOSS_HP_MULT = 10;
+/** HP base do boss por jogador no primeiro round de boss (5). */
+export const ZOMBIE_BOSS_HP_BASE = 2000;
+/** +HP relativo por round acima do primeiro boss (round 5 → 1.0, 10 → 1.5, …). */
+export const ZOMBIE_BOSS_HP_ROUND_GROWTH = 0.1;
 export const ZOMBIE_BOSS_SCALE = 2;
 export const ZOMBIE_MELEE_DAMAGE = 18;
 export const ZOMBIE_BOSS_MELEE_DAMAGE = 36;
@@ -40,7 +43,7 @@ export interface ZombieWavePlan {
 /**
  * Round 1: 8 zumbis, 1/s em spawn aleatório.
  * Cada round: +4 zumbis e spawn um pouco mais rápido.
- * A cada 5 rounds: um Boss extra (2× tamanho, 10× HP).
+ * A cada 5 rounds: um Boss extra (2× tamanho; HP escala com jogadores e round).
  */
 export function zombieWavePlan(round: number): ZombieWavePlan {
   const n = Math.max(1, Math.floor(round));
@@ -54,8 +57,24 @@ export function zombieWavePlan(round: number): ZombieWavePlan {
   };
 }
 
-export function zombieMaxHealth(boss: boolean): number {
-  return boss ? ZOMBIE_HP * ZOMBIE_BOSS_HP_MULT : ZOMBIE_HP;
+/**
+ * Vida do boss no spawn.
+ * base × jogadores × (1 + (round − 5) × 10%)
+ *
+ * Round 5:  1p 2000 · 2p 4000 · 4p 8000
+ * Round 10: 1p 3000 · 2p 6000 · 4p 12000
+ * Round 15: 1p 4000 · 2p 8000 · 4p 16000
+ */
+export function zombieBossMaxHealth(playerCount: number, round: number): number {
+  const players = Math.max(1, Math.min(ZOMBIES_MAX_PLAYERS, Math.floor(playerCount)));
+  const r = Math.max(1, Math.floor(round));
+  const roundsPastFirst = Math.max(0, r - ZOMBIES_BOSS_EVERY);
+  const roundMult = 1 + roundsPastFirst * ZOMBIE_BOSS_HP_ROUND_GROWTH;
+  return Math.round(ZOMBIE_BOSS_HP_BASE * players * roundMult);
+}
+
+export function zombieMaxHealth(boss: boolean, playerCount = 1, round = ZOMBIES_BOSS_EVERY): number {
+  return boss ? zombieBossMaxHealth(playerCount, round) : ZOMBIE_HP;
 }
 
 export function zombieMeleeDamage(boss: boolean): number {

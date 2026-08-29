@@ -1972,7 +1972,9 @@ export class DeathmatchRoom extends Room<MatchState> {
     p.isBoss = boss;
     p.inMatch = true;
     p.alive = true;
-    p.health = zombieMaxHealth(boss);
+    const hp = zombieMaxHealth(boss, this.zombieSquadSize(), this.state.zombieRound);
+    p.maxHealth = hp;
+    p.health = hp;
     p.skinId = randomZombieSkin();
     p.weaponId = "";
     const spawn = randomSpawn(this.zombieSpawnPoints());
@@ -1994,6 +1996,15 @@ export class DeathmatchRoom extends Room<MatchState> {
 
   private zombieSpawnPoints(): readonly { x: number; z: number; y?: number }[] {
     return zombieSpawnsFor(this.roomMap);
+  }
+
+  /** Humanos na partida (inclui nocauteados) — usado no HP do boss. */
+  private zombieSquadSize(): number {
+    let n = 0;
+    this.state.players.forEach((p) => {
+      if (p.inMatch && !p.isZombie) n++;
+    });
+    return Math.max(1, Math.min(ZOMBIES_MAX_PLAYERS, n));
   }
 
   private refreshZombieCounts(): void {

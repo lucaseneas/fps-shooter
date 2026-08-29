@@ -13,6 +13,8 @@ export interface PlayerSnapshot {
   /** Pitch da mira (lanterna dos aliados no Zombies). */
   pitch: number;
   health: number;
+  /** Teto de vida sincronizado (boss / jogador). */
+  maxHealth?: number;
   kills: number;
   deaths: number;
   alive: boolean;

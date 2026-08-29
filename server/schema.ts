@@ -11,6 +11,8 @@ export class PlayerState extends Schema {
   /** Pitch da mira — usado para a lanterna visível dos aliados. */
   @type("number") pitch = 0;
   @type("number") health = 100;
+  /** Teto de vida (boss escala com jogadores/round; humanos = 100). */
+  @type("number") maxHealth = 100;
   @type("number") kills = 0;
   @type("number") deaths = 0;
   @type("boolean") alive = true;
@@ -53,7 +55,7 @@ export class PlayerState extends Schema {
   @type("string") team = "";
   /** Zumbi no modo Zombies (IA de horda). */
   @type("boolean") isZombie = false;
-  /** Boss da horda (2× tamanho, 10× HP). */
+  /** Boss da horda (2× tamanho; HP escala com jogadores e round). */
   @type("boolean") isBoss = false;
   /** Humano nocauteado à espera de reanimação (corpo no chão). */
   @type("boolean") downed = false;

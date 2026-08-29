@@ -55,7 +55,7 @@ import {
   sendPresence,
 } from "./net/socialClient";
 import { CONFIG, GAME_MODES, KILLS_TO_WIN_OPTIONS, MAPS, TEAMS, gameModeLabel, isTdmMode, isZombiesMode } from "../shared/config";
-import { ZOMBIES_MAX_PLAYERS, zombieMaxHealth } from "../shared/zombies";
+import { ZOMBIES_MAX_PLAYERS } from "../shared/zombies";
 import {
   DEFAULT_LOADOUT,
   LoadoutSlots,
@@ -4410,7 +4410,7 @@ function reconcile(r: Room): void {
     forEachPlayer(r, (p) => {
       if (p.isBoss === true && p.alive) {
         bossHp = p.health;
-        bossMax = zombieMaxHealth(true);
+        bossMax = p.maxHealth && p.maxHealth > 0 ? p.maxHealth : p.health;
         if (p.name) bossName = p.name;
       }
     });
