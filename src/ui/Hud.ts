@@ -74,6 +74,7 @@ export class Hud {
   private readonly revivePrompt = el<HTMLDivElement>("revivePrompt");
   private readonly reviveBar = el<HTMLDivElement>("reviveBar");
   private readonly reviveBarFill = el<HTMLDivElement>("reviveBarFill");
+  private readonly interactPrompt = el<HTMLDivElement>("interactPrompt");
   private readonly bossHpBar = el<HTMLDivElement>("bossHpBar");
   private readonly bossHpName = el<HTMLDivElement>("bossHpName");
   private readonly bossHpFill = el<HTMLDivElement>("bossHpFill");
@@ -142,7 +143,7 @@ export class Hud {
     { count: number; timeout: number }
   >();
   private activeWeaponIndex = 0;
-  private loadoutWeapons: WeaponDef[] = [];
+  private loadoutWeapons: Array<WeaponDef | null> = [];
   private currentKillStreak = 0;
   /** Streaks liberados aguardando ativação (ids vindos do servidor). */
   private availableStreakIds: string[] = [];
@@ -242,7 +243,7 @@ export class Hud {
   }
 
   /** Atualiza os 3 slots do kit (principal / secundária / melee). */
-  setLoadoutWeapons(weapons: WeaponDef[], activeIndex = 0): void {
+  setLoadoutWeapons(weapons: Array<WeaponDef | null>, activeIndex = 0): void {
     this.loadoutWeapons = weapons;
     this.setWeapon(activeIndex);
   }
@@ -256,9 +257,9 @@ export class Hud {
       return;
     }
     const weapon = this.loadoutWeapons[this.activeWeaponIndex];
-    if (weapon && isMeleeWeapon(weapon)) {
+    if (!weapon || isMeleeWeapon(weapon)) {
       this.ammoMag.textContent = "—";
-      this.ammoReserve.textContent = "melee";
+      this.ammoReserve.textContent = weapon ? "melee" : "";
       this.ammoMag.classList.remove("low");
       return;
     }
@@ -276,10 +277,10 @@ export class Hud {
 
   private renderWeaponSlots(activeIndex: number): void {
     this.weaponSlots.innerHTML = this.loadoutWeapons
-      .map(
-        (w, i) =>
-          `<div class="slot${i === activeIndex ? " active" : ""}">${i + 1}·${w.name}</div>`
-      )
+      .map((w, i) => {
+        const empty = !w;
+        return `<div class="slot${i === activeIndex ? " active" : ""}${empty ? " empty" : ""}">${i + 1}·${w?.name ?? "—"}</div>`;
+      })
       .join("");
   }
 
@@ -371,6 +372,17 @@ export class Hud {
     this.revivePrompt.classList.toggle("hidden", !on);
     this.reviveBar.classList.toggle("hidden", !on || progress <= 0);
     this.reviveBarFill.style.width = `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`;
+    if (on) this.setInteractPrompt(null);
+  }
+
+  setInteractPrompt(text: string | null): void {
+    if (!text) {
+      this.interactPrompt.classList.add("hidden");
+      this.interactPrompt.textContent = "";
+      return;
+    }
+    this.interactPrompt.textContent = text;
+    this.interactPrompt.classList.remove("hidden");
   }
 
   setKills(kills: number): void {
@@ -758,6 +770,7 @@ export class Hud {
   ): void {
     this.hideDeathScreen();
     this.setRevivePrompt(false);
+    this.setInteractPrompt(null);
     this.endTitle.textContent = playerWon
       ? "Missão cumprida"
       : winnerName.startsWith("Round")

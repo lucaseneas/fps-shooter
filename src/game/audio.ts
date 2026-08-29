@@ -35,6 +35,7 @@ const ZOMBIE_CLIP = {
   boss: "/sounds/zombie/zombie-boss1.mp3",
   /** Nome do arquivo no repo (typo original). */
   ambience: "/sounds/zombie/zombie-backgroud.mp3",
+  music: "/sounds/zombie/zombie-background-music.mp3",
 } as const;
 
 export class AudioManager {
@@ -54,6 +55,9 @@ export class AudioManager {
   private zombieAmbienceAcc = 0;
   private zombieAmbienceWait = 6;
   private zombieAmbienceSource: AudioBufferSourceNode | null = null;
+  private zombieMusicOn = false;
+  private zombieMusicSource: AudioBufferSourceNode | null = null;
+  private zombieMusicGain: GainNode | null = null;
 
   /** Deve ser chamado num gesto do usuário (clique) para liberar o áudio. */
   resume(): void {
@@ -689,12 +693,14 @@ export class AudioManager {
     this.zombieAmbienceAcc = 0;
     this.zombieAmbienceWait = 4 + Math.random() * 8;
     void this.preloadZombieClips();
+    this.startZombieMusic();
   }
 
   stopZombieAmbience(): void {
     this.zombieAmbienceOn = false;
     this.stopZombieAmbienceSource();
     this.stopAllZombieVoices();
+    this.stopZombieMusic();
   }
 
   /**
@@ -824,6 +830,70 @@ export class AudioManager {
       src.stop();
     } catch {
       /* already stopped */
+    }
+  }
+
+  /** Loop da partida zombies — baixo, o tempo todo, independente da horda. */
+  private startZombieMusic(): void {
+    this.zombieMusicOn = true;
+    if (this.zombieMusicSource) return;
+    void this.ensureClip(ZOMBIE_CLIP.music).then((buf) => {
+      if (!buf || !this.ctx || !this.master || !this.zombieMusicOn) return;
+      if (this.zombieMusicSource) return;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const g = this.ctx.createGain();
+      g.gain.value = 0.0001;
+      src.connect(g);
+      g.connect(this.master);
+      const t0 = this.ctx.currentTime;
+      g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.9);
+      this.zombieMusicSource = src;
+      this.zombieMusicGain = g;
+      try {
+        src.start();
+      } catch {
+        this.zombieMusicSource = null;
+        this.zombieMusicGain = null;
+      }
+    });
+  }
+
+  private stopZombieMusic(): void {
+    this.zombieMusicOn = false;
+    const src = this.zombieMusicSource;
+    const g = this.zombieMusicGain;
+    this.zombieMusicSource = null;
+    this.zombieMusicGain = null;
+    if (!src) return;
+    if (this.ctx && g) {
+      const t0 = this.ctx.currentTime;
+      try {
+        g.gain.cancelScheduledValues(t0);
+        g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.45);
+      } catch {
+        /* ignore */
+      }
+      window.setTimeout(() => {
+        try {
+          src.stop();
+        } catch {
+          /* already stopped */
+        }
+        try {
+          g.disconnect();
+        } catch {
+          /* ignore */
+        }
+      }, 500);
+    } else {
+      try {
+        src.stop();
+      } catch {
+        /* already stopped */
+      }
     }
   }
 

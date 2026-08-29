@@ -95,6 +95,18 @@ export function isStreakWeapon(id: string): boolean {
   return id === "minigun";
 }
 
+/** Alcance para mirar e pegar uma arma dropada (metros no XZ). */
+export const WEAPON_DROP_PICKUP_RANGE = 2.25;
+/** Distância à frente dos pés onde a arma cai ao apertar G. */
+export const WEAPON_DROP_THROW_DISTANCE = 0.9;
+
+/** Faca e minigun não vão para o chão. */
+export function isDroppableWeapon(id: string): boolean {
+  const w = getWeapon(id);
+  if (!w) return false;
+  return !isMeleeWeapon(w) && !isStreakWeapon(w.id);
+}
+
 /** Armas disponíveis para um slot do loadout (dropdowns da seleção). */
 export function weaponsForCategory(category: WeaponCategory): WeaponDef[] {
   return WEAPONS.filter(

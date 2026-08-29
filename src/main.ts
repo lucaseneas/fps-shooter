@@ -1,15 +1,16 @@
 import { Engine } from "@babylonjs/core/Engines/engine";
-import { Vector3, Color3 } from "@babylonjs/core/Maths/math";
+import { Vector3, Color3, Quaternion } from "@babylonjs/core/Maths/math";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Room } from "colyseus.js";
 
 import { createScene, applyBoxMap, setMatchAtmosphere } from "./scene/createScene";
 import { FpsController } from "./player/FpsController";
-import { ViewModel } from "./player/ViewModel";
-import { PlayerVisual } from "./player/PlayerVisual";
+import { ViewModel, WEAPON_ASSETS, weaponModelTransform, applyWeaponAppearance, disposeWeaponModelKeepTextures } from "./player/ViewModel";
+import { PlayerVisual, THIRD_PERSON_WEAPON_SCALE } from "./player/PlayerVisual";
 import { WeaponSystem } from "./game/WeaponSystem";
 import { EffectsManager } from "./game/effects";
 import { Flashlight, RemoteFlashlight } from "./game/Flashlight";
@@ -63,11 +64,14 @@ import {
   WeaponDef,
   WeaponId,
   getWeapon,
+  isDroppableWeapon,
   isMeleeWeapon,
   isStreakWeapon,
   resolveWeaponId,
+  weaponCategory,
   weaponMoveSpeedMult,
   weaponsForCategory,
+  WEAPON_DROP_PICKUP_RANGE,
 } from "../shared/weapons";
 import {
   WeaponSkinDef,
@@ -663,6 +667,41 @@ let inGame = false;
 let inLobby = false;
 const remotePlayers = new Map<string, RemotePlayer>();
 const ammoDropMeshes = new Map<string, Mesh>();
+const weaponDropMeshes = new Map<string, WeaponDropVisual>();
+type MatchWeaponSkin = {
+  id: string;
+  parts: Record<string, [number, number, number]> | null;
+  textures: Record<string, string> | null;
+};
+
+/** Skin da arma pegue no chão — vale só enquanto essa arma estiver no slot. */
+const matchWeaponSkins = new Map<string, MatchWeaponSkin>();
+let aimedWeaponDropId = "";
+/** Arma que será solta no chão se o pickup for um swap (só após o servidor confirmar). */
+let pendingPickupSwapId: WeaponId | null = null;
+/** Aparência da arma no chão no momento em que se apertou F. */
+let pendingPickupLook: { weaponId: WeaponId; skin: MatchWeaponSkin } | null = null;
+
+interface WeaponDropVisual {
+  root: TransformNode;
+  pick: Mesh;
+  model: Mesh | null;
+  weaponId: string;
+  skinKey: string;
+  skinParts: string;
+}
+
+interface WeaponDropSnapshot {
+  weaponId: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  mag: number;
+  reserve: number;
+  weaponSkinId: string;
+  weaponSkinParts: string;
+}
 let reviveHolding = false;
 let ownInitialized = false;
 let lastKnownHealth: number = CONFIG.playerMaxHealth;
@@ -1603,6 +1642,7 @@ function renderLoadoutOptions(): void {
 }
 
 function applySelectedLoadout(slots: LoadoutSlots): void {
+  clearMatchWeaponSkins();
   weapons.applyLoadout(slots, true);
   localStorage.setItem(LOADOUT_STORAGE_KEY, JSON.stringify(slots));
   lastWeaponIndex = 1;
@@ -2043,17 +2083,49 @@ function getEquippedWeaponSkinId(weaponId: WeaponId): string | null {
   return def && def.weaponId === weaponId ? id : null;
 }
 
-/** Skin visível para os outros jogadores (id + cores), sem exigir inventário no observador. */
-function getVisualWeaponSkin(weaponId: WeaponId): {
-  id: string;
-  parts: Record<string, [number, number, number]> | null;
-  textures: Record<string, string> | null;
-} {
+function ownEquippedWeaponSkin(weaponId: WeaponId): MatchWeaponSkin {
   const id =
     getEquippedWeaponSkinId(weaponId) ?? loadEquippedWeaponSkins()[weaponId] ?? "";
   const def = id ? getWeaponSkin(id) : undefined;
   if (!def || def.weaponId !== weaponId) return { id: "", parts: null, textures: null };
   return { id: def.id, parts: def.parts, textures: def.textures ?? null };
+}
+
+/**
+ * Aparência de uma arma no chão / pickup.
+ * As cores do drop são a fonte de verdade — não a skin equipada de quem pega.
+ */
+function lookFromDropFields(
+  weaponId: WeaponId,
+  skinIdRaw: unknown,
+  partsRaw: unknown
+): MatchWeaponSkin {
+  const skinId = typeof skinIdRaw === "string" ? skinIdRaw : "";
+  const looks = decodeWeaponSkinLooks(partsRaw);
+  if (looks) {
+    return { id: skinId, parts: looks.parts, textures: looks.textures ?? null };
+  }
+  if (skinId) {
+    const def = getWeaponSkin(skinId);
+    if (def && def.weaponId === weaponId) {
+      return { id: def.id, parts: def.parts, textures: def.textures ?? null };
+    }
+  }
+  return { id: skinId, parts: null, textures: null };
+}
+
+/** Skin visível para os outros jogadores (id + cores), sem exigir inventário no observador. */
+function getVisualWeaponSkin(weaponId: WeaponId): MatchWeaponSkin {
+  const over = matchWeaponSkins.get(weaponId);
+  if (over) return over;
+  return ownEquippedWeaponSkin(weaponId);
+}
+
+function clearMatchWeaponSkins(): void {
+  if (matchWeaponSkins.size === 0 && !pendingPickupLook && !pendingPickupSwapId) return;
+  matchWeaponSkins.clear();
+  pendingPickupLook = null;
+  pendingPickupSwapId = null;
 }
 
 /** Informa arma + skin equipada para os outros jogadores verem. */
@@ -2078,9 +2150,8 @@ function setEquippedWeaponSkin(weaponId: WeaponId, skinId: string | null): void 
 }
 
 function applyEquippedSkinToViewModel(weaponId: WeaponId): void {
-  const id = getEquippedWeaponSkinId(weaponId);
-  const skin = id ? getWeaponSkin(id) : undefined;
-  viewModel.setWeaponSkin(weaponId, skin?.parts ?? null, skin?.textures ?? null);
+  const skin = getVisualWeaponSkin(weaponId);
+  viewModel.setWeaponSkin(weaponId, skin.parts, skin.textures);
 }
 
 function syncAllViewModelSkins(): void {
@@ -3215,8 +3286,10 @@ function cleanupMatchLocal(): void {
   for (const rp of remotePlayers.values()) rp.dispose();
   remotePlayers.clear();
   clearAmmoDropMeshes();
+  clearWeaponDropMeshes();
   hud.hideZombieBanner();
   hud.setRevivePrompt(false);
+  hud.setInteractPrompt(null);
   hud.setBossHealth(0, 0);
   audio.stopZombieAmbience();
   flashlight.setMatchEnabled(false);
@@ -3225,6 +3298,7 @@ function cleanupMatchLocal(): void {
   setMatchAtmosphere(scene, false);
 
   weapons.setTrigger(false);
+  clearMatchWeaponSkins();
   weapons.refillAll();
   weapons.setEnabled(true);
   player.setMovementEnabled(true);
@@ -3994,12 +4068,14 @@ function setupRoom(r: Room): void {
 
     player.teleport(new Vector3(e.x, e.y ?? 0, e.z));
     ownInitialized = true;
+    clearMatchWeaponSkins();
     weapons.refillAll();
     weapons.setEnabled(true);
     player.setMovementEnabled(true);
     player.setLookEnabled(true);
     playerDead = false;
     hud.hideDeathScreen();
+    syncAllViewModelSkins();
     viewModel.setWeapon(weapons.weapon);
     applyEquippedSkinToViewModel(weapons.weapon.id);
     viewModel.setVisible(true);
@@ -4028,6 +4104,34 @@ function setupRoom(r: Room): void {
   r.onMessage("ammoPickup", () => {
     if (!inGame || playerDead) return;
     weapons.addMagazine();
+  });
+
+  r.onMessage("weaponPickup", (e: {
+    weaponId?: string;
+    mag?: number;
+    reserve?: number;
+    weaponSkinId?: string;
+    weaponSkinParts?: string;
+  }) => {
+    if (!inGame || playerDead) return;
+    const id = resolveWeaponId(typeof e.weaponId === "string" ? e.weaponId : "");
+    if (!id || !isDroppableWeapon(id)) return;
+    const fromMsg = lookFromDropFields(id, e.weaponSkinId, e.weaponSkinParts);
+    const fromAim =
+      pendingPickupLook && pendingPickupLook.weaponId === id
+        ? pendingPickupLook.skin
+        : null;
+    const look = fromAim ?? fromMsg;
+    // Sempre a skin do chão (mesmo vazia = padrão da arma). Nunca a da loja de quem pega.
+    matchWeaponSkins.set(id, look);
+    viewModel.setWeaponSkin(id, look.parts, look.textures);
+    if (pendingPickupSwapId && pendingPickupSwapId !== id) {
+      matchWeaponSkins.delete(pendingPickupSwapId);
+    }
+    pendingPickupSwapId = null;
+    pendingPickupLook = null;
+    if (!weapons.equipPicked(id, e.mag ?? 0, e.reserve ?? 0)) return;
+    applyHeldWeaponVisual();
   });
 
   r.onMessage("waveStart", (e: { round?: number; count?: number; boss?: boolean }) => {
@@ -4282,6 +4386,8 @@ function reconcile(r: Room): void {
   });
 
   updateNametags(r, ownSnapshot?.team ?? "");
+  syncWeaponDrops(r);
+  updateWeaponDropPrompt(r, ownSnapshot);
 
   const snap = getMatchSnapshot(r);
   hud.setScoreMode(
@@ -4542,6 +4648,252 @@ function handleOwnState(p: PlayerSnapshot): void {
 function clearAmmoDropMeshes(): void {
   for (const m of ammoDropMeshes.values()) m.dispose();
   ammoDropMeshes.clear();
+}
+
+function disposeWeaponDropVisual(vis: WeaponDropVisual): void {
+  disposeWeaponModelKeepTextures(vis.model);
+  vis.pick.dispose();
+  vis.root.dispose();
+}
+
+function clearWeaponDropMeshes(): void {
+  for (const vis of weaponDropMeshes.values()) disposeWeaponDropVisual(vis);
+  weaponDropMeshes.clear();
+  aimedWeaponDropId = "";
+}
+
+function readWeaponDrops(r: Room): Map<string, WeaponDropSnapshot> {
+  const out = new Map<string, WeaponDropSnapshot>();
+  const drops = (r.state as { weaponDrops?: { forEach: Function } }).weaponDrops;
+  drops?.forEach(
+    (
+      d: {
+        weaponId?: string;
+        x: number;
+        y: number;
+        z: number;
+        yaw?: number;
+        mag?: number;
+        reserve?: number;
+        weaponSkinId?: string;
+        weaponSkinParts?: string;
+      },
+      id: string
+    ) => {
+      out.set(id, {
+        weaponId: typeof d.weaponId === "string" ? d.weaponId : "m4a1",
+        x: d.x,
+        y: d.y ?? 0,
+        z: d.z,
+        yaw: d.yaw ?? 0,
+        mag: d.mag ?? 0,
+        reserve: d.reserve ?? 0,
+        weaponSkinId: typeof d.weaponSkinId === "string" ? d.weaponSkinId : "",
+        weaponSkinParts: typeof d.weaponSkinParts === "string" ? d.weaponSkinParts : "",
+      });
+    }
+  );
+  return out;
+}
+
+function loadWeaponDropModel(id: string, vis: WeaponDropVisual): void {
+  const weaponId = vis.weaponId;
+  const url = WEAPON_ASSETS[weaponId] || WEAPON_ASSETS.m4a1;
+  SceneLoader.LoadAssetContainerAsync("", url, scene)
+    .then((container) => {
+      const current = weaponDropMeshes.get(id);
+      if (!current || current !== vis || vis.weaponId !== weaponId) return;
+      disposeWeaponModelKeepTextures(vis.model);
+      const inst = container.instantiateModelsToScene();
+      const model = inst.rootNodes[0] as Mesh;
+      const transform = weaponModelTransform(weaponId, model);
+      const offset = new TransformNode(`wpnDropOff_${id}`, scene);
+      offset.parent = vis.root;
+      // Modelo aponta +Z (cano); o roll de 90° em Z deita a arma de lado no chão.
+      const lieFlat = Quaternion.FromEulerAngles(0, 0, Math.PI / 2);
+      offset.rotationQuaternion = lieFlat.multiply(
+        Quaternion.FromEulerVector(transform.rotation)
+      );
+      offset.scaling.setAll(transform.scale * THIRD_PERSON_WEAPON_SCALE * 1.12);
+      model.parent = offset;
+      vis.model = model;
+      model.getChildMeshes(false).forEach((m) => {
+        m.isPickable = false;
+        if (m.material) m.material = m.material.clone(`wpnDropMat_${id}_${m.name}`);
+      });
+      const looks = decodeWeaponSkinLooks(vis.skinParts);
+      applyWeaponAppearance(
+        scene,
+        model,
+        weaponId,
+        looks?.parts ?? null,
+        looks?.textures ?? null
+      );
+      vis.root.computeWorldMatrix(true);
+      model.computeWorldMatrix(true);
+      const { min } = model.getHierarchyBoundingVectors(true);
+      const groundY = vis.root.position.y;
+      offset.position.y += groundY + 0.02 - min.y;
+    })
+    .catch(console.error);
+}
+
+function syncWeaponDrops(r: Room): void {
+  const drops = readWeaponDrops(r);
+  const seen = new Set<string>();
+  for (const [id, d] of drops) {
+    seen.add(id);
+    const skinKey = `${d.weaponSkinId}|${d.weaponSkinParts}`;
+    let vis = weaponDropMeshes.get(id);
+    if (vis && (vis.weaponId !== d.weaponId || vis.skinKey !== skinKey)) {
+      disposeWeaponDropVisual(vis);
+      weaponDropMeshes.delete(id);
+      vis = undefined;
+    }
+    if (!vis) {
+      const root = new TransformNode(`wpnDrop_${id}`, scene);
+      const pick = MeshBuilder.CreateBox(
+        `wpnDropPick_${id}`,
+        { width: 1.15, height: 0.28, depth: 0.55 },
+        scene
+      );
+      pick.parent = root;
+      pick.position.y = 0.08;
+      pick.isPickable = true;
+      pick.visibility = 0;
+      pick.metadata = { weaponDropId: id };
+      vis = { root, pick, model: null, weaponId: d.weaponId, skinKey, skinParts: d.weaponSkinParts };
+      weaponDropMeshes.set(id, vis);
+      loadWeaponDropModel(id, vis);
+    }
+    vis.root.position.set(d.x, d.y, d.z);
+    vis.root.rotation.set(0, d.yaw, 0);
+  }
+  for (const [id, vis] of weaponDropMeshes) {
+    if (seen.has(id)) continue;
+    disposeWeaponDropVisual(vis);
+    weaponDropMeshes.delete(id);
+  }
+}
+
+function isNearDownedAlly(r: Room, own: PlayerSnapshot | null): boolean {
+  if (!own || !own.alive || own.downed || playerDead) return false;
+  if (!isZombiesMode(currentGameMode())) return false;
+  let found = false;
+  forEachPlayer(r, (p) => {
+    if (!p.downed || p.isZombie) return;
+    if (Math.hypot(p.x - own.x, p.z - own.z) < 2.5) found = true;
+  });
+  return found;
+}
+
+function updateWeaponDropPrompt(r: Room, own: PlayerSnapshot | null): void {
+  if (
+    !own ||
+    !own.alive ||
+    own.downed ||
+    playerDead ||
+    awaitingSpawn ||
+    player.isSpectating ||
+    player.isThirdPersonPeeking ||
+    loadoutPicking ||
+    chatTyping ||
+    endScreenShown
+  ) {
+    aimedWeaponDropId = "";
+    hud.setInteractPrompt(null);
+    return;
+  }
+  if (isNearDownedAlly(r, own)) {
+    aimedWeaponDropId = "";
+    hud.setInteractPrompt(null);
+    return;
+  }
+  const ray = player.camera.getForwardRay(90);
+  const hit = scene.pickWithRay(
+    ray,
+    (m) => typeof m.metadata?.weaponDropId === "string"
+  );
+  let dropId = "";
+  if (hit?.hit && hit.pickedMesh) {
+    dropId = String(hit.pickedMesh.metadata.weaponDropId);
+  }
+  const drop = dropId ? readWeaponDrops(r).get(dropId) : undefined;
+  if (!drop) {
+    aimedWeaponDropId = "";
+    hud.setInteractPrompt(null);
+    return;
+  }
+  const dist = Math.hypot(own.x - drop.x, own.z - drop.z);
+  if (dist > WEAPON_DROP_PICKUP_RANGE) {
+    aimedWeaponDropId = "";
+    hud.setInteractPrompt(null);
+    return;
+  }
+  aimedWeaponDropId = dropId;
+  const def = getWeapon(drop.weaponId);
+  hud.setInteractPrompt(`Pegar ${def?.name ?? "arma"}  [F]`);
+}
+
+function applyHeldWeaponVisual(): void {
+  viewModel.setWeapon(weapons.weapon);
+  applyEquippedSkinToViewModel(weapons.weapon.id);
+  player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
+  localVisualWeaponId = "";
+  exitAds();
+}
+
+function tryDropHeldWeapon(): void {
+  if (!room || localPredator || awaitingSpawn || endScreenShown) return;
+  if (!weapons.canDropHeld()) return;
+  const skin = getVisualWeaponSkin(weapons.weapon.id);
+  const dropped = weapons.dropHeld();
+  if (!dropped) return;
+  matchWeaponSkins.delete(dropped.weaponId);
+  room.send("dropWeapon", {
+    weaponId: dropped.weaponId,
+    mag: dropped.mag,
+    reserve: dropped.reserve,
+    weaponSkinId: skin.id,
+    weaponSkinParts: encodeWeaponSkinParts(skin.parts, skin.textures),
+  });
+  applyHeldWeaponVisual();
+}
+
+function tryPickupAimedWeapon(): void {
+  if (!room || !aimedWeaponDropId || awaitingSpawn || endScreenShown) return;
+  const drop = readWeaponDrops(room).get(aimedWeaponDropId);
+  if (!drop) return;
+  const def = getWeapon(drop.weaponId);
+  if (!def || !isDroppableWeapon(def.id)) return;
+  const feet = player.getFeet();
+  if (Math.hypot(feet.x - drop.x, feet.z - drop.z) > WEAPON_DROP_PICKUP_RANGE) return;
+  const swap = weapons.occupiedSlotPayload(weaponCategory(def.id));
+  let swapMsg:
+    | {
+        weaponId: WeaponId;
+        mag: number;
+        reserve: number;
+        weaponSkinId: string;
+        weaponSkinParts: string;
+      }
+    | undefined;
+  if (swap) {
+    const swapSkin = getVisualWeaponSkin(swap.weaponId);
+    swapMsg = {
+      weaponId: swap.weaponId,
+      mag: swap.mag,
+      reserve: swap.reserve,
+      weaponSkinId: swapSkin.id,
+      weaponSkinParts: encodeWeaponSkinParts(swapSkin.parts, swapSkin.textures),
+    };
+  }
+  pendingPickupSwapId = swap?.weaponId ?? null;
+  pendingPickupLook = {
+    weaponId: def.id,
+    skin: lookFromDropFields(def.id, drop.weaponSkinId, drop.weaponSkinParts),
+  };
+  room.send("pickupWeapon", { dropId: aimedWeaponDropId, swap: swapMsg });
 }
 
 function syncAmmoDrops(r: Room): void {
@@ -4902,12 +5254,22 @@ window.addEventListener("keydown", (e) => {
   }
   if (isGhostSpectating() || playerDead) return;
   if (e.code === "KeyR") weapons.startReload();
+  if (e.code === "KeyG") {
+    e.preventDefault();
+    if (!e.repeat) tryDropHeldWeapon();
+  }
   if (e.code === "KeyF") {
     e.preventDefault();
-    if (!reviveHolding && isZombiesMode(currentGameMode())) {
-      reviveHolding = true;
-      room?.send("holdRevive", { holding: true });
+    if (e.repeat) return;
+    const own = room ? getOwnSnapshot(room) : null;
+    if (room && isNearDownedAlly(room, own)) {
+      if (!reviveHolding) {
+        reviveHolding = true;
+        room.send("holdRevive", { holding: true });
+      }
+      return;
     }
+    tryPickupAimedWeapon();
   }
   if (e.code === "KeyQ") {
     e.preventDefault();
@@ -4949,11 +5311,7 @@ function trySendActivateStreak(code: string, key = ""): boolean {
 function rememberWeaponSwitch(fromIndex: number): void {
   if (weapons.weaponIndex === fromIndex) return;
   lastWeaponIndex = fromIndex;
-  viewModel.setWeapon(weapons.weapon);
-  applyEquippedSkinToViewModel(weapons.weapon.id);
-  player.setSpeedMult(weaponMoveSpeedMult(weapons.weapon));
-  localVisualWeaponId = "";
-  exitAds();
+  applyHeldWeaponVisual();
 }
 
 function switchTo(index: number): void {
@@ -5247,7 +5605,11 @@ engine.runRenderLoop(() => {
   if (isZombiesMode(currentGameMode())) {
     audio.tickZombieAmbience(dt, zombiesAlive);
   }
-  if (room) updateNametags(room, getOwnSnapshot(room)?.team ?? "");
+  if (room) {
+    updateNametags(room, getOwnSnapshot(room)?.team ?? "");
+    syncWeaponDrops(room);
+    updateWeaponDropPrompt(room, getOwnSnapshot(room));
+  }
 
   // Som de passos.
   if (player.isMovingOnGround) {

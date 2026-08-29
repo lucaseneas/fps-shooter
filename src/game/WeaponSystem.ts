@@ -8,12 +8,15 @@ import {
   DEFAULT_LOADOUT,
   LoadoutSlots,
   WEAPONS,
+  WeaponCategory,
   WeaponDef,
   WeaponId,
   damageFalloff,
   getWeapon,
+  isDroppableWeapon,
   isMeleeWeapon,
   sprayBloom,
+  weaponCategory,
   weaponMaxRange,
 } from "../../shared/weapons";
 import { EffectsManager } from "./effects";
@@ -60,7 +63,11 @@ export class WeaponSystem {
 
   /** Slot ativo: 0 principal, 1 secundária, 2 melee. */
   private currentSlot = 0;
-  private slotIds: [WeaponId, WeaponId, WeaponId] = ["m4a1", "usp", "knife"];
+  private slotIds: [WeaponId | null, WeaponId | null, WeaponId] = [
+    "m4a1",
+    "usp",
+    "knife",
+  ];
   private readonly ammo = new Map<string, AmmoState>();
 
   private triggerHeld = false;
@@ -116,23 +123,24 @@ export class WeaponSystem {
     this.applyLoadout(DEFAULT_LOADOUT, false);
   }
 
-  /** Loadout atual (uma arma por slot). */
+  /** Loadout atual (uma arma por slot). Slots vazios usam o padrão só para persistência. */
   get loadout(): LoadoutSlots {
     return {
-      primary: this.slotIds[0],
-      secondary: this.slotIds[1],
-      melee: this.slotIds[2],
+      primary: this.slotIds[0] ?? DEFAULT_LOADOUT.primary,
+      secondary: this.slotIds[1] ?? DEFAULT_LOADOUT.secondary,
+      melee: this.slotIds[2] ?? DEFAULT_LOADOUT.melee,
     };
   }
 
-  /** Armas dos 3 slots na ordem das teclas 1–3. */
-  get loadoutWeapons(): WeaponDef[] {
-    return this.slotIds.map((id) => getWeapon(id)!);
+  /** Armas dos 3 slots na ordem das teclas 1–3 (`null` = slot vazio). */
+  get loadoutWeapons(): Array<WeaponDef | null> {
+    return this.slotIds.map((id) => (id ? getWeapon(id) ?? null : null));
   }
 
   get weapon(): WeaponDef {
     if (this.streakWeaponId) return getWeapon(this.streakWeaponId)!;
-    return getWeapon(this.slotIds[this.currentSlot])!;
+    const held = this.slotIds[this.currentSlot];
+    return getWeapon(held ?? this.slotIds[2] ?? "knife")!;
   }
 
   get currentSpread(): number {
@@ -265,6 +273,76 @@ export class WeaponSystem {
     else this.onStateChanged?.();
   }
 
+  /** True se a arma na mão pode ir para o chão (não faca / streak). */
+  canDropHeld(): boolean {
+    if (this.streakWeaponId) return false;
+    return isDroppableWeapon(this.weapon.id);
+  }
+
+  /**
+   * Solta a arma na mão e passa para o próximo slot preenchido.
+   * Devolve mag/reserva no momento do drop.
+   */
+  dropHeld(): { weaponId: WeaponId; mag: number; reserve: number } | null {
+    if (!this.canDropHeld()) return null;
+    const id = this.weapon.id;
+    const ammo = this.ammo.get(id) ?? { mag: 0, reserve: 0 };
+    const slot = this.currentSlot;
+    if (slot === 2) return null;
+    this.slotIds[slot] = null;
+    this.reloadRemaining = 0;
+    this.semiAutoLock = false;
+    this.selectFallbackSlot();
+    this.onStateChanged?.();
+    return { weaponId: id, mag: ammo.mag, reserve: ammo.reserve };
+  }
+
+  /** Payload da arma que ocupa o slot da categoria (para swap ao pegar outra). */
+  occupiedSlotPayload(
+    category: WeaponCategory
+  ): { weaponId: WeaponId; mag: number; reserve: number } | null {
+    const slot = category === "primary" ? 0 : category === "secondary" ? 1 : 2;
+    if (slot === 2) return null;
+    const id = this.slotIds[slot];
+    if (!id || !isDroppableWeapon(id)) return null;
+    const ammo = this.ammo.get(id) ?? { mag: 0, reserve: 0 };
+    return { weaponId: id, mag: ammo.mag, reserve: ammo.reserve };
+  }
+
+  /** Equipa uma arma dropada no slot da categoria (substitui se já houver). */
+  equipPicked(id: WeaponId, mag: number, reserve: number): boolean {
+    if (!isDroppableWeapon(id)) return false;
+    const def = getWeapon(id);
+    if (!def) return false;
+    const cat = weaponCategory(id);
+    const slot = cat === "primary" ? 0 : 1;
+    this.slotIds[slot] = id;
+    this.ammo.set(id, {
+      mag: Math.max(0, Math.min(def.magSize, Math.floor(mag))),
+      reserve: Math.max(0, Math.floor(reserve)),
+    });
+    this.currentSlot = slot;
+    this.reloadRemaining = 0;
+    this.semiAutoLock = false;
+    this.sprayShots.clear();
+    this.sprayLastShotAt.clear();
+    this.cooldown = Math.max(this.cooldown, def.drawTime);
+    this.onStateChanged?.();
+    return true;
+  }
+
+  private selectFallbackSlot(): void {
+    const order = [1, 0, 2];
+    for (const slot of order) {
+      if (this.slotIds[slot]) {
+        this.currentSlot = slot;
+        this.cooldown = Math.max(this.cooldown, this.weapon.drawTime);
+        return;
+      }
+    }
+    this.currentSlot = 2;
+  }
+
   /** Habilita/desabilita o disparo (morte, fim de partida, overlay). */
   setEnabled(on: boolean): void {
     this.enabled = on;
@@ -358,6 +436,7 @@ export class WeaponSystem {
     if (slot < 0 || slot >= SLOT_COUNT || slot === this.currentSlot) {
       return;
     }
+    if (!this.slotIds[slot]) return;
     this.currentSlot = slot;
     this.reloadRemaining = 0;
     this.cooldown = Math.max(this.cooldown, this.weapon.drawTime);
@@ -368,8 +447,13 @@ export class WeaponSystem {
   }
 
   cycleWeapon(direction: 1 | -1): void {
-    const next = (this.currentSlot + direction + SLOT_COUNT) % SLOT_COUNT;
-    this.switchWeapon(next);
+    for (let i = 1; i <= SLOT_COUNT; i++) {
+      const next = (this.currentSlot + direction * i + SLOT_COUNT) % SLOT_COUNT;
+      if (this.slotIds[next]) {
+        this.switchWeapon(next);
+        return;
+      }
+    }
   }
 
   startReload(): void {

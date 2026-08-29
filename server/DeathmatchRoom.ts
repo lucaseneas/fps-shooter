@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 
-import { MatchState, PlayerState, AmmoDropState } from "./schema";
+import { MatchState, PlayerState, AmmoDropState, WeaponDropState } from "./schema";
 import { BotAi, BotWorld, ShotEvent } from "./BotAi";
 import { ZombieAi, type ZombieWorld } from "./ZombieAi";
 import { CONFIG, GAME_MODES, MAPS, isTeamId, isTdmMode, isZombiesMode, TEAMS, type TeamId } from "../shared/config";
@@ -19,6 +19,9 @@ import {
   damageFalloff,
   weaponMaxRange,
   resolveWeaponId,
+  isDroppableWeapon,
+  WEAPON_DROP_PICKUP_RANGE,
+  WEAPON_DROP_THROW_DISTANCE,
 } from "../shared/weapons";
 import {
   encodeWeaponSkinParts,
@@ -76,6 +79,14 @@ interface FireMessage {
   oy: number;
   oz: number;
   dirs: Array<{ x: number; y: number; z: number }>;
+}
+
+interface DropWeaponMessage {
+  weaponId?: unknown;
+  mag?: unknown;
+  reserve?: unknown;
+  weaponSkinId?: unknown;
+  weaponSkinParts?: unknown;
 }
 
 interface HistoryEntry {
@@ -144,6 +155,11 @@ export class DeathmatchRoom extends Room<MatchState> {
   private zombieBossQueued = false;
   private intermissionLeft = 0;
   private ammoDropCounter = 0;
+  private weaponDropCounter = 0;
+  /** Rate limit de drop de arma por jogador. */
+  private lastWeaponDropAt = new Map<string, number>();
+  /** Rate limit de pickup de arma por jogador. */
+  private lastWeaponPickupAt = new Map<string, number>();
   /** Quem está a segurar F para reanimar, e o alvo. */
   private reviveHold = new Map<string, { targetId: string; elapsed: number }>();
   /** Capacidade total (humanos + bots) usada no rebalance. */
@@ -349,6 +365,14 @@ export class DeathmatchRoom extends Room<MatchState> {
 
     this.onMessage("holdRevive", (client, msg: { holding?: unknown }) => {
       this.handleHoldRevive(client.sessionId, msg?.holding === true);
+    });
+
+    this.onMessage("dropWeapon", (client, msg: DropWeaponMessage) => {
+      this.handleDropWeapon(client, msg);
+    });
+
+    this.onMessage("pickupWeapon", (client, msg: { dropId?: unknown; swap?: unknown }) => {
+      this.handlePickupWeapon(client, msg);
     });
 
     this.onMessage("flashlight", (client, msg: { on?: unknown }) => {
@@ -935,6 +959,8 @@ export class DeathmatchRoom extends Room<MatchState> {
     p.alive = true;
     p.downed = false;
     p.reviveProgress = 0;
+    p.weaponSkinId = "";
+    p.weaponSkinParts = "";
     this.grantInvincibility(p, CONFIG.spawnInvincibilityDuration);
 
     const bot = this.bots.get(id);
@@ -967,6 +993,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.state.zombiePhase = this.isZombies() ? "lobby" : "";
     this.clearZombies();
     this.clearAmmoDrops();
+    this.clearWeaponDrops();
     this.reviveHold.clear();
     this.statsRecorded = false;
     this.matchResetAt = 0;
@@ -1051,6 +1078,7 @@ export class DeathmatchRoom extends Room<MatchState> {
     this.reviveHold.clear();
     this.clearZombies();
     this.clearAmmoDrops();
+    this.clearWeaponDrops();
 
     for (const [, p] of this.state.players) {
       p.kills = 0;
@@ -2007,6 +2035,142 @@ export class DeathmatchRoom extends Room<MatchState> {
 
   private clearAmmoDrops(): void {
     this.state.ammoDrops.clear();
+  }
+
+  private spawnWeaponDrop(opts: {
+    weaponId: string;
+    mag: number;
+    reserve: number;
+    x: number;
+    y: number;
+    z: number;
+    yaw: number;
+    weaponSkinId: string;
+    weaponSkinParts: string;
+  }): void {
+    const MAX_DROPS = 48;
+    if (this.state.weaponDrops.size >= MAX_DROPS) {
+      const oldest = this.state.weaponDrops.keys().next().value;
+      if (typeof oldest === "string") this.state.weaponDrops.delete(oldest);
+    }
+    const id = `wpn_${this.weaponDropCounter++}`;
+    const drop = new WeaponDropState();
+    drop.weaponId = opts.weaponId;
+    drop.mag = opts.mag;
+    drop.reserve = opts.reserve;
+    drop.x = opts.x;
+    drop.y = opts.y;
+    drop.z = opts.z;
+    drop.yaw = opts.yaw;
+    drop.weaponSkinId = opts.weaponSkinId;
+    drop.weaponSkinParts = opts.weaponSkinParts;
+    this.state.weaponDrops.set(id, drop);
+  }
+
+  private clearWeaponDrops(): void {
+    this.state.weaponDrops.clear();
+  }
+
+  private parseDropPayload(
+    raw: unknown
+  ): {
+    weaponId: string;
+    mag: number;
+    reserve: number;
+    weaponSkinId: string;
+    weaponSkinParts: string;
+  } | null {
+    if (!raw || typeof raw !== "object") return null;
+    const msg = raw as DropWeaponMessage;
+    const weapon = getWeapon(typeof msg.weaponId === "string" ? msg.weaponId : "");
+    if (!weapon || !isDroppableWeapon(weapon.id)) return null;
+    const mag = clampInt(msg.mag, 0, Math.max(1, weapon.magSize), 0);
+    const reserve = clampInt(msg.reserve, 0, Math.max(0, weapon.reserveAmmo * 4), 0);
+    const skinId = typeof msg.weaponSkinId === "string" ? msg.weaponSkinId.slice(0, 64) : "";
+    const parts =
+      typeof msg.weaponSkinParts === "string" ? msg.weaponSkinParts.slice(0, 16384) : "";
+    return {
+      weaponId: weapon.id,
+      mag,
+      reserve,
+      weaponSkinId: skinId,
+      weaponSkinParts: parts,
+    };
+  }
+
+  private canInteractWithWeaponDrops(p: PlayerState | undefined): p is PlayerState {
+    if (!p || !p.alive || p.downed || !p.inMatch || p.isZombie) return false;
+    if (this.state.matchOver || !this.state.matchStarted) return false;
+    if (isPredatorStreak(p.activeStreak)) return false;
+    return true;
+  }
+
+  private rateLimitWeaponDrop(id: string): boolean {
+    const now = Date.now();
+    const last = this.lastWeaponDropAt.get(id) ?? 0;
+    if (now - last < 80) return false;
+    this.lastWeaponDropAt.set(id, now);
+    return true;
+  }
+
+  private rateLimitWeaponPickup(id: string): boolean {
+    const now = Date.now();
+    const last = this.lastWeaponPickupAt.get(id) ?? 0;
+    if (now - last < 280) return false;
+    this.lastWeaponPickupAt.set(id, now);
+    return true;
+  }
+
+  private handleDropWeapon(client: Client, msg: DropWeaponMessage): void {
+    const p = this.state.players.get(client.sessionId);
+    if (!this.canInteractWithWeaponDrops(p)) return;
+    if (!this.rateLimitWeaponDrop(client.sessionId)) return;
+    const payload = this.parseDropPayload(msg);
+    if (!payload) return;
+    const yaw = p.yaw;
+    this.spawnWeaponDrop({
+      ...payload,
+      x: p.x + Math.sin(yaw) * WEAPON_DROP_THROW_DISTANCE,
+      y: p.y,
+      z: p.z + Math.cos(yaw) * WEAPON_DROP_THROW_DISTANCE,
+      yaw,
+    });
+  }
+
+  private handlePickupWeapon(
+    client: Client,
+    msg: { dropId?: unknown; swap?: unknown }
+  ): void {
+    const p = this.state.players.get(client.sessionId);
+    if (!this.canInteractWithWeaponDrops(p)) return;
+    if (!this.rateLimitWeaponPickup(client.sessionId)) return;
+    const dropId = typeof msg?.dropId === "string" ? msg.dropId : "";
+    const drop = this.state.weaponDrops.get(dropId);
+    if (!drop) return;
+    const dist = Math.hypot(p.x - drop.x, p.z - drop.z);
+    if (dist > WEAPON_DROP_PICKUP_RANGE) return;
+
+    const picked = {
+      weaponId: drop.weaponId,
+      mag: drop.mag,
+      reserve: drop.reserve,
+      weaponSkinId: drop.weaponSkinId,
+      weaponSkinParts: drop.weaponSkinParts,
+    };
+    this.state.weaponDrops.delete(dropId);
+
+    const swap = this.parseDropPayload(msg.swap);
+    if (swap) {
+      this.spawnWeaponDrop({
+        ...swap,
+        x: p.x + Math.sin(p.yaw) * WEAPON_DROP_THROW_DISTANCE,
+        y: p.y,
+        z: p.z + Math.cos(p.yaw) * WEAPON_DROP_THROW_DISTANCE,
+        yaw: p.yaw,
+      });
+    }
+
+    client.send("weaponPickup", picked);
   }
 
   private processAmmoPickups(): void {

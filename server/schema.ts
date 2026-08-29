@@ -87,6 +87,19 @@ export class AmmoDropState extends Schema {
   @type("number") z = 0;
 }
 
+/** Arma no chão — visível para todos; mag/reserve vão com o pickup. */
+export class WeaponDropState extends Schema {
+  @type("string") weaponId = "m4a1";
+  @type("number") x = 0;
+  @type("number") y = 0;
+  @type("number") z = 0;
+  @type("number") yaw = 0;
+  @type("number") mag = 0;
+  @type("number") reserve = 0;
+  @type("string") weaponSkinId = "";
+  @type("string") weaponSkinParts = "";
+}
+
 export class MatchState extends Schema {
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   @type("boolean") matchOver = false;
@@ -123,6 +136,7 @@ export class MatchState extends Schema {
   /** "lobby" | "prep" | "wave" | "intermission" | "". */
   @type("string") zombiePhase = "";
   @type({ map: AmmoDropState }) ammoDrops = new MapSchema<AmmoDropState>();
+  @type({ map: WeaponDropState }) weaponDrops = new MapSchema<WeaponDropState>();
 }
 
 // --- Sala Social (presença global: amigos online, sala atual, convites) ---
